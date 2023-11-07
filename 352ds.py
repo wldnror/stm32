@@ -1,6 +1,7 @@
 import RPi.GPIO as GPIO
 import time
 import os
+import sys
 import socket
 from PIL import Image, ImageDraw, ImageFont
 from luma.core.interface.serial import i2c
@@ -76,19 +77,18 @@ def git_pull():
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
             print("GitHub 업데이트 성공!")
-            # 성공 시 LED 표시 및 메시지 처리 생략 (GPIO.output 등)
-            # 성공했을 때만 시스템을 재부팅합니다.
             time.sleep(2)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
-            print("시스템을 재부팅합니다.")
-            subprocess.run(['sudo', 'reboot'])  # 시스템 재부팅 명령 실행
+            restart_script()  # 여기에서 스크립트를 재시작합니다.
         else:
             print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
             print("오류 메시지:", result.stderr)  # 오류 메시지 출력
-            # 실패 시 LED 표시 및 메시지 처리 생략 (GPIO.output 등)
 
     except Exception as e:
         print("명령 실행 중 오류 발생:", str(e))
-        # 예외 발생 시 LED 표시 및 메시지 처리 생략 (GPIO.output 등)
+
+def restart_script():
+    print("스크립트를 재시작합니다.")
+    os.execv(sys.executable, ['python'] + sys.argv)
        
 def display_progress_bar(percentage):
     with canvas(device) as draw:
