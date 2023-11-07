@@ -37,7 +37,7 @@ commands = [
     "git_pull"  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
-command_names = ["ASGD S", "ASGD S PNP", "메모리 잠금", "GitHub 업데이트"]
+command_names = ["ASGD S", "ASGD S PNP", "메모리 잠금", "시스템 업데이트"]
 
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
