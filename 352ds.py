@@ -8,8 +8,14 @@ from luma.core.interface.serial import i2c
 from luma.core.render import canvas
 from luma.oled.device import sh1107
 import subprocess
-
-# 버튼과 LED가 연결된 GPIO 핀 번호 설정
+# 여기에 인터넷 연결 상태를 확인하는 함수를 추가합니다.
+def check_internet_connection():
+    try:
+        # Google의 DNS 서버에 ping을 보내어 인터넷 연결 상태를 확인합니다.
+        subprocess.check_output(["ping", "-c", "1", "8.8.8.8"], stderr=subprocess.DEVNULL)
+        return True
+    except subprocess.CalledProcessError:
+        return False# 버튼과 LED가 연결된 GPIO 핀 번호 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
 LED_DEBUGGING = 23
@@ -194,7 +200,15 @@ def execute_command(command_index):
 
 def update_oled_display():
     global current_command_index
+    internet_status = check_internet_connection()  # 인터넷 연결 상태를 확인합니다.
+    
     with canvas(device) as draw:
+        # 인터넷 연결 상태를 우측 상단에 표시합니다.
+        # 화면 해상도와 폰트 크기에 맞게 위치를 조정해야 할 수 있습니다.
+        connection_status = "1" if internet_status else "0"
+        draw.text((120, 0), connection_status, font=font_status, fill=255)
+
+        # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
             draw.rectangle(device.bounding_box, outline="white", fill="black")
             draw.text((7, 20), status_message, font=font_status, fill=255)
@@ -210,6 +224,7 @@ def update_oled_display():
                 draw.text((27, 33), '메모리 잠금', font=font, fill=255)
             elif command_names[current_command_index] == "GitHub 업데이트":
                 draw.text((0, 33), 'GitHub 업데이트', font=font, fill=255)
+
 
 try:
     while True:
