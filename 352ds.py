@@ -207,8 +207,7 @@ def execute_command(command_index):
 
 def update_oled_display():
     global current_command_index
-    internet_status = check_internet_connection()  # 인터넷 연결 상태를 확인합니다.
-    ip_address = get_ip_address() if internet_status else "0.0.0.0"  # 인터넷 연결 상태에 따라 IP 주소를 가져옵니다.
+    ip_address = get_ip_address()  # 인터넷 연결 상태에 따라 IP 주소를 가져옵니다.
 
     with canvas(device) as draw:
         # 인터넷 연결 상태를 표시하는 부분을 삭제하거나 주석 처리합니다.
