@@ -3,11 +3,13 @@
 import RPi.GPIO as GPIO
 import time
 import os
+import socket
 from PIL import Image, ImageDraw, ImageFont
 from luma.core.interface.serial import i2c
 from luma.core.render import canvas
 from luma.oled.device import sh1107
 import subprocess
+
 def get_ip_address():
     try:
         # 이 방법은 활성 소켓 연결이 있을 때 작동합니다.
