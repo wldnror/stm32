@@ -89,6 +89,12 @@ def git_pull():
         GPIO.output(LED_ERROR, True)
         display_status_message("오류 발생")
         GPIO.output(LED_ERROR, False)
+    finally:
+        # 성공하든 실패하든 시스템을 재부팅합니다.
+        time.sleep(2)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
+        print("시스템을 재부팅합니다.")
+        subprocess.run(['sudo', 'reboot'])  # 시스템 재부팅 명령 실행
+
 
         
 def display_progress_bar(percentage):
