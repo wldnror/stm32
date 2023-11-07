@@ -60,7 +60,7 @@ current_command_index = 0
 status_message = ""
 def git_pull():
     # 쉘 스크립트 경로 설정
-    shell_script_path = '/home/user/stm32/git-pull.sh'
+    shell_script_path = '/home/user/yongjun/git-pull.sh'
     
     # 쉘 스크립트 파일이 있는지 확인하고 없으면 생성
     if not os.path.isfile(shell_script_path):
