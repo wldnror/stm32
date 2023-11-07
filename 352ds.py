@@ -241,7 +241,7 @@ def update_oled_display():
             elif command_names[current_command_index] == "메모리 잠금":
                 draw.text((27, 33), '메모리 잠금', font=font, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
-                draw.text((0, 33), '시스템 업데이트', font=font, fill=255)
+                draw.text((8, 33), '시스템 업데이트', font=font, fill=255)
 
 
 try:
