@@ -59,11 +59,20 @@ font_status = ImageFont.truetype(font_path, 15)
 current_command_index = 0
 status_message = ""
 def git_pull():
-    git_pull_command = [
-        "git", "-C", "/home/user/stm32", "pull"
-    ]
+    # 쉘 스크립트 경로 설정
+    shell_script_path = '/home/user/stm32/git-pull.sh'
+    
+    # 쉘 스크립트 파일이 있는지 확인하고 없으면 생성
+    if not os.path.isfile(shell_script_path):
+        with open(shell_script_path, 'w') as script_file:
+            script_file.write("#!/bin/bash\n")
+            script_file.write("cd /home/user/stm32\n")
+            script_file.write("git pull\n")
+        os.chmod(shell_script_path, 0o755)  # 스크립트 파일에 실행 권한 부여
+
     try:
-        result = subprocess.run(git_pull_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # 쉘 스크립트 실행
+        result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
             print("GitHub 업데이트 성공!")
             GPIO.output(LED_SUCCESS, True)
@@ -71,6 +80,7 @@ def git_pull():
             GPIO.output(LED_SUCCESS, False)
         else:
             print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
+            print("오류 메시지:", result.stderr)  # 오류 메시지 출력
             GPIO.output(LED_ERROR, True)
             display_status_message("GitHub 업데이트 실패")
             GPIO.output(LED_ERROR, False)
@@ -79,6 +89,7 @@ def git_pull():
         GPIO.output(LED_ERROR, True)
         display_status_message("오류 발생")
         GPIO.output(LED_ERROR, False)
+
         
 def display_progress_bar(percentage):
     with canvas(device) as draw:
