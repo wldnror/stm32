@@ -71,8 +71,9 @@ def git_pull():
             script_file.write("#!/bin/bash\n")
             script_file.write("cd /home/user/stm32\n")
             script_file.write("git pull\n")
-            os.fsync(script_file.fileno())
-            
+            script_file.flush()  # Python의 내부 버퍼를 비웁니다.
+            os.fsync(script_file.fileno())  # 파일 시스템의 버퍼를 디스크에 기록합니다.
+
     os.chmod(shell_script_path, 0o755)  # 스크립트 파일에 실행 권한 부여
 
     try:
