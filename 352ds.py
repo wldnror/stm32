@@ -9,6 +9,8 @@ from luma.core.interface.serial import i2c
 from luma.core.render import canvas
 from luma.oled.device import sh1107
 import subprocess
+from datetime import datetime
+
 
 def get_ip_address():
     try:
@@ -221,20 +223,22 @@ def execute_command(command_index):
 def update_oled_display():
     global current_command_index
     ip_address = get_ip_address()  # 인터넷 연결 상태에 따라 IP 주소를 가져옵니다.
+    current_time = datetime.now().strftime('%H:%M:%S')  # 현재 시간을 HH:MM:SS 형식으로 가져옵니다.
 
     with canvas(device) as draw:
         # 인터넷 연결 상태를 표시하는 부분을 삭제하거나 주석 처리합니다.
         # draw.text((120, 0), connection_status, font=font_status, fill=255)
 
         # IP 주소를 우측 상단에 표시합니다. 좌표를 적절히 조정하세요.
-        draw.text((90, 0), ip_address, font=font_big, fill=255)
+        draw.text((0, 0), ip_address, font=font_big, fill=255)
+        draw.text((90, 0), current_time, font=font_big, fill=255)  
 
         # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
             draw.rectangle(device.bounding_box, outline="white", fill="black")
             draw.text((7, 20), status_message, font=font_status, fill=255)
         else:
-            draw.text((0, 0), 'GDSENG', font=font_big, fill=255)
+            draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
             draw.text((95, 51), 'ver 1.2', font=font_big, fill=255)
             draw.text((38, 13), f'설정 {current_command_index+1}번', font=font, fill=255)
             if command_names[current_command_index] == "ASGD S":
