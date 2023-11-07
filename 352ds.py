@@ -1,5 +1,4 @@
-# 깃허브 테스트 입니다.
-# 하이 테스트 ..ㄷ
+
 import RPi.GPIO as GPIO
 import time
 import os
