@@ -1,0 +1,195 @@
+import RPi.GPIO as GPIO
+import time
+import os
+from PIL import Image, ImageDraw, ImageFont
+from luma.core.interface.serial import i2c
+from luma.core.render import canvas
+from luma.oled.device import sh1107
+import subprocess
+
+# 버튼과 LED가 연결된 GPIO 핀 번호 설정
+BUTTON_PIN_NEXT = 27
+BUTTON_PIN_EXECUTE = 17
+LED_DEBUGGING = 23
+LED_SUCCESS = 24
+LED_ERROR = 25
+
+# 명령어 설정
+commands = [
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/Desktop/test/ASGD3000-V352_0x009D2B78.bin verify reset exit 0x08000000\"",
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/Desktop/test/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
+    "메모리 잠금"
+]
+command_names = ["ASGD S", "ASGD S PNP", "메모리 잠금"]
+
+# OLED 설정
+serial = i2c(port=1, address=0x3C)
+device = sh1107(serial, rotate=1)
+
+# GPIO 설정
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(LED_DEBUGGING, GPIO.OUT)
+GPIO.setup(LED_SUCCESS, GPIO.OUT)
+GPIO.setup(LED_ERROR, GPIO.OUT)
+
+# 폰트 및 이미지 설정
+font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
+font_big = ImageFont.truetype(font_path, 10)
+font = ImageFont.truetype(font_path, 15)
+font_status = ImageFont.truetype(font_path, 15)
+
+current_command_index = 0
+status_message = ""
+
+def display_progress_bar(percentage):
+    with canvas(device) as draw:
+        # 전체 진행 바
+        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
+        # 현재 진행 상황 표시
+        draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")
+
+def display_status_message(message):
+    global status_message
+    status_message = message
+    update_oled_display()
+    time.sleep(2)
+    status_message = ""
+    update_oled_display()
+
+def unlock_memory():
+    display_progress_bar(0)
+    GPIO.output(LED_DEBUGGING, True)
+    display_status_message("메모리 잠금 해제 중...")
+    print("메모리 잠금 해제 시도...")
+    time.sleep(5)
+    display_progress_bar(50)
+    openocd_command = [
+        "sudo", "openocd",
+        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "init",
+        "-c", "reset halt",
+        "-c", "stm32f1x unlock 0",
+        "-c", "reset run",
+        "-c", "shutdown"
+    ]
+    result = subprocess.run(openocd_command)
+    GPIO.output(LED_DEBUGGING, False)
+    if result.returncode == 0:
+        print("메모리 잠금 해제 성공!")
+        display_progress_bar(100)
+    else:
+        print("메모리 잠금 해제 실패!")
+    return result.returncode == 0
+
+def lock_memory_procedure():
+    display_progress_bar(0)
+    GPIO.output(LED_DEBUGGING, True)
+    display_status_message("메모리 잠금 중...")
+    openocd_command = [
+        "sudo",
+        "openocd",
+        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "init",
+        "-c", "reset halt",
+        "-c", "stm32f1x lock 0",
+        "-c", "reset run",
+        "-c", "shutdown",
+    ]
+    try:
+        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        GPIO.output(LED_DEBUGGING, False)
+        if result.returncode == 0:
+            print("성공적으로 메모리를 잠갔습니다.")
+            GPIO.output(LED_SUCCESS, True)
+            display_status_message("메모리 잠금 성공")
+            display_progress_bar(100)
+            time.sleep(2)
+            GPIO.output(LED_SUCCESS, False)
+        else:
+            print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
+            GPIO.output(LED_ERROR, True)
+            display_status_message("메모리 잠금 실패")
+            display_progress_bar(50)
+            time.sleep(2)
+            GPIO.output(LED_ERROR, False)
+    except Exception as e:
+        print("명령 실행 중 오류 발생:", str(e))
+        GPIO.output(LED_ERROR, True)
+        display_status_message("오류 발생")
+        display_progress_bar(0)
+        time.sleep(2)
+        GPIO.output(LED_ERROR, False)
+
+def execute_command(command_index):
+    print("업데이트 시도...")
+    display_progress_bar(0)
+    # LED 초기화
+    GPIO.output(LED_DEBUGGING, False)
+    GPIO.output(LED_SUCCESS, False)
+    GPIO.output(LED_ERROR, False)
+
+    if command_index == 2:  # 메모리 잠금 명령
+        lock_memory_procedure()
+        return
+
+    if not unlock_memory():
+        GPIO.output(LED_ERROR, True)
+        display_status_message("메모리 잠금 해제 실패")
+        time.sleep(2)
+        GPIO.output(LED_ERROR, False)
+        return
+
+    GPIO.output(LED_DEBUGGING, True)
+    display_status_message("  업데이트 중...")
+    result = os.system(commands[command_index])
+    GPIO.output(LED_DEBUGGING, False)
+    display_progress_bar(50)
+
+    if result == 0:
+        print(f"'{commands[command_index]}' 업데이트 성공!")
+        GPIO.output(LED_SUCCESS, True)
+        display_status_message("  업데이트 성공")
+        display_progress_bar(100)
+        time.sleep(2)
+        GPIO.output(LED_SUCCESS, False)
+    else:
+        print(f"'{commands[command_index]}' 업데이트 실패!")
+        GPIO.output(LED_ERROR, True)
+        display_status_message("  업데이트 실패")
+        display_progress_bar(50)
+        time.sleep(2)
+        GPIO.output(LED_ERROR, False)
+
+def update_oled_display():
+    global current_command_index
+    with canvas(device) as draw:
+        if status_message:
+            draw.rectangle(device.bounding_box, outline="white", fill="black")
+            draw.text((7, 20), status_message, font=font_status, fill=255)
+        else:
+            draw.text((0, 0), 'GDSENG', font=font_big, fill=255)
+            draw.text((95, 51), 'ver 1.0', font=font_big, fill=255)
+            draw.text((38, 13), f'설정 {current_command_index+1}번', font=font, fill=255)
+            if command_names[current_command_index] == "ASGD S":
+                draw.text((40, 33), 'ASGD S', font=font, fill=255)
+            elif command_names[current_command_index] == "ASGD S PNP":
+                draw.text((25, 33), 'ASGD S PNP', font=font, fill=255)
+            elif command_names[current_command_index] == "메모리 잠금":
+                draw.text((27, 33), '메모리 잠금', font=font, fill=255)
+
+try:
+    while True:
+        if not GPIO.input(BUTTON_PIN_NEXT):
+            current_command_index = (current_command_index + 1) % len(commands)
+            time.sleep(0.1)
+        elif not GPIO.input(BUTTON_PIN_EXECUTE):
+            execute_command(current_command_index)
+            time.sleep(0.1)
+        update_oled_display()
+        time.sleep(0.1)
+except KeyboardInterrupt:
+    GPIO.cleanup()
