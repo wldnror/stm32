@@ -88,7 +88,7 @@ def git_pull():
 
 def restart_script():
     print("스크립트를 재시작합니다.")
-    os.execv(sys.executable, ['python'] + sys.argv)
+    os.execv(sys.executable, [sys.executable] + sys.argv)
        
 def display_progress_bar(percentage):
     with canvas(device) as draw:
