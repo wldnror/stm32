@@ -239,7 +239,7 @@ def update_oled_display():
                 draw.text((25, 33), 'ASGD S PNP', font=font, fill=255)
             elif command_names[current_command_index] == "메모리 잠금":
                 draw.text((27, 33), '메모리 잠금', font=font, fill=255)
-            elif command_names[current_command_index] == "GitHub 업데이트":
+            elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((0, 33), 'GitHub 업데이트', font=font, fill=255)
 
 
