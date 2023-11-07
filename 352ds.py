@@ -1,4 +1,4 @@
-#깃허브 테스트 입니다.
+# 깃허브 테스트 입니다.
 import RPi.GPIO as GPIO
 import time
 import os
@@ -19,9 +19,11 @@ LED_ERROR = 25
 commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/Desktop/test/ASGD3000-V352_0x009D2B78.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/Desktop/test/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
-    "메모리 잠금"
+    "메모리 잠금",
+    "git_pull"  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
-command_names = ["ASGD S", "ASGD S PNP", "메모리 잠금"]
+
+command_names = ["ASGD S", "ASGD S PNP", "메모리 잠금", "GitHub 업데이트"]
 
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
@@ -43,7 +45,28 @@ font_status = ImageFont.truetype(font_path, 15)
 
 current_command_index = 0
 status_message = ""
-
+def git_pull():
+    git_pull_command = [
+        "git", "-C", "/home/user/stm32", "pull"
+    ]
+    try:
+        result = subprocess.run(git_pull_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            print("GitHub 업데이트 성공!")
+            GPIO.output(LED_SUCCESS, True)
+            display_status_message("GitHub 업데이트 성공")
+            GPIO.output(LED_SUCCESS, False)
+        else:
+            print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
+            GPIO.output(LED_ERROR, True)
+            display_status_message("GitHub 업데이트 실패")
+            GPIO.output(LED_ERROR, False)
+    except Exception as e:
+        print("명령 실행 중 오류 발생:", str(e))
+        GPIO.output(LED_ERROR, True)
+        display_status_message("오류 발생")
+        GPIO.output(LED_ERROR, False)
+        
 def display_progress_bar(percentage):
     with canvas(device) as draw:
         # 전체 진행 바
@@ -132,7 +155,10 @@ def execute_command(command_index):
     GPIO.output(LED_DEBUGGING, False)
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
-
+    # GitHub 업데이트 명령어 실행
+    if command_index == len(commands) - 1:  # commands 리스트의 마지막 항목이면
+        git_pull()
+        return
     if command_index == 2:  # 메모리 잠금 명령
         lock_memory_procedure()
         return
@@ -181,6 +207,8 @@ def update_oled_display():
                 draw.text((25, 33), 'ASGD S PNP', font=font, fill=255)
             elif command_names[current_command_index] == "메모리 잠금":
                 draw.text((27, 33), '메모리 잠금', font=font, fill=255)
+            elif command_names[current_command_index] == "GitHub 업데이트":
+                draw.text((0, 0), 'GitHub 업데이트', font=font, fill=255)
 
 try:
     while True:
