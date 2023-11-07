@@ -71,7 +71,9 @@ def git_pull():
             script_file.write("#!/bin/bash\n")
             script_file.write("cd /home/user/stm32\n")
             script_file.write("git pull\n")
-        os.chmod(shell_script_path, 0o755)  # 스크립트 파일에 실행 권한 부여
+            os.fsync(script_file.fileno())
+            
+    os.chmod(shell_script_path, 0o755)  # 스크립트 파일에 실행 권한 부여
 
     try:
         # 쉘 스크립트 실행
