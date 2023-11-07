@@ -1,4 +1,3 @@
-#ㅎㅎㅎ
 import RPi.GPIO as GPIO
 import time
 import os
@@ -58,6 +57,8 @@ font_status = ImageFont.truetype(font_path, 15)
 
 current_command_index = 0
 status_message = ""
+
+
 def git_pull():
     # 쉘 스크립트 경로 설정
     shell_script_path = '/home/user/yongjun/git-pull.sh'
@@ -75,28 +76,20 @@ def git_pull():
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
             print("GitHub 업데이트 성공!")
-            GPIO.output(LED_SUCCESS, True)
-            display_status_message("GitHub 업데이트 성공")
-            GPIO.output(LED_SUCCESS, False)
+            # 성공 시 LED 표시 및 메시지 처리 생략 (GPIO.output 등)
+            # 성공했을 때만 시스템을 재부팅합니다.
+            time.sleep(2)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
+            print("시스템을 재부팅합니다.")
+            subprocess.run(['sudo', 'reboot'])  # 시스템 재부팅 명령 실행
         else:
             print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
             print("오류 메시지:", result.stderr)  # 오류 메시지 출력
-            GPIO.output(LED_ERROR, True)
-            display_status_message("GitHub 업데이트 실패")
-            GPIO.output(LED_ERROR, False)
+            # 실패 시 LED 표시 및 메시지 처리 생략 (GPIO.output 등)
+
     except Exception as e:
         print("명령 실행 중 오류 발생:", str(e))
-        GPIO.output(LED_ERROR, True)
-        display_status_message("오류 발생")
-        GPIO.output(LED_ERROR, False)
-    finally:
-        # 성공하든 실패하든 시스템을 재부팅합니다.
-        time.sleep(2)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
-        print("시스템을 재부팅합니다.")
-        subprocess.run(['sudo', 'reboot'])  # 시스템 재부팅 명령 실행
-
-
-        
+        # 예외 발생 시 LED 표시 및 메시지 처리 생략 (GPIO.output 등)
+       
 def display_progress_bar(percentage):
     with canvas(device) as draw:
         # 전체 진행 바
@@ -238,7 +231,7 @@ def update_oled_display():
             draw.text((7, 20), status_message, font=font_status, fill=255)
         else:
             draw.text((0, 0), 'GDSENG', font=font_big, fill=255)
-            draw.text((95, 51), 'ver 7.0', font=font_big, fill=255)
+            draw.text((95, 51), 'ver 2.0', font=font_big, fill=255)
             draw.text((38, 13), f'설정 {current_command_index+1}번', font=font, fill=255)
             if command_names[current_command_index] == "ASGD S":
                 draw.text((40, 33), 'ASGD S', font=font, fill=255)
