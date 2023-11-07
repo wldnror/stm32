@@ -1,3 +1,5 @@
+#깃허브 테스트
+
 import subprocess
 
 # OpenOCD 스크립트와 명령어 설정
