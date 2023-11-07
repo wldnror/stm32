@@ -1,3 +1,4 @@
+#깃허브 테스트 입니다.
 import RPi.GPIO as GPIO
 import time
 import os
