@@ -60,6 +60,9 @@ font_status = ImageFont.truetype(font_path, 15)
 current_command_index = 0
 status_message = ""
 def git_pull():
+    # 로그 파일 경로는 함수 밖에서 전역 변수로 설정합니다.
+    global log_path
+    
     # 쉘 스크립트 경로 설정
     shell_script_path = '/home/user/stm32/git-pull.sh'
     
@@ -71,25 +74,27 @@ def git_pull():
             script_file.write("git pull\n")
         os.chmod(shell_script_path, 0o755)  # 스크립트 파일에 실행 권한 부여
 
-    try:
-        # 쉘 스크립트 실행
-        result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode == 0:
-            print("GitHub 업데이트 성공!")
-            GPIO.output(LED_SUCCESS, True)
-            display_status_message("GitHub 업데이트 성공")
-            GPIO.output(LED_SUCCESS, False)
-        else:
-            print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
-            print("오류 메시지:", result.stderr)  # 오류 메시지 출력
+    # 로그 파일에 결과를 기록합니다.
+    with open(log_path, 'a') as log_file:
+        try:
+            # 쉘 스크립트 실행
+            result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode == 0:
+                log_file.write("GitHub 업데이트 성공!\n")
+                GPIO.output(LED_SUCCESS, True)
+                display_status_message("GitHub 업데이트 성공")
+                GPIO.output(LED_SUCCESS, False)
+            else:
+                log_file.write(f"GitHub 업데이트 실패. 오류 코드: {result.returncode}\n")
+                log_file.write(f"오류 메시지: {result.stderr}\n")  # 오류 메시지 출력
+                GPIO.output(LED_ERROR, True)
+                display_status_message("GitHub 업데이트 실패")
+                GPIO.output(LED_ERROR, False)
+        except Exception as e:
+            log_file.write(f"명령 실행 중 오류 발생: {e}\n")
             GPIO.output(LED_ERROR, True)
-            display_status_message("GitHub 업데이트 실패")
+            display_status_message("오류 발생")
             GPIO.output(LED_ERROR, False)
-    except Exception as e:
-        print("명령 실행 중 오류 발생:", str(e))
-        GPIO.output(LED_ERROR, True)
-        display_status_message("오류 발생")
-        GPIO.output(LED_ERROR, False)
 
         
 def display_progress_bar(percentage):
@@ -225,7 +230,7 @@ def update_oled_display():
         # draw.text((120, 0), connection_status, font=font_status, fill=255)
 
         # IP 주소를 우측 상단에 표시합니다. 좌표를 적절히 조정하세요.
-        draw.text((90, 0), ip_address, font=font_status, fill=255)
+        draw.text((90, 0), ip_address, font=font_big, fill=255)
 
         # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
