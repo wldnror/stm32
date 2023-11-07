@@ -8,14 +8,19 @@ from luma.core.interface.serial import i2c
 from luma.core.render import canvas
 from luma.oled.device import sh1107
 import subprocess
-# 여기에 인터넷 연결 상태를 확인하는 함수를 추가합니다.
-def check_internet_connection():
+def get_ip_address():
     try:
-        # Google의 DNS 서버에 ping을 보내어 인터넷 연결 상태를 확인합니다.
-        subprocess.check_output(["ping", "-c", "1", "8.8.8.8"], stderr=subprocess.DEVNULL)
-        return True
-    except subprocess.CalledProcessError:
-        return False# 버튼과 LED가 연결된 GPIO 핀 번호 설정
+        # 이 방법은 활성 소켓 연결이 있을 때 작동합니다.
+        # '8.8.8.8'은 구글의 DNS 서버 주소입니다.
+        # 실제로는 데이터를 보내지 않고, 연결을 시도만 해서 로컬 IP 주소를 얻습니다.
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception as e:
+        return "0.0.0.0"
+        
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
 LED_DEBUGGING = 23
@@ -201,12 +206,14 @@ def execute_command(command_index):
 def update_oled_display():
     global current_command_index
     internet_status = check_internet_connection()  # 인터넷 연결 상태를 확인합니다.
-    
+    ip_address = get_ip_address() if internet_status else "0.0.0.0"  # 인터넷 연결 상태에 따라 IP 주소를 가져옵니다.
+
     with canvas(device) as draw:
-        # 인터넷 연결 상태를 우측 상단에 표시합니다.
-        # 화면 해상도와 폰트 크기에 맞게 위치를 조정해야 할 수 있습니다.
-        connection_status = "1" if internet_status else "0"
-        draw.text((120, 0), connection_status, font=font_status, fill=255)
+        # 인터넷 연결 상태를 표시하는 부분을 삭제하거나 주석 처리합니다.
+        # draw.text((120, 0), connection_status, font=font_status, fill=255)
+
+        # IP 주소를 우측 상단에 표시합니다. 좌표를 적절히 조정하세요.
+        draw.text((90, 0), ip_address, font=font_status, fill=255)
 
         # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
