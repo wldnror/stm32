@@ -224,7 +224,7 @@ def update_oled_display():
         # draw.text((120, 0), connection_status, font=font_status, fill=255)
 
         # IP 주소를 우측 상단에 표시합니다. 좌표를 적절히 조정하세요.
-        draw.text((90, 0), ip_address, font=font_status, fill=255)
+        draw.text((90, 0), ip_address, font=font_big, fill=255)
 
         # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
