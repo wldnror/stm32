@@ -1,4 +1,4 @@
-#ㅇㅛㅛㅛㅇㄹ홀옹ㄹ호
+#ㅇㅛㅛㅛㅇㄹ홀옹ㄹ호ㄹㅎ
 import RPi.GPIO as GPIO
 import time
 import os
