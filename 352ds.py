@@ -1,5 +1,3 @@
-#테스트 입니다.
-#성공하면 좋겠다
 import RPi.GPIO as GPIO
 import time
 import os
