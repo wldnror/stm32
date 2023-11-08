@@ -1,4 +1,3 @@
-#테스트 23.11.9/08:00
 import RPi.GPIO as GPIO
 import time
 import os
@@ -231,7 +230,7 @@ def update_oled_display():
 
         # IP 주소를 우측 상단에 표시합니다. 좌표를 적절히 조정하세요.
         draw.text((0, 0), ip_address, font=font_big, fill=255)
-        draw.text((85, 0), current_time, font=font_big, fill=255)  
+        draw.text((90, 0), current_time, font=font_big, fill=255)  
 
         # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
@@ -239,7 +238,7 @@ def update_oled_display():
             draw.text((7, 20), status_message, font=font_status, fill=255)
         else:
             draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
-            draw.text((95, 51), 'ver 1.3', font=font_big, fill=255)
+            draw.text((95, 51), 'ver 8.2', font=font_big, fill=255)
             draw.text((38, 13), f'설정 {current_command_index+1}번', font=font, fill=255)
             if command_names[current_command_index] == "ASGD S":
                 draw.text((40, 33), 'ASGD S', font=font, fill=255)
@@ -248,7 +247,7 @@ def update_oled_display():
             elif command_names[current_command_index] == "메모리 잠금":
                 draw.text((27, 33), '메모리 잠금', font=font, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
-                draw.text((10, 33), '시스템 업데이트', font=font, fill=255)
+                draw.text((8, 33), '시스템 업데이트', font=font, fill=255)
 
 
 try:
