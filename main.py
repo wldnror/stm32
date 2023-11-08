@@ -56,7 +56,7 @@ GPIO.setup(LED_ERROR, GPIO.OUT)
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
 font_big = ImageFont.truetype(font_path, 10)
 font_s = ImageFont.truetype(font_path, 11)
-font = ImageFont.truetype(font_path, 18)
+font = ImageFont.truetype(font_path, 17)
 font_status = ImageFont.truetype(font_path, 15)
 
 current_command_index = 0
@@ -240,15 +240,15 @@ def update_oled_display():
         else:
             draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
             draw.text((95, 51), 'ver 1.2', font=font_big, fill=255)
-            draw.text((38, 13), f'설정 {current_command_index+1}번', font=font_s, fill=255)
+            draw.text((38, 15), f'설정 {current_command_index+1}번', font=font_s, fill=255)
             if command_names[current_command_index] == "ASGD S":
-                draw.text((30, 25), 'ASGD S', font=font, fill=255)
+                draw.text((32, 28), 'ASGD S', font=font, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
-                draw.text((20, 25), 'ASGD S PNP', font=font, fill=255)
+                draw.text((18, 28), 'ASGD S PNP', font=font, fill=255)
             elif command_names[current_command_index] == "메모리 잠금":
-                draw.text((25, 25), '메모리 잠금', font=font, fill=255)
+                draw.text((23, 28), '메모리 잠금', font=font, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
-                draw.text((1, 25), '시스템 업데이트', font=font, fill=255)
+                draw.text((1, 28), '시스템 업데이트', font=font, fill=255)
 
 
 try:
