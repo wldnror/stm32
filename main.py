@@ -55,6 +55,7 @@ GPIO.setup(LED_ERROR, GPIO.OUT)
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
 font_big = ImageFont.truetype(font_path, 10)
+font_s = ImageFont.truetype(font_path, 12)
 font = ImageFont.truetype(font_path, 15)
 font_status = ImageFont.truetype(font_path, 15)
 
@@ -239,7 +240,7 @@ def update_oled_display():
         else:
             draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
             draw.text((95, 51), 'ver 1.2', font=font_big, fill=255)
-            draw.text((38, 13), f'설정 {current_command_index+1}번', font=font, fill=15)
+            draw.text((38, 13), f'설정 {current_command_index+1}번', font_s, fill=255)
             if command_names[current_command_index] == "ASGD S":
                 draw.text((40, 33), 'ASGD S', font=font, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
