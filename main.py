@@ -240,7 +240,7 @@ def update_oled_display():
         else:
             draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
             draw.text((95, 51), 'ver 1.2', font=font_big, fill=255)
-            draw.text((38, 15), f'설정 {current_command_index+1}번', font=font_s, fill=255)
+            draw.text((40, 15), f'설정 {current_command_index+1}번', font=font_s, fill=255)
             if command_names[current_command_index] == "ASGD S":
                 draw.text((32, 28), 'ASGD S', font=font, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
