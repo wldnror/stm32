@@ -230,7 +230,7 @@ def update_oled_display():
 
         # IP 주소를 우측 상단에 표시합니다. 좌표를 적절히 조정하세요.
         draw.text((0, 0), ip_address, font=font_big, fill=255)
-        draw.text((90, 0), current_time, font=font_big, fill=255)  
+        draw.text((85, 0), current_time, font=font_big, fill=255)  
 
         # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
@@ -238,7 +238,7 @@ def update_oled_display():
             draw.text((7, 20), status_message, font=font_status, fill=255)
         else:
             draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
-            draw.text((95, 51), 'ver 8.2', font=font_big, fill=255)
+            draw.text((95, 51), 'ver 1.2', font=font_big, fill=255)
             draw.text((38, 13), f'설정 {current_command_index+1}번', font=font, fill=255)
             if command_names[current_command_index] == "ASGD S":
                 draw.text((40, 33), 'ASGD S', font=font, fill=255)
