@@ -204,7 +204,7 @@ def execute_command(command_index):
     while process.poll() is None:
     # "업데이트 중..." 메시지를 계속 표시
         display_status_message("  업데이트 중...")
-        time.sleep(0.5)
+        time.sleep(3)
     # 프로세스 완료 후 결과 확인
     result = process.returncode
     GPIO.output(LED_DEBUGGING, False)
