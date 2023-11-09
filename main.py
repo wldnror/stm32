@@ -207,14 +207,15 @@ def execute_command(command_index):
         GPIO.output(LED_SUCCESS, True)
         display_status_message("  업데이트 성공")
         display_progress_bar(100)
-        time.sleep(2)
+        time.sleep(1)
         GPIO.output(LED_SUCCESS, False)
+        lock_memory_procedure()
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
         display_status_message("  업데이트 실패")
         display_progress_bar(50)
-        time.sleep(2)
+        time.sleep(1)
         GPIO.output(LED_ERROR, False)
 
 def update_oled_display():
