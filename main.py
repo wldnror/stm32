@@ -204,7 +204,7 @@ def execute_command(command_index):
     while process.poll() is None:
     # "업데이트 중..." 메시지를 계속 표시
         display_status_message("  업데이트 중...")
-        time.sleep(3)
+        time.sleep(0)
     # 프로세스 완료 후 결과 확인
     result = process.returncode
     GPIO.output(LED_DEBUGGING, False)
@@ -246,7 +246,7 @@ def update_oled_display():
         else:
             draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
             draw.text((95, 51), 'ver 1.8', font=font_big, fill=255)
-            draw.text((40, 15), f'설정 {current_command_index+1}번', font=font_s, fill=255)
+            draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_s, fill=255)
             if command_names[current_command_index] == "ASGD S":
                 draw.text((32, 28), 'ASGD S', font=font, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
