@@ -111,8 +111,8 @@ def display_status_message(message):
 def unlock_memory():
     display_progress_bar(0)
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("메모리 잠금 해제 중...")
-    print("메모리 잠금 해제 시도...")
+    display_status_message("잠금 해제 중...")
+    print("잠금 해제 시도...")
     time.sleep(1)
     display_progress_bar(50)
     openocd_command = [
@@ -155,14 +155,14 @@ def lock_memory_procedure():
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
-            display_status_message("메모리 잠금 성공")
+            display_status_message("잠금 성공")
             display_progress_bar(100)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
-            display_status_message("메모리 잠금 실패")
+            display_status_message("잠금 실패")
             display_progress_bar(50)
             time.sleep(1)
             GPIO.output(LED_ERROR, False)
@@ -191,7 +191,7 @@ def execute_command(command_index):
 
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
-        display_status_message("메모리 잠금 해제 실패")
+        display_status_message("잠금 해제 실패")
         time.sleep(2)
         GPIO.output(LED_ERROR, False)
         return
@@ -204,7 +204,7 @@ def execute_command(command_index):
     while process.poll() is None:
     # "업데이트 중..." 메시지를 계속 표시
         display_status_message("  업데이트 중...")
-        time.sleep(0)
+        time.sleep(1)
     # 프로세스 완료 후 결과 확인
     result = process.returncode
     GPIO.output(LED_DEBUGGING, False)
