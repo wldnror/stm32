@@ -197,27 +197,19 @@ def execute_command(command_index):
         return
 
     GPIO.output(LED_DEBUGGING, True)
-    # 상태 메시지를 주기적으로 업데이트하는 함수
-    def display_status_continuously():
-        while not update_finished:
-            display_status_message("  업데이트 중...")
-            time.sleep(0.5)  # 0.5초마다 메시지 업데이트
-            # 업데이트 완료 상태를 추적하는 플래그
-            update_finished = False
-            # 상태 메시지 업데이트 스레드 시작
-            status_thread = threading.Thread(target=display_status_continuously)
-            status_thread.start()
-            # 업데이트 명령 실행
-            GPIO.output(LED_DEBUGGING, True)
-            process = subprocess.Popen(commands[command_index], shell=True)
-            result = process.wait()  # 프로세스가 완료될 때까지 대기
-            # 업데이트 작업이 끝났음을 표시하고 스레드 종료
-            update_finished = True
-            status_thread.join()  # 스레드가 종료될 때까지 대기
-            GPIO.output(LED_DEBUGGING, False)
+    display_status_message("  업데이트 중...")
+    process = subprocess.Popen(commands[command_index], shell=True)
+    # 프로세스가 완료될 때까지 반복
+    
+    while process.poll() is None:
+    # "업데이트 중..." 메시지를 계속 표시
+        display_status_message("  업데이트 중...")
+        time.sleep(0)
+    # 프로세스 완료 후 결과 확인
+    result = process.returncode
+    GPIO.output(LED_DEBUGGING, False)
     display_progress_bar(50)
 
-    
     if result == 0:
         print(f"'{commands[command_index]}' 업데이트 성공!")
         GPIO.output(LED_SUCCESS, True)
