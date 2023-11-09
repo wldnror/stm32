@@ -74,10 +74,19 @@ def git_pull():
             os.fsync(script_file.fileno())  # 파일 시스템의 버퍼를 디스크에 기록합니다.
 
     os.chmod(shell_script_path, 0o755)  # 스크립트 파일에 실행 권한 부여
+    
+    # 업데이트 시작 시 디버깅 LED를 켜고 OLED에 상태 메시지 표시
+    GPIO.output(LED_DEBUGGING, True)
+    display_status_message("GitHub 업데이트 중...")
 
     try:
         # 쉘 스크립트 실행
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # LED 초기화
+        GPIO.output(LED_DEBUGGING, False)
+        GPIO.output(LED_SUCCESS, False)
+        GPIO.output(LED_ERROR, False)
+        
         if result.returncode == 0:
             print("GitHub 업데이트 성공!")
             time.sleep(1)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
@@ -85,9 +94,23 @@ def git_pull():
         else:
             print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
             print("오류 메시지:", result.stderr)  # 오류 메시지 출력
+            GPIO.output(LED_ERROR, True)
+            display_status_message("GitHub 업데이트 실패!")
+            time.sleep(1)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
 
     except Exception as e:
         print("명령 실행 중 오류 발생:", str(e))
+       
+        # 오류 LED를 켜고 OLED에 상태 메시지 표시
+        GPIO.output(LED_ERROR, True)
+        display_status_message("명령 실행 중 오류 발생")
+        time.sleep(1)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
+    finally:
+        # LED 상태를 원래대로 복구
+        GPIO.output(LED_DEBUGGING, False)
+        GPIO.output(LED_SUCCESS, False)
+        GPIO.output(LED_ERROR, False)
+
 
 def restart_script():
     print("스크립트를 재시작합니다.")
