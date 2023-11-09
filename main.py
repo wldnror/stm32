@@ -198,7 +198,7 @@ def execute_command(command_index):
 
     GPIO.output(LED_DEBUGGING, True)
     display_status_message("  업데이트 중...")
-    time.sleep(2)
+    time.sleep(10)
     result = os.system(commands[command_index])
     GPIO.output(LED_DEBUGGING, False)
     display_progress_bar(50)
