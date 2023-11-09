@@ -77,7 +77,7 @@ def git_pull():
     
     # 업데이트 시작 시 디버깅 LED를 켜고 OLED에 상태 메시지 표시
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("GitHub 업데이트 중...")
+    display_status_message("시스템 업데이트 중...")
 
     try:
         # 쉘 스크립트 실행
@@ -88,14 +88,14 @@ def git_pull():
         GPIO.output(LED_ERROR, False)
         
         if result.returncode == 0:
-            print("GitHub 업데이트 성공!")
+            print("업데이트 성공!")
             time.sleep(1)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
             restart_script()  # 여기에서 스크립트를 재시작합니다.
         else:
             print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
             print("오류 메시지:", result.stderr)  # 오류 메시지 출력
             GPIO.output(LED_ERROR, True)
-            display_status_message("GitHub 업데이트 실패!")
+            display_status_message("업데이트 실패!")
             time.sleep(1)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
 
     except Exception as e:
@@ -268,7 +268,7 @@ def update_oled_display():
             draw.text((7, 20), status_message, font=font_status, fill=255)
         else:
             draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
-            draw.text((95, 51), 'ver 1.8', font=font_big, fill=255)
+            draw.text((95, 51), 'ver 2.0', font=font_big, fill=255)
             draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_s, fill=255)
             if command_names[current_command_index] == "ASGD S":
                 draw.text((32, 28), 'ASGD S', font=font, fill=255)
