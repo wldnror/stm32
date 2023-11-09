@@ -198,8 +198,15 @@ def execute_command(command_index):
 
     GPIO.output(LED_DEBUGGING, True)
     display_status_message("  업데이트 중...")
-    time.sleep(10)
-    result = os.system(commands[command_index])
+    process = subprocess.Popen(commands[command_index], shell=True)
+    # 프로세스가 완료될 때까지 반복
+    
+    while process.poll() is None:
+    # "업데이트 중..." 메시지를 계속 표시
+        display_status_message("  업데이트 중...")
+        time.sleep(0.5)
+    # 프로세스 완료 후 결과 확인
+    result = process.returncode
     GPIO.output(LED_DEBUGGING, False)
     display_progress_bar(50)
 
