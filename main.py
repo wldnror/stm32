@@ -55,7 +55,7 @@ font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
 font_big = ImageFont.truetype(font_path, 10)
 font_s = ImageFont.truetype(font_path, 11)
 font = ImageFont.truetype(font_path, 17)
-font_status = ImageFont.truetype(font_path, 15)
+font_status = ImageFont.truetype(font_path, 13)
 
 current_command_index = 0
 status_message = ""
