@@ -80,7 +80,7 @@ def git_pull():
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
             print("GitHub 업데이트 성공!")
-            time.sleep(2)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
+            time.sleep(1)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
             restart_script()  # 여기에서 스크립트를 재시작합니다.
         else:
             print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
@@ -104,7 +104,7 @@ def display_status_message(message):
     global status_message
     status_message = message
     update_oled_display()
-    time.sleep(2)
+    time.sleep(1)
     status_message = ""
     update_oled_display()
 
@@ -113,7 +113,7 @@ def unlock_memory():
     GPIO.output(LED_DEBUGGING, True)
     display_status_message("메모리 잠금 해제 중...")
     print("메모리 잠금 해제 시도...")
-    time.sleep(5)
+    time.sleep(1)
     display_progress_bar(50)
     openocd_command = [
         "sudo", "openocd",
@@ -157,21 +157,21 @@ def lock_memory_procedure():
             GPIO.output(LED_SUCCESS, True)
             display_status_message("메모리 잠금 성공")
             display_progress_bar(100)
-            time.sleep(2)
+            time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
             display_status_message("메모리 잠금 실패")
             display_progress_bar(50)
-            time.sleep(2)
+            time.sleep(1)
             GPIO.output(LED_ERROR, False)
     except Exception as e:
         print("명령 실행 중 오류 발생:", str(e))
         GPIO.output(LED_ERROR, True)
         display_status_message("오류 발생")
         display_progress_bar(0)
-        time.sleep(2)
+        time.sleep(1)
         GPIO.output(LED_ERROR, False)
 
 def execute_command(command_index):
