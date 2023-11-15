@@ -226,7 +226,7 @@ def execute_command(command_index):
     
     while process.poll() is None:
     # "업데이트 중..." 메시지를 계속 표시
-        display_status_message("   업데이트 중...")
+        display_status_message("    업데이트 중...")
         time.sleep(1)
     # 프로세스 완료 후 결과 확인
     result = process.returncode
@@ -236,7 +236,7 @@ def execute_command(command_index):
     if result == 0:
         print(f"'{commands[command_index]}' 업데이트 성공!")
         GPIO.output(LED_SUCCESS, True)
-        display_status_message("    업데이트 성공")
+        display_status_message("   업데이트 성공")
         display_progress_bar(100)
         time.sleep(1)
         GPIO.output(LED_SUCCESS, False)
@@ -244,7 +244,7 @@ def execute_command(command_index):
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
-        display_status_message("    업데이트 실패")
+        display_status_message("   업데이트 실패")
         display_progress_bar(50)
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
