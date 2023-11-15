@@ -214,7 +214,7 @@ def execute_command(command_index):
 
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
-        display_status_message("잠금 해제 실패")
+        display_status_message("   잠금 해제 실패")
         time.sleep(2)
         GPIO.output(LED_ERROR, False)
         return
