@@ -154,7 +154,7 @@ def unlock_memory():
         print("메모리 잠금 해제 성공!")
         display_progress_bar(100)
     else:
-        print("메모리 잠금 해제 실패!")
+        print("    메모리 잠금 해제 실패!")
     return result.returncode == 0
 
 def lock_memory_procedure():
