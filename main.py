@@ -135,7 +135,7 @@ def unlock_memory():
     display_progress_bar(0)
     GPIO.output(LED_DEBUGGING, True)
     display_status_message("메모리 잠금 해제 중...")
-    print("메모리 잠금 해제 시도...")
+    print("메모리 해제 시도...")
     time.sleep(1)
     display_progress_bar(50)
     openocd_command = [
@@ -160,7 +160,7 @@ def unlock_memory():
 def lock_memory_procedure():
     display_progress_bar(0)
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("메모리 잠금 중...")
+    display_status_message("   메모리 잠금 중...")
     openocd_command = [
         "sudo",
         "openocd",
