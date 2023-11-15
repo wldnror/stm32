@@ -178,7 +178,7 @@ def lock_memory_procedure():
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
-            display_status_message("잠금 성공")
+            display_status_message("메모리 잠금 성공")
             display_progress_bar(100)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
@@ -198,7 +198,7 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR, False)
 
 def execute_command(command_index):
-    print("업데이트 시도...")
+    print("  업데이트 시도...")
     display_progress_bar(0)
     # LED 초기화
     GPIO.output(LED_DEBUGGING, False)
@@ -220,13 +220,13 @@ def execute_command(command_index):
         return
 
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("  업데이트 중...")
+    display_status_message("   업데이트 중...")
     process = subprocess.Popen(commands[command_index], shell=True)
     # 프로세스가 완료될 때까지 반복
     
     while process.poll() is None:
     # "업데이트 중..." 메시지를 계속 표시
-        display_status_message("  업데이트 중...")
+        display_status_message("   업데이트 중...")
         time.sleep(1)
     # 프로세스 완료 후 결과 확인
     result = process.returncode
@@ -236,7 +236,7 @@ def execute_command(command_index):
     if result == 0:
         print(f"'{commands[command_index]}' 업데이트 성공!")
         GPIO.output(LED_SUCCESS, True)
-        display_status_message("  업데이트 성공")
+        display_status_message("    업데이트 성공")
         display_progress_bar(100)
         time.sleep(1)
         GPIO.output(LED_SUCCESS, False)
@@ -244,7 +244,7 @@ def execute_command(command_index):
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
-        display_status_message("  업데이트 실패")
+        display_status_message("    업데이트 실패")
         display_progress_bar(50)
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
@@ -268,7 +268,7 @@ def update_oled_display():
             draw.text((7, 20), status_message, font=font_status, fill=255)
         else:
             draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
-            draw.text((95, 51), 'ver 2.2', font=font_big, fill=255)
+            draw.text((95, 51), 'ver 2.3', font=font_big, fill=255)
             draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_s, fill=255)
             if command_names[current_command_index] == "ASGD S":
                 draw.text((32, 28), 'ASGD S', font=font, fill=255)
