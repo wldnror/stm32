@@ -62,7 +62,7 @@ def main():
     GPIO.output(DC_PIN, GPIO.HIGH)  # 데이터 모드로 설정
 
     # 빨간색(RGB: 255, 0, 0)을 디스플레이에 표시
-    fill_color([0xFF, 0x00, 0x00])
+    fill_color([255, 0, 0])
 
     time.sleep(5)  # 5초 동안 표시 유지
 
