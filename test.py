@@ -1,6 +1,8 @@
 import RPi.GPIO as GPIO
 import spidev
 import time
+# 이전 GPIO 설정 초기화
+GPIO.cleanup()
 
 # ST7789V2 컨트롤러를 위한 기본 설정
 DC = 24 # 데이터/명령 선택 핀
