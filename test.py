@@ -1,6 +1,7 @@
 import RPi.GPIO as GPIO
 import spidev
 import time
+from PIL import Image
 
 # 핀 설정
 DC_PIN = 24
@@ -28,7 +29,6 @@ def init_display():
     time.sleep(0.1)
     GPIO.output(RST_PIN, GPIO.HIGH)
     time.sleep(0.1)
-    # 초기화 명령 추가 (필요한 경우)
 
 # 명령 전송 함수
 def write_command(command):
@@ -41,28 +41,28 @@ def write_command(command):
 def write_data(data):
     GPIO.output(DC_PIN, GPIO.HIGH)
     GPIO.output(SPI_CS_PIN, GPIO.LOW)
-    spi.writebytes2(data)  # 수정된 부분: spi.writebytes 대신 spi.writebytes2 사용
+    spi.writebytes(data)
     GPIO.output(SPI_CS_PIN, GPIO.HIGH)
 
-# 색상 표시 함수
-def fill_color(color):
-    width, height = 240, 280  # 디스플레이 해상도
-    pixel_count = width * height
+# 이미지를 디스플레이에 전송하는 함수
+def display_image(image):
+    image = image.rotate(180)  # 이미지를 회전시킵니다.
+    image = image.transpose(Image.FLIP_LEFT_RIGHT)  # 이미지를 좌우 반전시킵니다.
+    image_data = list(image.tobytes())
+    width, height = image.size
 
-    # 명령: 데이터 쓰기 시작
+    # 디스플레이에 이미지 표시
     write_command(0x2C)
-
-    # 색상 데이터 전송
-    color_data = [color] * pixel_count
-    write_data(color_data)
+    write_data(image_data)
 
 # 메인 함수
 def main():
     init_display()
     GPIO.output(DC_PIN, GPIO.HIGH)  # 데이터 모드로 설정
 
-    # 빨간색(RGB: 255, 0, 0)을 디스플레이에 표시
-    fill_color([255, 0, 0])
+    # 이미지 파일을 열어서 디스플레이에 표시
+    image = Image.open("sample.jpg")  # 표시할 이미지 파일 이름
+    display_image(image)
 
     time.sleep(5)  # 5초 동안 표시 유지
 
