@@ -28,6 +28,7 @@ def init_display():
     time.sleep(0.1)
     GPIO.output(RST_PIN, GPIO.HIGH)
     time.sleep(0.1)
+    # 초기화 명령 추가 (필요한 경우)
 
 # 명령 전송 함수
 def write_command(command):
@@ -52,8 +53,8 @@ def fill_color(color):
     write_command(0x2C)
 
     # 색상 데이터 전송
-    for _ in range(pixel_count):
-        write_data(color)
+    color_data = [color] * pixel_count
+    write_data(color_data)
 
 # 메인 함수
 def main():
