@@ -65,12 +65,13 @@ def create_image_with_text(width, height, text):
             draw.rectangle((x, y, x+40, y+40), fill=color)
 
     font = ImageFont.load_default()
-    text_width, text_height = draw.textsize(text, font=font)
+    text_width, text_height = draw.textsize(text, font=font)  # 여기를 수정함
     text_x = (width - text_width) / 2
     text_y = (height - text_height) / 2
     draw.text((text_x, text_y), text, font=font, fill=(255, 255, 255))
 
     return image
+
 
 def main():
     init_display()
