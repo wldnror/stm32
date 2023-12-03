@@ -41,7 +41,7 @@ def write_command(command):
 def write_data(data):
     GPIO.output(DC_PIN, GPIO.HIGH)
     GPIO.output(SPI_CS_PIN, GPIO.LOW)
-    spi.writebytes(data)
+    spi.writebytes2(data)  # 수정된 부분: spi.writebytes 대신 spi.writebytes2 사용
     GPIO.output(SPI_CS_PIN, GPIO.HIGH)
 
 # 색상 표시 함수
