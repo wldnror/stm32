@@ -1,3 +1,4 @@
+from PIL import Image, ImageDraw, ImageFont
 import RPi.GPIO as GPIO
 import spidev
 import time
@@ -47,25 +48,35 @@ def write_data(data):
     spi.writebytes(data)
     GPIO.output(SPI_CS_PIN, GPIO.HIGH)
 
-# 화면 전체를 특정 색으로 채우는 함수
-def fill_color(color):
-    width, height = 240, 280  # 실제 해상도에 맞추어야 함
-    write_command(0x2C)  # 메모리에 쓰기 시작 커맨드
+# 이미지를 디스플레이에 전송하는 함수
+def display_image(image):
+    width, height = 240, 280  # 디스플레이 해상도
+    image = image.resize((width, height))
+    pixels = list(image.getdata())
 
-    # RGB 색상을 RGB565 형식으로 변환
-    red = (color[0] & 0xF8) << 8
-    green = (color[1] & 0xFC) << 3
-    blue = color[2] >> 3
-    rgb565 = red | green | blue
+    # 여기에서 RGB 데이터를 디스플레이의 색상 포맷에 맞게 변환하고 전송해야 합니다.
 
-    pixels = [rgb565 >> 8, rgb565 & 0xFF] * width * height
-    for row in range(height):
-        write_data(pixels[width*2*row:width*2*(row+1)])
+def create_image_with_text(width, height, text):
+    image = Image.new('RGB', (width, height))
+    draw = ImageDraw.Draw(image)
+    for y in range(0, height, 40):
+        for x in range(0, width, 40):
+            color = (x % 255, y % 255, (x + y) % 255)
+            draw.rectangle((x, y, x+40, y+40), fill=color)
 
-# 메인 함수
+    font = ImageFont.load_default()
+    text_width, text_height = draw.textsize(text, font=font)
+    text_x = (width - text_width) / 2
+    text_y = (height - text_height) / 2
+    draw.text((text_x, text_y), text, font=font, fill=(255, 255, 255))
+
+    return image
+
 def main():
     init_display()
-    fill_color([0xFF, 0x00, 0x00])  # 화면을 빨간색으로 채움
+    width, height = 240, 280  # 디스플레이 해상도
+    image = create_image_with_text(width, height, "Hello, World!")
+    display_image(image)
 
 if __name__ == '__main__':
     try:
