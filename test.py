@@ -31,8 +31,7 @@ def init_display():
     time.sleep(0.1)
     GPIO.output(RST_PIN, GPIO.HIGH)
     time.sleep(0.1)
-
-    # 초기화 명령 (디스플레이에 따라 다름)
+    # 여기에 초기화 명령을 추가합니다.
 
 # 명령 전송 함수
 def write_command(command):
@@ -48,9 +47,9 @@ def write_data(data):
     spi.writebytes(data)
     GPIO.output(SPI_CS_PIN, GPIO.HIGH)
 
-# 이미지를 디스플레이에 전송하는 함수 (구현 필요)
+# 이미지를 디스플레이에 전송하는 함수
 def display_image(image):
-    # 변환된 이미지를 디스플레이에 전송하는 로직을 여기에 구현합니다.
+    # 여기에 이미지를 디스플레이에 전송하는 로직을 구현합니다.
 
 def create_image_with_text(width, height, text):
     pygame.init()
