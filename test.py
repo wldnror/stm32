@@ -1,4 +1,4 @@
-from PIL import Image, ImageDraw, ImageFont
+import pygame
 import RPi.GPIO as GPIO
 import spidev
 import time
@@ -48,36 +48,33 @@ def write_data(data):
     spi.writebytes(data)
     GPIO.output(SPI_CS_PIN, GPIO.HIGH)
 
-# 이미지를 디스플레이에 전송하는 함수
+# 이미지를 디스플레이에 전송하는 함수 (구현 필요)
 def display_image(image):
-    width, height = 240, 280  # 디스플레이 해상도
-    image = image.resize((width, height))
-    pixels = list(image.getdata())
-
-    # 여기에서 RGB 데이터를 디스플레이의 색상 포맷에 맞게 변환하고 전송해야 합니다.
+    # 변환된 이미지를 디스플레이에 전송하는 로직을 여기에 구현합니다.
 
 def create_image_with_text(width, height, text):
-    image = Image.new('RGB', (width, height))
-    draw = ImageDraw.Draw(image)
+    pygame.init()
+    surface = pygame.Surface((width, height))
+
+    # 색상 패턴 그리기
     for y in range(0, height, 40):
         for x in range(0, width, 40):
             color = (x % 255, y % 255, (x + y) % 255)
-            draw.rectangle((x, y, x+40, y+40), fill=color)
+            pygame.draw.rect(surface, color, (x, y, 40, 40))
 
-    font = ImageFont.load_default()
-    text_width, text_height = draw.textsize(text, font=font)  # 여기를 수정함
-    text_x = (width - text_width) / 2
-    text_y = (height - text_height) / 2
-    draw.text((text_x, text_y), text, font=font, fill=(255, 255, 255))
+    # 텍스트 추가
+    font = pygame.font.Font(None, 36)
+    text_surface = font.render(text, True, (255, 255, 255))
+    text_rect = text_surface.get_rect(center=(width/2, height/2))
+    surface.blit(text_surface, text_rect)
 
-    return image
-
+    return pygame.image.tostring(surface, 'RGB')
 
 def main():
     init_display()
     width, height = 240, 280  # 디스플레이 해상도
-    image = create_image_with_text(width, height, "Hello, World!")
-    display_image(image)
+    image_data = create_image_with_text(width, height, "Hello, World!")
+    display_image(image_data)
 
 if __name__ == '__main__':
     try:
@@ -86,3 +83,4 @@ if __name__ == '__main__':
         pass
     finally:
         GPIO.cleanup()
+        pygame.quit()
