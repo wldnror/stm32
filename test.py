@@ -31,8 +31,7 @@ def init_display():
     GPIO.output(RST_PIN, GPIO.HIGH)
     time.sleep(0.1)
 
-    # 이 부분에서 초기화 명령을 보내야 합니다.
-    # 디스플레이의 데이터시트에 따라 명령이 달라질 수 있습니다.
+    # 초기화 명령 (디스플레이에 따라 다름)
 
 # 명령 전송 함수
 def write_command(command):
@@ -50,16 +49,23 @@ def write_data(data):
 
 # 화면 전체를 특정 색으로 채우는 함수
 def fill_color(color):
-    width, height = 240, 280  # 예시 해상도, 실제 해상도에 맞추어야 함
+    width, height = 240, 280  # 실제 해상도에 맞추어야 함
     write_command(0x2C)  # 메모리에 쓰기 시작 커맨드
-    pixels = [color] * width * height
+
+    # RGB 색상을 RGB565 형식으로 변환
+    red = (color[0] & 0xF8) << 8
+    green = (color[1] & 0xFC) << 3
+    blue = color[2] >> 3
+    rgb565 = red | green | blue
+
+    pixels = [rgb565 >> 8, rgb565 & 0xFF] * width * height
     for row in range(height):
-        write_data(pixels[width*row:width*(row+1)])
+        write_data(pixels[width*2*row:width*2*(row+1)])
 
 # 메인 함수
 def main():
     init_display()
-    fill_color([0xFF, 0x00, 0x00])  # 예를 들어, 화면을 빨간색으로 채웁니다.
+    fill_color([0xFF, 0x00, 0x00])  # 화면을 빨간색으로 채움
 
 if __name__ == '__main__':
     try:
