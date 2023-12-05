@@ -291,7 +291,7 @@ def update_oled_display():
         # 배터리 잔량 및 IP 주소 표시 조건에 따라 변경
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
-            draw.bitmap((-10, 0), battery_icon, fill=255)
+            draw.bitmap((0, -10), battery_icon, fill=255)
             draw.text((10, 10), f"{voltage_percentage:.0f}%", font=font_s, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((0, 0), ip_address, font=font_big, fill=255)
