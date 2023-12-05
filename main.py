@@ -87,6 +87,7 @@ font_s = ImageFont.truetype(font_path, 15)
 font_st = ImageFont.truetype(font_path, 11)
 font = ImageFont.truetype(font_path, 17)
 font_status = ImageFont.truetype(font_path, 13)
+font_1 = ImageFont.truetype(font_path, 13)
 
 current_command_index = 0
 status_message = ""
@@ -293,7 +294,7 @@ def update_oled_display():
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
             draw.bitmap((90, -12), battery_icon, fill=255)
-            draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_s, fill=255)
+            draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((63, 0), ip_address, font=font_big, fill=255)
             # 'GDSENG'와 'ver 2.7' 표시
@@ -310,11 +311,11 @@ def update_oled_display():
             draw.text((7, 20), status_message, font=font_status, fill=255)
         else:
             if command_names[current_command_index] != "시스템 업데이트":
-                draw.text((45, 15), f'설정 {current_command_index+1}번', font=font_s, fill=255)  # 폰트 사이즈 원래대로
+                draw.text((42, 20), f'설정 {current_command_index+1}번', font=font_s, fill=255)  # 폰트 사이즈 원래대로
             if command_names[current_command_index] == "ASGD S":
-                draw.text((32, 28), 'ASGD S', font=font, fill=255)
+                draw.text((32, 33), 'ASGD S', font=font_1, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
-                draw.text((18, 28), 'ASGD S PNP', font=font, fill=255)
+                draw.text((18, 33), 'ASGD S PNP', font=font_1, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((1, 28), '시스템 업데이트', font=font, fill=255)
 
