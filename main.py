@@ -284,7 +284,15 @@ def execute_command(command_index):
 
 def update_oled_display():
     global current_command_index
-    ip_address = get_ip_address()
+
+    # 시스템 설정 메뉴에서 아이피 주소 표시
+    if current_command_index == len(commands) - 1:
+        ip_address = get_ip_address()
+        draw.text((0, 0), ip_address, font=font_big, fill=255)
+    else:
+        # 기타 메뉴에서는 아이피 주소를 표시하지 않음
+        ip_address = ""
+    
     current_time = datetime.now().strftime('%H:%M:%S')
 
     # INA219 센서에서 백분율 데이터 읽기
@@ -292,18 +300,20 @@ def update_oled_display():
 
     with canvas(device) as draw:
         # 인터넷 연결 상태를 표시하는 부분을 삭제하거나 주석 처리합니다.
-        # draw.text((120, 0), connection_status, font=font_status, fill=255)
+        # draw.text((120, 0), connection_status
         # 배터리 아이콘 및 백분율 표시
         battery_icon = select_battery_icon(voltage_percentage)
         draw.bitmap((0, 0), battery_icon, fill=255)  # 아이콘 위치 조정 필요
         draw.text((10, 10), f"{voltage_percentage:.0f}%", font=font_s, fill=255)  # 텍스트 위치 조정 필요
 
-        # IP 주소를 우측 상단에 표시합니다. 좌표를 적절히 조정하세요.
-        draw.text((0, 0), ip_address, font=font_big, fill=255)
-        draw.text((85, 0), current_time, font=font_big, fill=255)
+        # 시스템 설정 메뉴에서 아이피 주소 표시
+        if current_command_index == len(commands) - 1:
+            draw.text((0, 0), ip_address, font=font_big, fill=255)
+        else:
+            draw.text((85, 0), current_time, font=font_big, fill=255)
 
         # INA219 데이터 표시
-        #draw.text((0, 10), f"전압: {voltage_percentage:.0f}%", font=font_s, fill=255)
+        # draw.text((0, 10), f"전압: {voltage_percentage:.0f}%", font=font_s, fill=255)
 
         # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
@@ -320,7 +330,6 @@ def update_oled_display():
 
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((1, 28), '시스템 업데이트', font=font, fill=255)
-
 
 try:
     while True:
