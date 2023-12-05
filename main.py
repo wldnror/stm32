@@ -296,7 +296,7 @@ def update_oled_display():
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((0, 0), ip_address, font=font_big, fill=255)
         
-        draw.text((85, 0), current_time, font=font_big, fill=255)
+        draw.text((83, 0), current_time, font=font_big, fill=255)
 
         # INA219 데이터 표시
         #draw.text((0, 10), f"전압: {voltage_percentage:.0f}%", font=font_s, fill=255)
