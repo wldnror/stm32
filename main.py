@@ -13,7 +13,7 @@ from ina219 import INA219, DeviceRangeError
 
 # INA219 설정
 SHUNT_OHMS = 0.1
-MAX_VOLTAGE = 5.0  # 최대 전압을 5V로 설정
+MAX_VOLTAGE = 3.7  # 최대 전압을 3.7V로 설정
 
 def read_ina219_percentage():
     try:
