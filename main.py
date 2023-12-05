@@ -36,6 +36,25 @@ def get_ip_address():
         return ip
     except Exception as e:
         return "0.0.0.0"
+
+# 배터리 아이콘 선택 함수
+def select_battery_icon(percentage):
+    if percentage < 20:
+        return low_battery_icon
+    elif percentage < 60:
+        return medium_battery_icon
+    elif percentage < 100:
+        return high_battery_icon
+    else:
+        return full_battery_icon
+
+# 배터리 아이콘 로드
+# 아이콘 파일들은 미리 준비해 놓고 해당 경로에 맞게 로드해야 합니다.
+low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+
         
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
@@ -274,6 +293,10 @@ def update_oled_display():
     with canvas(device) as draw:
         # 인터넷 연결 상태를 표시하는 부분을 삭제하거나 주석 처리합니다.
         # draw.text((120, 0), connection_status, font=font_status, fill=255)
+        # 배터리 아이콘 및 백분율 표시
+        battery_icon = select_battery_icon(voltage_percentage)
+        draw.bitmap((10, 0), battery_icon, fill=255)  # 아이콘 위치 조정 필요
+        draw.text((40, 0), f"{voltage_percentage:.0f}%", font=font_s, fill=255)  # 텍스트 위치 조정 필요
 
         # IP 주소를 우측 상단에 표시합니다. 좌표를 적절히 조정하세요.
         draw.text((0, 0), ip_address, font=font_big, fill=255)
