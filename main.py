@@ -295,32 +295,24 @@ def update_oled_display():
             draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_s, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((63, 0), ip_address, font=font_big, fill=255)
+            # 'GDSENG'와 'ver 2.7' 표시
+            draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
+            draw.text((94, 50), 'ver 2.7', font=font_big, fill=255)
         
         draw.text((0, 0), current_time, font=font_big, fill=255)
-
-        # INA219 데이터 표시
-        #draw.text((0, 10), f"전압: {voltage_percentage:.0f}%", font=font_s, fill=255)
 
         # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
             draw.rectangle(device.bounding_box, outline="white", fill="black")
             draw.text((7, 20), status_message, font=font_status, fill=255)
         else:
-            draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
-            draw.text((94, 50), 'ver 2.7', font=font_big, fill=255)
             draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_s, fill=255)
             if command_names[current_command_index] == "ASGD S":
-                #draw.text((32, 22), 'ASGD S', font=font, fill=255)
                 draw.text((32, 28), 'ASGD S', font=font, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
-                #draw.text((18, 22), 'ASGD S PNP', font=font, fill=255)
                 draw.text((18, 28), 'ASGD S PNP', font=font, fill=255)
-
             elif command_names[current_command_index] == "시스템 업데이트":
-                #draw.text((1, 22), '시스템 업데이트', font=font, fill=255)
                 draw.text((1, 28), '시스템 업데이트', font=font, fill=255)
-
-
 try:
     while True:
         if not GPIO.input(BUTTON_PIN_NEXT):
