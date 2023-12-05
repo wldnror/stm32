@@ -316,7 +316,7 @@ def update_oled_display():
             if command_names[current_command_index] == "ASGD S":
                 draw.text((30, 33), 'ASGD S', font=font_1, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
-                draw.text((8, 33), 'ASGD S PNP', font=font_1, fill=255)
+                draw.text((7, 33), 'ASGD S PNP', font=font_1, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((1, 28), '시스템 업데이트', font=font, fill=255)
 
