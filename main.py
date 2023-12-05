@@ -207,7 +207,7 @@ def lock_memory_procedure():
     ]
     try:
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        GPIO.output(LED_DEBUGGING, False)
+        GPIO.output([(LED_DEBUGGING, False), (LED_ERROR, False), (LED_SUCCESS, False)])
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
