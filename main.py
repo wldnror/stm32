@@ -83,7 +83,8 @@ GPIO.setup(LED_ERROR, GPIO.OUT)
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
 font_big = ImageFont.truetype(font_path, 11)
-font_s = ImageFont.truetype(font_path, 11)
+font_s = ImageFont.truetype(font_path, 13)
+font_st = ImageFont.truetype(font_path, 11)
 font = ImageFont.truetype(font_path, 17)
 font_status = ImageFont.truetype(font_path, 13)
 
@@ -298,6 +299,8 @@ def update_oled_display():
             # 'GDSENG'와 'ver 2.7' 표시
             draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
             draw.text((94, 50), 'ver 2.7', font=font_big, fill=255)
+            # '설정 1~3' 폰트 사이즈 변경
+            draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_st, fill=255)  # 폰트 사이즈 변경
         
         draw.text((0, 0), current_time, font=font_big, fill=255)
 
@@ -306,13 +309,15 @@ def update_oled_display():
             draw.rectangle(device.bounding_box, outline="white", fill="black")
             draw.text((7, 20), status_message, font=font_status, fill=255)
         else:
-            draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_s, fill=255)
+            if command_names[current_command_index] != "시스템 업데이트":
+                draw.text((45, 15), f'설정 {current_command_index+1}번', font=font_s, fill=255)  # 폰트 사이즈 원래대로
             if command_names[current_command_index] == "ASGD S":
                 draw.text((32, 28), 'ASGD S', font=font, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
                 draw.text((18, 28), 'ASGD S PNP', font=font, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((1, 28), '시스템 업데이트', font=font, fill=255)
+
 try:
     while True:
         if not GPIO.input(BUTTON_PIN_NEXT):
