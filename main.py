@@ -303,7 +303,7 @@ def update_oled_display():
         draw.text((85, 0), current_time, font=font_big, fill=255)
 
         # INA219 데이터 표시
-        draw.text((0, 10), f"전압: {voltage_percentage:.0f}%", font=font_s, fill=255)
+        #draw.text((0, 10), f"전압: {voltage_percentage:.0f}%", font=font_s, fill=255)
 
         # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
