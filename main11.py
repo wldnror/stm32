@@ -13,7 +13,7 @@ from ina219 import INA219, DeviceRangeError
 
 # INA219 설정
 SHUNT_OHMS = 0.1
-MAX_VOLTAGE = 5.0  # 최대 전압을 5V로 설정
+MAX_VOLTAGE = 3.7  # 최대 전압을 3.7V로 설정
 
 def read_ina219_percentage():
     try:
@@ -49,13 +49,10 @@ def select_battery_icon(percentage):
         return full_battery_icon
 
 # 배터리 아이콘 로드
-# 아이콘 파일들은 미리 준비해 놓고 해당 경로에 맞게 로드해야 합니다.
 low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-
-        
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
 LED_DEBUGGING = 23
@@ -85,10 +82,13 @@ GPIO.setup(LED_ERROR, GPIO.OUT)
 
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
-font_big = ImageFont.truetype(font_path, 10)
-font_s = ImageFont.truetype(font_path, 11)
+font_big = ImageFont.truetype(font_path, 11)
+font_s = ImageFont.truetype(font_path, 13)
+font_st = ImageFont.truetype(font_path, 11)
 font = ImageFont.truetype(font_path, 17)
 font_status = ImageFont.truetype(font_path, 13)
+font_1 = ImageFont.truetype(font_path, 20)
+font_time = ImageFont.truetype(font_path, 12)
 
 current_command_index = 0
 status_message = ""
@@ -110,7 +110,7 @@ def git_pull():
     
     # 업데이트 시작 시 디버깅 LED를 켜고 OLED에 상태 메시지 표시
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("시스템 업데이트 중...")
+    display_status_message("시스템 업데이트 중...   ")
 
     try:
         # 쉘 스크립트 실행
@@ -285,42 +285,40 @@ def execute_command(command_index):
 def update_oled_display():
     global current_command_index
     ip_address = get_ip_address()
-    current_time = datetime.now().strftime('%H:%M:%S')
+    current_time = datetime.now().strftime('%H시 %M분')
 
     # INA219 센서에서 백분율 데이터 읽기
     voltage_percentage = read_ina219_percentage()
 
     with canvas(device) as draw:
-        # 인터넷 연결 상태를 표시하는 부분을 삭제하거나 주석 처리합니다.
-        # draw.text((120, 0), connection_status, font=font_status, fill=255)
-        # 배터리 아이콘 및 백분율 표시
-        battery_icon = select_battery_icon(voltage_percentage)
-        draw.bitmap((0, 0), battery_icon, fill=255)  # 아이콘 위치 조정 필요
-        draw.text((10, 10), f"{voltage_percentage:.0f}%", font=font_s, fill=255)  # 텍스트 위치 조정 필요
-
-        # IP 주소를 우측 상단에 표시합니다. 좌표를 적절히 조정하세요.
-        draw.text((0, 0), ip_address, font=font_big, fill=255)
-        draw.text((85, 0), current_time, font=font_big, fill=255)
-
-        # INA219 데이터 표시
-        #draw.text((0, 10), f"전압: {voltage_percentage:.0f}%", font=font_s, fill=255)
+        # 배터리 잔량 및 IP 주소 표시 조건에 따라 변경
+        if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
+            battery_icon = select_battery_icon(voltage_percentage)
+            draw.bitmap((90, -12), battery_icon, fill=255)
+            draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
+        elif command_names[current_command_index] == "시스템 업데이트":
+            draw.text((63, 0), ip_address, font=font_big, fill=255)
+            # 'GDSENG'와 'ver 2.7' 표시
+            draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
+            draw.text((94, 50), 'ver 2.7', font=font_big, fill=255)
+            # '설정 1~3' 폰트 사이즈 변경
+            draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_st, fill=255)  # 폰트 사이즈 변경
+        
+        draw.text((0, -1), current_time, font=font_time, fill=255)
 
         # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
             draw.rectangle(device.bounding_box, outline="white", fill="black")
             draw.text((7, 20), status_message, font=font_status, fill=255)
         else:
-            draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
-            draw.text((95, 51), 'ver 2.5', font=font_big, fill=255)
-            draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_s, fill=255)
+            if command_names[current_command_index] != "시스템 업데이트":
+                draw.text((40, 20), f'설정 {current_command_index+1}번', font=font_s, fill=255)  # 폰트 사이즈 원래대로
             if command_names[current_command_index] == "ASGD S":
-                draw.text((32, 28), 'ASGD S', font=font, fill=255)
+                draw.text((30, 35), 'ASGD S', font=font_1, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
-                draw.text((18, 28), 'ASGD S PNP', font=font, fill=255)
-
+                draw.text((7, 35), 'ASGD S PNP', font=font_1, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((1, 28), '시스템 업데이트', font=font, fill=255)
-
 
 try:
     while True:
