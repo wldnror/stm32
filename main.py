@@ -110,7 +110,7 @@ def git_pull():
     
     # 업데이트 시작 시 디버깅 LED를 켜고 OLED에 상태 메시지 표시
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("시스템 업데이트 중... ")
+    display_status_message("시스템 업데이트 중...   ")
 
     try:
         # 쉘 스크립트 실행
