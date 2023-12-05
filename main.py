@@ -88,6 +88,7 @@ font_st = ImageFont.truetype(font_path, 11)
 font = ImageFont.truetype(font_path, 17)
 font_status = ImageFont.truetype(font_path, 13)
 font_1 = ImageFont.truetype(font_path, 20)
+font_time = ImageFont.truetype(font_path, 12)
 
 current_command_index = 0
 status_message = ""
@@ -303,7 +304,7 @@ def update_oled_display():
             # '설정 1~3' 폰트 사이즈 변경
             draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_st, fill=255)  # 폰트 사이즈 변경
         
-        draw.text((0, 0), current_time, font=font_big, fill=255)
+        draw.text((0, 0), current_time, font=font_time, fill=255)
 
         # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
