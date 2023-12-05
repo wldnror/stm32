@@ -10,7 +10,7 @@ from luma.oled.device import sh1107
 import subprocess
 from datetime import datetime
 from ina219 import INA219, DeviceRangeError
-
+#t
 # INA219 설정
 SHUNT_OHMS = 0.1
 MAX_VOLTAGE = 5.0  # 최대 전압을 5V로 설정
