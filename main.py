@@ -182,7 +182,7 @@ def unlock_memory():
         "-c", "shutdown"
     ]
     result = subprocess.run(openocd_command)
-    GPIO.output(LED_DEBUGGING, False)
+    GPIO.output(LED_DEBUGGING,LED_ERROR,LED_SUCCESS False)
     if result.returncode == 0:
         print("메모리 잠금 해제 성공!")
         display_progress_bar(100)
@@ -192,7 +192,7 @@ def unlock_memory():
 
 def lock_memory_procedure():
     display_progress_bar(0)
-    GPIO.output(LED_DEBUGGING, True)
+    GPIO.output(LED_DEBUGGING,LED_ERROR,LED_SUCCESS True)
     display_status_message("  메모리 잠금 중...")
     openocd_command = [
         "sudo",
@@ -252,7 +252,7 @@ def execute_command(command_index):
         GPIO.output(LED_ERROR, False)
         return
 
-    GPIO.output(LED_DEBUGGING, True)
+    GPIO.output(LED_DEBUGGING,LED_ERROR,LED_SUCCESS True)
     display_status_message("   업데이트 중...")
     process = subprocess.Popen(commands[command_index], shell=True)
     # 프로세스가 완료될 때까지 반복
@@ -263,7 +263,7 @@ def execute_command(command_index):
         time.sleep(1)
     # 프로세스 완료 후 결과 확인
     result = process.returncode
-    GPIO.output(LED_DEBUGGING, False)
+    GPIO.output(LED_DEBUGGING,LED_ERROR,LED_SUCCESS False)
     display_progress_bar(50)
 
     if result == 0:
