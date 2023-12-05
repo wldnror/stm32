@@ -295,8 +295,8 @@ def update_oled_display():
         # draw.text((120, 0), connection_status, font=font_status, fill=255)
         # 배터리 아이콘 및 백분율 표시
         battery_icon = select_battery_icon(voltage_percentage)
-        draw.bitmap((10, 0), battery_icon, fill=255)  # 아이콘 위치 조정 필요
-        draw.text((30, 30), f"{voltage_percentage:.0f}%", font=font_s, fill=255)  # 텍스트 위치 조정 필요
+        draw.bitmap((0, 0), battery_icon, fill=255)  # 아이콘 위치 조정 필요
+        draw.text((10, 10), f"{voltage_percentage:.0f}%", font=font_s, fill=255)  # 텍스트 위치 조정 필요
 
         # IP 주소를 우측 상단에 표시합니다. 좌표를 적절히 조정하세요.
         draw.text((0, 0), ip_address, font=font_big, fill=255)
