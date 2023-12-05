@@ -294,7 +294,7 @@ def update_oled_display():
             draw.bitmap((90, -12), battery_icon, fill=255)
             draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_s, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
-            draw.text((70, 0), ip_address, font=font_big, fill=255)
+            draw.text((65, 0), ip_address, font=font_big, fill=255)
         
         draw.text((0, 0), current_time, font=font_big, fill=255)
 
