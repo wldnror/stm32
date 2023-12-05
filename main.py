@@ -83,7 +83,7 @@ GPIO.setup(LED_ERROR, GPIO.OUT)
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
 font_big = ImageFont.truetype(font_path, 11)
-font_s = ImageFont.truetype(font_path, 13)
+font_s = ImageFont.truetype(font_path, 15)
 font_st = ImageFont.truetype(font_path, 11)
 font = ImageFont.truetype(font_path, 17)
 font_status = ImageFont.truetype(font_path, 13)
