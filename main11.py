@@ -9,12 +9,26 @@ from luma.core.render import canvas
 from luma.oled.device import sh1107
 import subprocess
 from datetime import datetime
+from ina219 import INA219, DeviceRangeError
+
+# INA219 설정
+SHUNT_OHMS = 0.1
+MAX_VOLTAGE = 5.0  # 최대 전압을 5V로 설정
+
+def read_ina219_percentage():
+    try:
+        ina = INA219(SHUNT_OHMS)
+        ina.configure()
+        voltage = ina.voltage()
+
+        # 백분율로 변환
+        percentage = (voltage / MAX_VOLTAGE) * 100
+        return min(percentage, 100)  # 최대값을 100%로 제한
+    except DeviceRangeError as e:
+        return 0
 
 def get_ip_address():
     try:
-        # 이 방법은 활성 소켓 연결이 있을 때 작동합니다.
-        # '8.8.8.8'은 구글의 DNS 서버 주소입니다.
-        # 실제로는 데이터를 보내지 않고, 연결을 시도만 해서 로컬 IP 주소를 얻습니다.
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
@@ -251,8 +265,11 @@ def execute_command(command_index):
 
 def update_oled_display():
     global current_command_index
-    ip_address = get_ip_address()  # 인터넷 연결 상태에 따라 IP 주소를 가져옵니다.
-    current_time = datetime.now().strftime('%H:%M:%S')  # 현재 시간을 HH:MM:SS 형식으로 가져옵니다.
+    ip_address = get_ip_address()
+    current_time = datetime.now().strftime('%H:%M:%S')
+
+    # INA219 센서에서 백분율 데이터 읽기
+    voltage_percentage = read_ina219_percentage()
 
     with canvas(device) as draw:
         # 인터넷 연결 상태를 표시하는 부분을 삭제하거나 주석 처리합니다.
@@ -260,7 +277,10 @@ def update_oled_display():
 
         # IP 주소를 우측 상단에 표시합니다. 좌표를 적절히 조정하세요.
         draw.text((0, 0), ip_address, font=font_big, fill=255)
-        draw.text((85, 0), current_time, font=font_big, fill=255)  
+        draw.text((85, 0), current_time, font=font_big, fill=255)
+
+        # INA219 데이터 표시
+        draw.text((0, 10), f"전압: {voltage_percentage:.0f}%", font=font_s, fill=255)
 
         # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
