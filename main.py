@@ -10,6 +10,7 @@ from luma.oled.device import sh1107
 import subprocess
 from datetime import datetime
 from ina219 import INA219, DeviceRangeError
+import smbus  # DS3231을 위한 추가
 
 # INA219 설정
 SHUNT_OHMS = 0.1
@@ -36,6 +37,15 @@ def get_ip_address():
         return ip
     except Exception as e:
         return "0.0.0.0"
+
+# DS3231에서 시간을 읽는 함수 추가
+def read_ds3231_time():
+    bus = smbus.SMBus(1)  # I2C 버스 1 사용
+    address = 0x68  # DS3231의 I2C 주소
+
+    # DS3231에서 시간 데이터 읽기
+    # 여기에 시간 데이터 읽는 로직을 구현합니다.
+    # ...
 
 # 배터리 아이콘 선택 함수
 def select_battery_icon(percentage):
@@ -285,7 +295,9 @@ def execute_command(command_index):
 def update_oled_display():
     global current_command_index
     ip_address = get_ip_address()
-    current_time = datetime.now().strftime('%H시 %M분')
+
+    # DS3231로부터 시간을 가져옵니다.
+    current_time = read_ds3231_time().strftime('%H시 %M분')
 
     # INA219 센서에서 백분율 데이터 읽기
     voltage_percentage = read_ina219_percentage()
