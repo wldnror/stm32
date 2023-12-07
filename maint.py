@@ -13,39 +13,39 @@ from ina219 import INA219, DeviceRangeError
 import smbus  # DS3231을 위한 추가
 import ntplib  # NTP 클라이언트 라이브러리 추가
 
-# # DS3231 설정 및 NTP 시간 동기화
-# def decimal_to_bcd(value):
-#     return (value // 10) * 16 + (value % 10)
+# DS3231 설정 및 NTP 시간 동기화
+def decimal_to_bcd(value):
+    return (value // 10) * 16 + (value % 10)
 
-# def set_ds3231_time(dt):
-#     bus = smbus.SMBus(1)
-#     address = 0x68
-#     bus.write_i2c_block_data(address, 0x00, [
-#         decimal_to_bcd(dt.second),
-#         decimal_to_bcd(dt.minute),
-#         decimal_to_bcd(dt.hour),
-#         decimal_to_bcd(dt.day),
-#         decimal_to_bcd(dt.month),
-#         decimal_to_bcd(dt.year - 2000)
-#     ])
+def set_ds3231_time(dt):
+    bus = smbus.SMBus(1)
+    address = 0x68
+    bus.write_i2c_block_data(address, 0x00, [
+        decimal_to_bcd(dt.second),
+        decimal_to_bcd(dt.minute),
+        decimal_to_bcd(dt.hour),
+        decimal_to_bcd(dt.day),
+        decimal_to_bcd(dt.month),
+        decimal_to_bcd(dt.year - 2000)
+    ])
 
-# def sync_time_with_ntp():
-#     try:
-#         client = ntplib.NTPClient()
-#         response = client.request('pool.ntp.org')
-#         ntp_time = datetime.strptime(time.ctime(response.tx_time), "%a %b %d %H:%M:%S %Y")
-#         set_ds3231_time(ntp_time)
-#         print("시간이 NTP 서버 시간으로 동기화되었습니다: ", ntp_time)
-#     except Exception as e:
-#         print("NTP 시간 동기화 실패: ", e)
+def sync_time_with_ntp():
+    try:
+        client = ntplib.NTPClient()
+        response = client.request('pool.ntp.org')
+        ntp_time = datetime.strptime(time.ctime(response.tx_time), "%a %b %d %H:%M:%S %Y")
+        set_ds3231_time(ntp_time)
+        print("시간이 NTP 서버 시간으로 동기화되었습니다: ", ntp_time)
+    except Exception as e:
+        print("NTP 시간 동기화 실패: ", e)
 
-# # 인터넷 연결 확인
-# def is_internet_connected():
-#     try:
-#         socket.create_connection(("www.google.com", 80), 2)
-#         return True
-#     except:
-#         return False
+# 인터넷 연결 확인
+def is_internet_connected():
+    try:
+        socket.create_connection(("www.google.com", 80), 2)
+        return True
+    except:
+        return False
         
 # INA219 설정
 SHUNT_OHMS = 0.1
