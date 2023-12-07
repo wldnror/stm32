@@ -318,7 +318,11 @@ def update_oled_display():
     ip_address = get_ip_address()
 
     # DS3231로부터 시간을 가져옵니다.
-    current_time = read_ds3231_time().strftime('%H시 %M분')
+        ds3231_time = read_ds3231_time()
+    if ds3231_time is not None:
+        current_time = ds3231_time.strftime('%H시 %M분')
+    else:
+        current_time = '시간 오류'
 
     # INA219 센서에서 백분율 데이터 읽기
     voltage_percentage = read_ina219_percentage()
