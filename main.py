@@ -40,12 +40,29 @@ def get_ip_address():
 
 # DS3231에서 시간을 읽는 함수 추가
 def read_ds3231_time():
-    bus = smbus.SMBus(1)  # I2C 버스 1 사용
-    address = 0x68  # DS3231의 I2C 주소
+    try:
+        bus = smbus.SMBus(1)  # I2C 버스 1 사용
+        address = 0x68  # DS3231의 I2C 주소
 
-    # DS3231에서 시간 데이터 읽기
-    # 여기에 시간 데이터 읽는 로직을 구현합니다.
-    # ...
+        # DS3231에서 시간 데이터 읽기
+        data = bus.read_i2c_block_data(address, 0x00, 7)
+
+        # 시간 데이터 파싱
+        second = data[0]
+        minute = data[1]
+        hour = data[2]
+        day = data[4]
+        month = data[5]
+        year = data[6]
+
+        # 시간 객체 생성
+        ds3231_time = datetime(year + 2000, month, day, hour, minute, second)
+
+        return ds3231_time
+    except Exception as e:
+        print(f"DS3231 시간 읽기 오류: {str(e)}")
+        return None
+
 
 # 배터리 아이콘 선택 함수
 def select_battery_icon(percentage):
