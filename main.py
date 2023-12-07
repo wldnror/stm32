@@ -276,7 +276,7 @@ def update_oled_display():
             draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
             draw.text((94, 50), 'ver 2.7', font=font_big, fill=255)
             draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_st, fill=255)  
-        draw.text((0, -2), current_time, font=font_time, fill=255)
+        draw.text((0, -4), current_time, font=font_time, fill=255)
         if status_message:
             draw.rectangle(device.bounding_box, outline="white", fill="black")
             draw.text((7, 20), status_message, font=font_status, fill=255)
