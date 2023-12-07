@@ -16,24 +16,39 @@ SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 2.6  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 
+
 def read_ina219_percentage():
     try:
         ina = INA219(SHUNT_OHMS)
         ina.configure()
         voltage = ina.voltage()
 
-        # 최소 전압 이하인 경우, 0%로 간주
         if voltage <= MIN_VOLTAGE:
             return 0
-        # 최대 전압 이상인 경우, 100%로 간주
         elif voltage >= MAX_VOLTAGE:
             return 100
         else:
-            # 백분율로 변환 (실제 사용 가능 범위를 기준으로)
             percentage = ((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100
             return min(max(percentage, 0), 100)
     except DeviceRangeError as e:
         return 0
+try:
+    while True:
+        # 배터리 수준을 확인하고 0%면 시스템 종료
+        if read_ina219_percentage() == 0:
+            print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
+            os.system('sudo shutdown now')  # 시스템을 종료합니다.
+
+        if not GPIO.input(BUTTON_PIN_NEXT):
+            current_command_index = (current_command_index + 1) % len(commands)
+            time.sleep(0.1)
+        elif not GPIO.input(BUTTON_PIN_EXECUTE):
+            execute_command(current_command_index)
+            time.sleep(0.1)
+        update_oled_display()
+        time.sleep(5)
+except KeyboardInterrupt:
+    GPIO.cleanup()
 
 def get_ip_address():
     try:
