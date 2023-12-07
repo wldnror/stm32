@@ -13,7 +13,7 @@ from ina219 import INA219, DeviceRangeError
 
 # INA219 설정
 SHUNT_OHMS = 0.1
-MIN_VOLTAGE = 3.0  # 최소 작동 전압
+MIN_VOLTAGE = 2.8  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 
 def read_ina219_percentage():
@@ -293,7 +293,12 @@ def execute_command(command_index):
 def update_oled_display():
     global current_command_index
     ip_address = get_ip_address()
-    current_time = datetime.now().strftime('%H시 %M분')
+
+    # 현재 시간을 12시간 형식으로 설정
+    now = datetime.now()
+    am_pm = "오전" if now.hour < 12 else "오후"
+    current_time = now.strftime('%I시 %M분')
+    current_time = f"{am_pm} {current_time}"
 
     # INA219 센서에서 백분율 데이터 읽기
     voltage_percentage = read_ina219_percentage()
