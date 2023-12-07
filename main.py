@@ -300,13 +300,18 @@ def get_ip_address():
     except Exception as e:
         return "0.0.0.0"
 
+def shutdown_system():
+    display_status_message("시스템 종료 중...")
+    time.sleep(2)  # 메시지를 2초 동안 표시
+    os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
+
 try:
     while True:
         # 배터리 수준을 확인하고 0%면 시스템 종료
         if read_ina219_percentage() == 0:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
-            os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
-
+            shutdown_system()  # 수정된 부분
+            
         if not GPIO.input(BUTTON_PIN_NEXT):
             current_command_index = (current_command_index + 1) % len(commands)
             time.sleep(0.1)
@@ -315,5 +320,9 @@ try:
             time.sleep(0.1)
         update_oled_display()
         time.sleep(0.1)
+
 except KeyboardInterrupt:
     GPIO.cleanup()
+
+
+
