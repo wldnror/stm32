@@ -47,6 +47,7 @@ try:
         update_oled_display()
         time.sleep(10)
 except KeyboardInterrupt:
+    GPIO.cleanup()
 
 def get_ip_address():
     try:
