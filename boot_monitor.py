@@ -10,13 +10,13 @@ device = sh1107(serial, rotate=1)
 
 # 폰트 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
-font = ImageFont.truetype(font_path, 14)
+font = ImageFont.truetype(font_path, 12)
 
 def display_loading_bar(duration=5):
     start_time = time.time()
     while time.time() - start_time < duration:
         with canvas(device) as draw:
-            draw.text((10, 10), "부팅 중...", font=font, fill=255)
+            draw.text((10, 8), "부팅 중...", font=font, fill=255)
             draw.text((10, 20), "잠시만 기다려주세요!", font=font, fill=255)
             # 로딩 바
             progress = (time.time() - start_time) / duration
