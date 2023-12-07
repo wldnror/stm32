@@ -11,6 +11,13 @@ import subprocess
 from datetime import datetime
 from ina219 import INA219, DeviceRangeError
 
+# GPIO 핀 설정
+BUTTON_PIN_NEXT = 27
+BUTTON_PIN_EXECUTE = 17
+LED_DEBUGGING = 23
+LED_SUCCESS = 24
+LED_ERROR = 25
+
 # INA219 설정
 SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 2.6  # 최소 작동 전압
@@ -31,64 +38,6 @@ def read_ina219_percentage():
             return min(max(percentage, 0), 100)
     except DeviceRangeError as e:
         return 0
-try:
-    while True:
-        # 배터리 수준을 확인하고 0%면 시스템 종료
-        if read_ina219_percentage() == 0:
-            print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
-            os.system('sudo shutdown now')  # 시스템을 종료합니다.
-
-        if not GPIO.input(BUTTON_PIN_NEXT):
-            current_command_index = (current_command_index + 1) % len(commands)
-            time.sleep(0.1)
-        elif not GPIO.input(BUTTON_PIN_EXECUTE):
-            execute_command(current_command_index)
-            time.sleep(0.1)
-        update_oled_display()
-        time.sleep(10)
-except KeyboardInterrupt:
-    GPIO.cleanup()
-
-def get_ip_address():
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception as e:
-        return "0.0.0.0"
-
-# 배터리 아이콘 선택 함수
-def select_battery_icon(percentage):
-    if percentage < 20:
-        return low_battery_icon
-    elif percentage < 60:
-        return medium_battery_icon
-    elif percentage < 100:
-        return high_battery_icon
-    else:
-        return full_battery_icon
-
-# 배터리 아이콘 로드
-low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-BUTTON_PIN_NEXT = 27
-BUTTON_PIN_EXECUTE = 17
-LED_DEBUGGING = 23
-LED_SUCCESS = 24
-LED_ERROR = 25
-
-# 명령어 설정
-commands = [
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V353_0X009D2B79.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
-    "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
-]
-
-command_names = ["ASGD S", "ASGD S PNP", "시스템 업데이트"]
 
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
@@ -112,70 +61,84 @@ font_status = ImageFont.truetype(font_path, 13)
 font_1 = ImageFont.truetype(font_path, 20)
 font_time = ImageFont.truetype(font_path, 12)
 
+# 배터리 아이콘 로드
+low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+
+# 배터리 아이콘 선택 함수
+def select_battery_icon(percentage):
+    if percentage < 20:
+        return low_battery_icon
+    elif percentage < 60:
+        return medium_battery_icon
+    elif percentage < 100:
+        return high_battery_icon
+    else:
+        return full_battery_icon
+
+# 명령어 설정
+commands = [
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V353_0X009D2B79.bin verify reset exit 0x08000000\"",
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
+    "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
+]
+
+command_names = ["ASGD S", "ASGD S PNP", "시스템 업데이트"]
+
 current_command_index = 0
 status_message = ""
 
 def git_pull():
-    # 쉘 스크립트 경로 설정
     shell_script_path = '/home/user/stm32/git-pull.sh'
-    
-    # 쉘 스크립트 파일이 있는지 확인하고 없으면 생성
     if not os.path.isfile(shell_script_path):
         with open(shell_script_path, 'w') as script_file:
             script_file.write("#!/bin/bash\n")
             script_file.write("cd /home/user/stm32\n")
             script_file.write("git pull\n")
-            script_file.flush()  # Python의 내부 버퍼를 비웁니다.
-            os.fsync(script_file.fileno())  # 파일 시스템의 버퍼를 디스크에 기록합니다.
+            script_file.flush()
+            os.fsync(script_file.fileno())
 
-    os.chmod(shell_script_path, 0o755)  # 스크립트 파일에 실행 권한 부여
-    
-    # 업데이트 시작 시 디버깅 LED를 켜고 OLED에 상태 메시지 표시
+    os.chmod(shell_script_path, 0o755)
+
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("시스템 업데이트 중...   ")
+    display_status_message("시스템 업데이트 중...")
 
     try:
-        # 쉘 스크립트 실행
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        # LED 초기화
         GPIO.output(LED_DEBUGGING, False)
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
         
         if result.returncode == 0:
             print("업데이트 성공!")
-            time.sleep(1)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
-            restart_script()  # 여기에서 스크립트를 재시작합니다.
+            time.sleep(1)
+            restart_script()
         else:
             print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
-            print("오류 메시지:", result.stderr)  # 오류 메시지 출력
+            print("오류 메시지:", result.stderr)
             GPIO.output(LED_ERROR, True)
             display_status_message("업데이트 실패!")
-            time.sleep(1)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
+            time.sleep(1)
 
     except Exception as e:
         print("명령 실행 중 오류 발생:", str(e))
-       
-        # 오류 LED를 켜고 OLED에 상태 메시지 표시
         GPIO.output(LED_ERROR, True)
         display_status_message("명령 실행 중 오류 발생")
-        time.sleep(1)  # 메시지를 충분히 보여주기 위해 약간 대기합니다.
+        time.sleep(1)
     finally:
-        # LED 상태를 원래대로 복구
         GPIO.output(LED_DEBUGGING, False)
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
 
-
 def restart_script():
     print("스크립트를 재시작합니다.")
     os.execv(sys.executable, [sys.executable] + sys.argv)
-       
+
 def display_progress_bar(percentage):
     with canvas(device) as draw:
-        # 전체 진행 바
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
-        # 현재 진행 상황 표시
         draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")
 
 def display_status_message(message):
@@ -209,13 +172,13 @@ def unlock_memory():
         print("메모리 잠금 해제 성공!")
         display_progress_bar(100)
     else:
-        print("    메모리 잠금 해제 실패!")
-    return result.returncode == 0
+        print("메모리 잠금 해제 실패!")
+        return result.returncode == 0
 
 def lock_memory_procedure():
     display_progress_bar(0)
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("  메모리 잠금 중...")
+    display_status_message("메모리 잠금 중...")
     openocd_command = [
         "sudo",
         "openocd",
@@ -233,14 +196,14 @@ def lock_memory_procedure():
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
-            display_status_message(" 메모리 잠금 성공")
+            display_status_message("메모리 잠금 성공")
             display_progress_bar(100)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
-            display_status_message(" 메모리 잠금 실패")
+            display_status_message("메모리 잠금 실패")
             display_progress_bar(50)
             time.sleep(1)
             GPIO.output(LED_ERROR, False)
@@ -253,45 +216,36 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR, False)
 
 def execute_command(command_index):
-    print("  업데이트 시도...")
+    print("업데이트 시도...")
     display_progress_bar(0)
-    # LED 초기화
     GPIO.output(LED_DEBUGGING, False)
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
-    # GitHub 업데이트 명령어 실행
-    if command_index == len(commands) - 1:  # commands 리스트의 마지막 항목이면
+    if command_index == len(commands) - 1:
         git_pull()
         return
-    if command_index == 2:  # 메모리 잠금 명령
+    if command_index == 2:
         lock_memory_procedure()
         return
-
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
-        display_status_message("   잠금 해제 실패")
+        display_status_message("잠금 해제 실패")
         time.sleep(2)
         GPIO.output(LED_ERROR, False)
         return
-
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("   업데이트 중...")
+    display_status_message("업데이트 중...")
     process = subprocess.Popen(commands[command_index], shell=True)
-    # 프로세스가 완료될 때까지 반복
-    
     while process.poll() is None:
-    # "업데이트 중..." 메시지를 계속 표시
-        display_status_message("    업데이트 중...")
+        display_status_message("업데이트 중...")
         time.sleep(1)
-    # 프로세스 완료 후 결과 확인
     result = process.returncode
     GPIO.output(LED_DEBUGGING, False)
     display_progress_bar(50)
-
     if result == 0:
         print(f"'{commands[command_index]}' 업데이트 성공!")
         GPIO.output(LED_SUCCESS, True)
-        display_status_message("   업데이트 성공")
+        display_status_message("업데이트 성공")
         display_progress_bar(100)
         time.sleep(1)
         GPIO.output(LED_SUCCESS, False)
@@ -299,7 +253,7 @@ def execute_command(command_index):
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
-        display_status_message("   업데이트 실패")
+        display_status_message("업데이트 실패")
         display_progress_bar(50)
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
@@ -307,39 +261,28 @@ def execute_command(command_index):
 def update_oled_display():
     global current_command_index
     ip_address = get_ip_address()
-
-    # 현재 시간을 12시간 형식으로 설정
     now = datetime.now()
     am_pm = "오전" if now.hour < 12 else "오후"
     current_time = now.strftime('%I시 %M분')
     current_time = f"{am_pm} {current_time}"
-
-    # INA219 센서에서 백분율 데이터 읽기
     voltage_percentage = read_ina219_percentage()
-
     with canvas(device) as draw:
-        # 배터리 잔량 및 IP 주소 표시 조건에 따라 변경
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
             draw.bitmap((90, -12), battery_icon, fill=255)
             draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((63, 0), ip_address, font=font_big, fill=255)
-            # 'GDSENG'와 'ver 2.7' 표시
             draw.text((0, 51), 'GDSENG', font=font_big, fill=255)
             draw.text((94, 50), 'ver 2.7', font=font_big, fill=255)
-            # '설정 1~3' 폰트 사이즈 변경
-            draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_st, fill=255)  # 폰트 사이즈 변경
-        
+            draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_st, fill=255)  
         draw.text((0, -2), current_time, font=font_time, fill=255)
-
-        # 기존의 상태 메시지 및 기타 텍스트 표시 코드
         if status_message:
             draw.rectangle(device.bounding_box, outline="white", fill="black")
             draw.text((7, 20), status_message, font=font_status, fill=255)
         else:
             if command_names[current_command_index] != "시스템 업데이트":
-                draw.text((40, 20), f'설정 {current_command_index+1}번', font=font_s, fill=255)  # 폰트 사이즈 원래대로
+                draw.text((40, 20), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
             if command_names[current_command_index] == "ASGD S":
                 draw.text((30, 35), 'ASGD S', font=font_1, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
@@ -347,8 +290,23 @@ def update_oled_display():
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((1, 28), '시스템 업데이트', font=font, fill=255)
 
+def get_ip_address():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception as e:
+        return "0.0.0.0"
+
 try:
     while True:
+        # 배터리 수준을 확인하고 0%면 시스템 종료
+        if read_ina219_percentage() == 0:
+            print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
+            os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
+
         if not GPIO.input(BUTTON_PIN_NEXT):
             current_command_index = (current_command_index + 1) % len(commands)
             time.sleep(0.1)
