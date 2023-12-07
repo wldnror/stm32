@@ -25,4 +25,4 @@ def display_loading_bar(duration=5):
         time.sleep(0.1)
 
 if __name__ == '__main__':
-    display_loading_bar(10)
+    display_loading_bar(5)
