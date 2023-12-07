@@ -46,7 +46,7 @@ try:
             execute_command(current_command_index)
             time.sleep(0.1)
         update_oled_display()
-        time.sleep(5)
+        time.sleep(10)
 except KeyboardInterrupt:
     GPIO.cleanup()
 
