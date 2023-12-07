@@ -38,29 +38,33 @@ def get_ip_address():
     except Exception as e:
         return "0.0.0.0"
 
-# DS3231에서 시간을 읽는 함수 추가
+def bcd_to_decimal(value):
+    """ BCD 형식의 값을 10진수로 변환합니다. """
+    return (value // 16) * 10 + (value % 16)
+
 def read_ds3231_time():
     try:
-        bus = smbus.SMBus(1)  # I2C 버스 1 사용
-        address = 0x68  # DS3231의 I2C 주소
+        bus = smbus.SMBus(1)
+        address = 0x68
 
-        # DS3231에서 시간 데이터 읽기
         data = bus.read_i2c_block_data(address, 0x00, 7)
 
-        # 시간 데이터 파싱
-        second = data[0]
-        minute = data[1]
-        hour = data[2]
-        day = data[4]
-        month = data[5]
-        year = data[6]
+        # BCD 형식의 데이터를 10진수로 변환
+        second = bcd_to_decimal(data[0])
+        minute = bcd_to_decimal(data[1])
+        hour = bcd_to_decimal(data[2])
+        day = bcd_to_decimal(data[4])
+        month = bcd_to_decimal(data[5])
+        year = bcd_to_decimal(data[6])
 
-        # 시간 객체 생성
-        ds3231_time = datetime(year + 2000, month, day, hour, minute, second)
+        # 유효성 검사 추가
+        if not (0 <= second < 60 and 0 <= minute < 60 and 0 <= hour < 24):
+            raise ValueError("Invalid time data")
 
-        return ds3231_time
+        return datetime(year + 2000, month, day, hour, minute, second)
     except Exception as e:
         print(f"DS3231 시간 읽기 오류: {str(e)}")
+        # 기본 시간 반환 또는 오류 처리를 추가할 수 있습니다.
         return None
 
 
