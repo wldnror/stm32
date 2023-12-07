@@ -11,8 +11,6 @@ import subprocess
 from datetime import datetime
 from ina219 import INA219, DeviceRangeError
 
-# INA219 설정
-SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.0  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 
@@ -23,8 +21,13 @@ def read_ina219_percentage():
         voltage = ina.voltage()
 
         # 백분율로 변환
-        percentage = (voltage / MAX_VOLTAGE) * 100
-        return min(percentage, 100)  # 최대값을 100%로 제한
+        if voltage < MIN_VOLTAGE:
+            return 0
+        elif voltage > MAX_VOLTAGE:
+            return 100
+        else:
+            percentage = ((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100
+            return min(max(percentage, 0), 100)
     except DeviceRangeError as e:
         return 0
 
