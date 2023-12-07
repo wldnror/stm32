@@ -19,7 +19,8 @@ def display_loading_bar(duration=5):
             draw.text((10, 20), "부팅 중...", font=font, fill=255)
             # 로딩 바
             progress = (time.time() - start_time) / duration
-            draw.rectangle([(5, 40), (125 * progress, 50)], outline="white", fill="white")
+            progress_width = max(5, 125 * progress)  # 최소 너비를 5로 설정
+            draw.rectangle([(5, 40), (progress_width, 50)], outline="white", fill="white")
         time.sleep(0.1)
 
 if __name__ == '__main__':
