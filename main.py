@@ -13,7 +13,7 @@ from ina219 import INA219, DeviceRangeError
 
 # INA219 설정
 SHUNT_OHMS = 0.1
-MIN_VOLTAGE = 2.8  # 최소 작동 전압
+MIN_VOLTAGE = 2.6  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 
 def read_ina219_percentage():
