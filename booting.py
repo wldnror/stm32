@@ -9,7 +9,7 @@ serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
 
 # 폰트 설정
-font_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'  # 폰트 경로를 확인하세요
+font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'  # 폰트 경로를 확인하세요
 font = ImageFont.truetype(font_path, 14)
 
 def display_boot_message():
