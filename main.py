@@ -55,7 +55,7 @@ def trigger_execute_pin():
 
     # GPIO 17번 핀을 고전압 상태로 설정
     GPIO.output(BUTTON_PIN_EXECUTE, GPIO.HIGH)
-    time.sleep(0.1)  # 버튼이 눌린 것처럼 일시적으로 핀 상태를 유지
+    time.sleep(0.3)  # 버튼이 눌린 것처럼 일시적으로 핀 상태를 유지
     GPIO.output(BUTTON_PIN_EXECUTE, GPIO.LOW)
 
     # 다시 입력 모드로 전환
