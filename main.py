@@ -310,14 +310,14 @@ def shutdown_system():
     time.sleep(5)  # 메시지를 5초 동안 표시
 
     # 디스플레이 전원을 끄는 코드 추가
-    #GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
+    GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
 
-    #os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
+    os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
 
 try:
     while True:
         # 배터리 수준을 확인하고 0%면 시스템 종료
-        if read_ina219_percentage() == 5:
+        if read_ina219_percentage() == 0:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
             
