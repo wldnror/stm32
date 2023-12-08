@@ -318,6 +318,7 @@ def update_oled_display():
     ip_address = get_ip_address()
     now = datetime.now()
     current_time = now.strftime('%I시 %M분')  # 기본 시간 형식
+    mode_icon = auto_mode_icon if is_auto_mode else manual_mode_icon
 
     if command_names[current_command_index] != "시스템 업데이트":
         # "시스템 업데이트"가 아닌 다른 메뉴에서는 오전/오후를 표시
