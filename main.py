@@ -106,9 +106,9 @@ def git_pull():
 
     with canvas(device) as draw:
         # '시스템' 메시지를 (0, 23) 위치에 표시
-        draw.text((27, 17), "시스템", font=font, fill=255)
+        draw.text((27, 15), "시스템", font=font, fill=255)
         # '업데이트 중' 메시지를 (0, 38) 위치에 표시
-        draw.text((15, 23), "업데이트 중", font=font, fill=255)
+        draw.text((15, 25), "업데이트 중", font=font, fill=255)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -164,7 +164,7 @@ def unlock_memory():
         # '메모리 잠금' 메시지를 (30, 10) 위치에 표시
         draw.text((17, 10), "메모리 잠금", font=font, fill=255)
         # '해제 중' 메시지를 (30, 25) 위치에 표시
-        draw.text((33, 27), "해제 중", font=font, fill=255)
+        draw.text((33, 29), "해제 중", font=font, fill=255)
 
     print("메모리 해제 시도...")
     time.sleep(1)
