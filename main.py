@@ -328,9 +328,9 @@ def get_ip_address():
 def shutdown_system():
     with canvas(device) as draw:
         # 첫 번째 메시지를 (0, 0) 위치에 표시
-        draw.text((20, 0), "배터리 부족", font=font, fill=255)
+        draw.text((20, 25), "배터리 부족", font=font, fill=255)
         # 두 번째 메시지를 (0, 25) 위치에 표시
-        draw.text((25, 25), "시스템 종료 중...", font=font_st, fill=255)
+        draw.text((25, 50), "시스템 종료 중...", font=font_st, fill=255)
 
     time.sleep(5)  # 메시지를 5초 동안 표시
 
