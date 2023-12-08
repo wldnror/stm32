@@ -104,12 +104,12 @@ def git_pull():
 
     GPIO.output(LED_DEBUGGING, True)
 
-with canvas(device) as draw:
-    # '시스템' 메시지를 (0, 23) 위치에 표시
-    draw.text((0, 23), "시스템", font=font, fill=255)
-    # '업데이트 중' 메시지를 (0, 38) 위치에 표시
-    draw.text((0, 38), "업데이트 중", font=font, fill=255)
-    
+    with canvas(device) as draw:
+        # '시스템' 메시지를 (0, 23) 위치에 표시
+        draw.text((0, 23), "시스템", font=font, fill=255)
+        # '업데이트 중' 메시지를 (0, 38) 위치에 표시
+        draw.text((0, 38), "업데이트 중", font=font, fill=255)
+
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         GPIO.output(LED_DEBUGGING, False)
