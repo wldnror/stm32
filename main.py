@@ -154,7 +154,7 @@ def display_status_message(message, position=(0, 0), font_size=17):
 def unlock_memory():
     display_progress_bar(0)
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("메모리 잠금\n해제 중",position=(0, 25), font_size=15)
+    display_status_message("메모리 잠금\n해제 중",position=(10, 20), font_size=15)
     print("메모리 해제 시도...")
     time.sleep(1)
     display_progress_bar(50)
@@ -180,7 +180,7 @@ def unlock_memory():
 def lock_memory_procedure():
     display_progress_bar(0)
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("메모리 잠금 중...",position=(0, 25), font_size=12)
+    display_status_message("메모리 잠금 중",position=(0, 25), font_size=15)
     openocd_command = [
         "sudo",
         "openocd",
@@ -198,14 +198,14 @@ def lock_memory_procedure():
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
-            display_status_message("메모리 잠금 성공", position=(0, 25), font_size=10)
+            display_status_message("메모리 잠금 성공", position=(0, 25), font_size=15)
             display_progress_bar(100)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
-            display_status_message("메모리 잠금 실패", position=(0, 25), font_size=10)
+            display_status_message("메모리 잠금 실패", position=(0, 25), font_size=15)
             display_progress_bar(50)
             time.sleep(1)
             GPIO.output(LED_ERROR, False)
@@ -231,15 +231,15 @@ def execute_command(command_index):
         return
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
-        display_status_message("메모리 잠금 해제 실패", position=(30, 25), font_size=10)
+        display_status_message("메모리 잠금\n해제 실패", position=(30, 25), font_size=15)
         time.sleep(2)
         GPIO.output(LED_ERROR, False)
         return
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("업데이트 중...")
+    display_status_message("업데이트 중...", position=(5, 25), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
     while process.poll() is None:
-        display_status_message("업데이트 중...")
+        display_status_message("업데이트 중...", position=(5, 25), font_size=15)
         time.sleep(1)
     result = process.returncode
     GPIO.output(LED_DEBUGGING, False)
@@ -247,7 +247,7 @@ def execute_command(command_index):
     if result == 0:
         print(f"'{commands[command_index]}' 업데이트 성공!")
         GPIO.output(LED_SUCCESS, True)
-        display_status_message("업데이트 성공")
+        display_status_message("업데이트 성공", position=(5, 25), font_size=15)
         display_progress_bar(100)
         time.sleep(1)
         GPIO.output(LED_SUCCESS, False)
@@ -255,7 +255,7 @@ def execute_command(command_index):
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
-        display_status_message("업데이트 실패")
+        display_status_message("업데이트 실패", position=(5, 25), font_size=15)
         display_progress_bar(50)
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
