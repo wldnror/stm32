@@ -157,9 +157,9 @@ def unlock_memory():
 
     with canvas(device) as draw:
         # '메모리 잠금' 메시지를 (30, 10) 위치에 표시
-        draw.text((30, 10), "메모리 잠금", font=font, fill=255)
+        draw.text((10, 10), "메모리 잠금", font=font, fill=255)
         # '해제 중' 메시지를 (30, 25) 위치에 표시
-        draw.text((30, 25), "해제 중", font=font, fill=255)
+        draw.text((30, 27), "해제 중", font=font, fill=255)
 
     print("메모리 해제 시도...")
     time.sleep(1)
