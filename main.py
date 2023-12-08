@@ -38,22 +38,21 @@ def read_and_check_voltage():
     except DeviceRangeError as e:
         return 0
 
-# 기존의 GPIO 설정 부분
-GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+# GPIO 설정
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(LED_DEBUGGING, GPIO.OUT)
+GPIO.setup(LED_SUCCESS, GPIO.OUT)
+GPIO.setup(LED_ERROR, GPIO.OUT)
+
+# BUTTON_PIN_EXECUTE를 출력으로 설정
+GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.OUT)
 
 # trigger_execute_pin 함수 수정
 def trigger_execute_pin():
-    # 출력 모드로 전환
-    GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.OUT)
-    
-    # GPIO 17번 핀을 프로그래밍 방식으로 활성화하는 로직
     GPIO.output(BUTTON_PIN_EXECUTE, GPIO.HIGH)
-    time.sleep(0.1)  # 버튼이 눌린 것처럼 일시적으로 핀 상태를 유지
+    time.sleep(0.1)
     GPIO.output(BUTTON_PIN_EXECUTE, GPIO.LOW)
-
-    # 다시 입력 모드로 전환
-    GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
 
 
 
