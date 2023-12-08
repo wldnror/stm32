@@ -108,7 +108,7 @@ def git_pull():
         # '시스템' 메시지를 (0, 23) 위치에 표시
         draw.text((33, 8), "시스템", font=font, fill=255)
         # '업데이트 중' 메시지를 (0, 38) 위치에 표시
-        draw.text((17, 25), "업데이트 중", font=font, fill=255)
+        draw.text((17, 27), "업데이트 중", font=font, fill=255)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -124,7 +124,7 @@ def git_pull():
             print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
             print("오류 메시지:", result.stderr)
             GPIO.output(LED_ERROR, True)
-            display_status_message("업데이트 실패!")
+            display_status_message("업데이트 실패!",position=(15, 20), font_size=15)
             time.sleep(1)
 
     except Exception as e:
