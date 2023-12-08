@@ -141,9 +141,11 @@ def display_progress_bar(percentage):
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
         draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")
 
-def display_status_message(message):
-    global status_message
+def display_status_message(message, position=(0, 0), font_size=17):
+    global status_message, message_position, message_font_size
     status_message = message
+    message_position = position
+    message_font_size = font_size
     update_oled_display()
     time.sleep(1)
     status_message = ""
@@ -196,14 +198,14 @@ def lock_memory_procedure():
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
-            display_status_message("메모리 잠금 성공")
+            display_status_message("메모리 잠금 성공", position=(30, 25), font_size=20)
             display_progress_bar(100)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
-            display_status_message("메모리 잠금 실패")
+            display_status_message("메모리 잠금 실패", position=(30, 25), font_size=20)
             display_progress_bar(50)
             time.sleep(1)
             GPIO.output(LED_ERROR, False)
@@ -259,7 +261,7 @@ def execute_command(command_index):
         GPIO.output(LED_ERROR, False)
 
 def update_oled_display():
-    global current_command_index
+    global current_command_index, status_message, message_position, message_font_size
     ip_address = get_ip_address()
     now = datetime.now()
     current_time = now.strftime('%I시 %M분')  # 기본 시간 형식
@@ -269,6 +271,7 @@ def update_oled_display():
         am_pm = "오전" if now.hour < 12 else "오후"
         current_time = f"{am_pm} {current_time}"
     voltage_percentage = read_ina219_percentage()
+
     with canvas(device) as draw:
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
@@ -280,9 +283,11 @@ def update_oled_display():
             draw.text((90, 50), 'ver 2 .7', font=font_big, fill=255)
             draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_st, fill=255)  
         draw.text((0, -3), current_time, font=font_time, fill=255)
+
+        # 사용자 지정 위치와 폰트 크기로 메시지 표시
         if status_message:
-            draw.rectangle(device.bounding_box, outline="white", fill="black")
-            draw.text((7, 20), status_message, font=font_status, fill=255)
+            font_custom = ImageFont.truetype(font_path, message_font_size)
+            draw.text(message_position, status_message, font=font_custom, fill=255)
         else:
             if command_names[current_command_index] != "시스템 업데이트":
                 draw.text((40, 20), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
