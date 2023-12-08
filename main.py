@@ -22,6 +22,29 @@ LED_ERROR = 25
 SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.1  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
+# 새로운 변수 추가
+previous_voltage = None
+voltage_drop_threshold = 0.1  # 전압이 이 값 이상 떨어질 때 반응
+
+def read_and_check_voltage():
+    global previous_voltage
+    try:
+        ina = INA219(SHUNT_OHMS)
+        ina.configure()
+        voltage = ina.voltage()
+        if previous_voltage is not None and (previous_voltage - voltage) >= voltage_drop_threshold:
+            trigger_execute_pin()
+        previous_voltage = voltage
+    except DeviceRangeError as e:
+        return 0
+
+def trigger_execute_pin():
+    # GPIO 17번 핀을 프로그래밍 방식으로 활성화하는 로직
+    GPIO.output(BUTTON_PIN_EXECUTE, GPIO.HIGH)
+    time.sleep(0.1)  # 버튼이 눌린 것처럼 일시적으로 핀 상태를 유지
+    GPIO.output(BUTTON_PIN_EXECUTE, GPIO.LOW)
+
+
 
 def read_ina219_percentage():
     try:
@@ -352,6 +375,9 @@ try:
         if read_ina219_percentage() == 0:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
+         
+        # 전압 변화 감지
+        read_and_check_voltage()
             
         if not GPIO.input(BUTTON_PIN_NEXT):
             current_command_index = (current_command_index + 1) % len(commands)
