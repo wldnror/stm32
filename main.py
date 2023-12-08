@@ -198,14 +198,14 @@ def lock_memory_procedure():
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
-            display_status_message("메모리 잠금 성공", position=(30, 25), font_size=20)
+            display_status_message("메모리 잠금 성공", position=(30, 25), font_size=10)
             display_progress_bar(100)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
-            display_status_message("메모리 잠금 실패", position=(30, 25), font_size=20)
+            display_status_message("메모리 잠금 실패", position=(30, 25), font_size=10)
             display_progress_bar(50)
             time.sleep(1)
             GPIO.output(LED_ERROR, False)
@@ -231,7 +231,7 @@ def execute_command(command_index):
         return
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
-        display_status_message("메모리 잠금 해제 실패")
+        display_status_message("메모리 잠금 해제 실패", position=(30, 25), font_size=10)
         time.sleep(2)
         GPIO.output(LED_ERROR, False)
         return
