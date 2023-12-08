@@ -258,10 +258,10 @@ def execute_command(command_index):
         return
 
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("업데이트 중...", position=(15, 20), font_size=15)
+    display_status_message("업데이트 중...", position=(17, 20), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
     while process.poll() is None:
-        display_status_message("업데이트 중...", position=(15, 20), font_size=15)
+        display_status_message("업데이트 중...", position=(17, 20), font_size=15)
         time.sleep(1)
     result = process.returncode
     GPIO.output(LED_DEBUGGING, False)
