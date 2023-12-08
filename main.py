@@ -106,7 +106,7 @@ def git_pull():
 
     with canvas(device) as draw:
         # '시스템' 메시지를 (0, 23) 위치에 표시
-        draw.text((33, 8), "시스템", font=font, fill=255)
+        draw.text((34, 8), "시스템", font=font, fill=255)
         # '업데이트 중' 메시지를 (0, 38) 위치에 표시
         draw.text((17, 27), "업데이트 중", font=font, fill=255)
 
