@@ -103,7 +103,7 @@ def git_pull():
     os.chmod(shell_script_path, 0o755)
 
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("시스템 업데이트 중", position=(5, 25), font_size=15)
+    display_status_message("시스템 업데이트 중", position=(0, 25), font_size=15)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -157,9 +157,9 @@ def unlock_memory():
 
     with canvas(device) as draw:
         # '메모리 잠금' 메시지를 (30, 10) 위치에 표시
-        draw.text((10, 10), "메모리 잠금", font=font, fill=255)
+        draw.text((13, 10), "메모리 잠금", font=font, fill=255)
         # '해제 중' 메시지를 (30, 25) 위치에 표시
-        draw.text((30, 27), "해제 중", font=font, fill=255)
+        draw.text((33, 27), "해제 중", font=font, fill=255)
 
     print("메모리 해제 시도...")
     time.sleep(1)
