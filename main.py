@@ -22,13 +22,33 @@ LED_ERROR = 25
 SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.1  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
-# 새로운 변수 추가
 previous_voltage = None
 voltage_drop_threshold = 0.05  # 전압이 이 값 이상 떨어질 때 반응
+
+# 자동 모드와 수동 모드 상태를 추적하는 전역 변수
+is_auto_mode = True
+
 # GPIO 핀 번호 모드 설정
-GPIO.setmode(GPIO.BCM)  # 또는 GPIO.BOARD, 필요한 모드로 설정합니다.
+GPIO.setmode(GPIO.BCM)
 
+# 모드 전환 함수
+def toggle_mode():
+    global is_auto_mode
+    is_auto_mode = not is_auto_mode
+    update_oled_display()  # OLED 화면 업데이트
 
+# 자동 모드와 수동 모드 아이콘 로드
+auto_mode_icon = Image.open("/home/user/stm32/img/A.png")
+manual_mode_icon = Image.open("/home/user/stm32/img/X.png")
+
+# GPIO 설정
+GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(LED_DEBUGGING, GPIO.OUT)
+GPIO.setup(LED_SUCCESS, GPIO.OUT)
+GPIO.setup(LED_ERROR, GPIO.OUT)
+
+# 전압 감지 및 처리 로직
 def read_and_check_voltage():
     global previous_voltage
     try:
@@ -36,33 +56,20 @@ def read_and_check_voltage():
         ina.configure()
         voltage = ina.voltage()
         if previous_voltage is not None and (previous_voltage - voltage) >= voltage_drop_threshold:
-            # 시스템 업데이트 상태가 아닐 때만 execute_command 함수 호출
-            if command_names[current_command_index] != "시스템 업데이트":
+            if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
                 execute_command(current_command_index)
         previous_voltage = voltage
     except DeviceRangeError as e:
-        return 0
+        print("DeviceRangeError:", e)
+# 주 루프 내 모드 전환 로직
+try:
+    while True:
+        if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
+            toggle_mode()
+            time.sleep(1)  # 디바운싱을 위한 지연
 
-# GPIO 설정
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(LED_DEBUGGING, GPIO.OUT)
-GPIO.setup(LED_SUCCESS, GPIO.OUT)
-GPIO.setup(LED_ERROR, GPIO.OUT)
 
-# trigger_execute_pin 함수 수정
-#def trigger_execute_pin():
-    # BUTTON_PIN_EXECUTE를 출력 모드로 설정
-    #GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.OUT)
 
-    # GPIO 17번 핀을 고전압 상태로 설정
-    #GPIO.output(BUTTON_PIN_EXECUTE, GPIO.HIGH)
-    #time.sleep(0.3)  # 버튼이 눌린 것처럼 일시적으로 핀 상태를 유지
-    #GPIO.output(BUTTON_PIN_EXECUTE, GPIO.LOW)
-
-    # 다시 입력 모드로 전환
-    #GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 def read_ina219_percentage():
     try:
