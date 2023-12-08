@@ -154,7 +154,7 @@ def display_status_message(message, position=(0, 0), font_size=17):
 def unlock_memory():
     display_progress_bar(0)
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("메모리 잠금\n해제 중",position=(10, 20), font_size=15)
+    display_status_message("메모리 잠금\n해제 중",position=(30, 10), font_size=15)
     print("메모리 해제 시도...")
     time.sleep(1)
     display_progress_bar(50)
@@ -231,7 +231,7 @@ def execute_command(command_index):
         return
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
-        display_status_message("메모리 잠금\n해제 실패", position=(30, 25), font_size=15)
+        display_status_message("메모리 잠금\n해제 실패", position=(0, 10), font_size=15)
         time.sleep(2)
         GPIO.output(LED_ERROR, False)
         return
