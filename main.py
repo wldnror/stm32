@@ -317,7 +317,7 @@ def shutdown_system():
 try:
     while True:
         # 배터리 수준을 확인하고 0%면 시스템 종료
-        if read_ina219_percentage() == 10:
+        if read_ina219_percentage() == 5:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
             
