@@ -61,22 +61,13 @@ def read_and_check_voltage():
         previous_voltage = voltage
     except DeviceRangeError as e:
         print("DeviceRangeError:", e)
-# 주 루프 내 모드 전환 로직
-try:
-    while True:
-        if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
-            toggle_mode()
-            time.sleep(1)  # 디바운싱을 위한 지연
 
-
-
-
+# 배터리 상태 확인 함수
 def read_ina219_percentage():
     try:
         ina = INA219(SHUNT_OHMS)
         ina.configure()
         voltage = ina.voltage()
-
         if voltage <= MIN_VOLTAGE:
             return 0
         elif voltage >= MAX_VOLTAGE:
@@ -90,8 +81,6 @@ def read_ina219_percentage():
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
-
-
 
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
