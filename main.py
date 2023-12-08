@@ -52,7 +52,7 @@ GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 
 # trigger_execute_pin 함수 수정
-def trigger_execute_pin():
+#def trigger_execute_pin():
     # BUTTON_PIN_EXECUTE를 출력 모드로 설정
     #GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.OUT)
 
