@@ -40,13 +40,13 @@ def read_and_check_voltage():
         previous_voltage = voltage
     except DeviceRangeError as e:
         return 0
-
-# 핀 설정
+# GPIO 설정
+GPIO.setmode(GPIO.BCM)
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-# GPIO.setup(LED_DEBUGGING, GPIO.OUT)
-# GPIO.setup(LED_SUCCESS, GPIO.OUT)
-# GPIO.setup(LED_ERROR, GPIO.OUT)
-# GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.OUT)  # 핀을 출력으로 설정
+GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(LED_DEBUGGING, GPIO.OUT)
+GPIO.setup(LED_SUCCESS, GPIO.OUT)
+GPIO.setup(LED_ERROR, GPIO.OUT)
 
 # trigger_execute_pin 함수 수정
 def trigger_execute_pin():
@@ -81,14 +81,7 @@ def read_ina219_percentage():
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
 
-# GPIO 설정
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(LED_DEBUGGING, GPIO.OUT)
-GPIO.setup(LED_SUCCESS, GPIO.OUT)
-GPIO.setup(LED_ERROR, GPIO.OUT)
-# PIO.setup(BUTTON_PIN_EXECUTE, GPIO.OUT)  # 핀을 출력으로 설정
+
 
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
