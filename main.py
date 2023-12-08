@@ -24,7 +24,7 @@ MIN_VOLTAGE = 3.1  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 # 새로운 변수 추가
 previous_voltage = None
-voltage_drop_threshold = 0.1  # 전압이 이 값 이상 떨어질 때 반응
+voltage_drop_threshold = 0.01  # 전압이 이 값 이상 떨어질 때 반응
 
 def read_and_check_voltage():
     global previous_voltage
