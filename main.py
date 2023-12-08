@@ -164,7 +164,7 @@ def unlock_memory():
         # '메모리 잠금' 메시지를 (30, 10) 위치에 표시
         draw.text((17, 8), "메모리 잠금", font=font, fill=255)
         # '해제 중' 메시지를 (30, 25) 위치에 표시
-        draw.text((33, 28), "해제 중", font=font, fill=255)
+        draw.text((34, 28), "해제 중", font=font, fill=255)
 
     print("메모리 해제 시도...")
     time.sleep(1)
@@ -251,7 +251,7 @@ def execute_command(command_index):
             # '메모리 잠금' 메시지를 (0, 10) 위치에 표시
             draw.text((20, 10), "메모리 잠금", font=font, fill=255)
             # '해제 실패' 메시지를 (0, 25) 위치에 표시
-            draw.text((30, 27), "해제 실패", font=font, fill=255)
+            draw.text((28, 27), "해제 실패", font=font, fill=255)
 
         time.sleep(2)
         GPIO.output(LED_ERROR, False)
