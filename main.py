@@ -262,9 +262,12 @@ def update_oled_display():
     global current_command_index
     ip_address = get_ip_address()
     now = datetime.now()
-    am_pm = "오전" if now.hour < 12 else "오후"
-    current_time = now.strftime('%I시 %M분')
-    current_time = f"{am_pm} {current_time}"
+    current_time = now.strftime('%I시 %M분')  # 기본 시간 형식
+
+    if command_names[current_command_index] != "시스템 업데이트":
+        # "시스템 업데이트"가 아닌 다른 메뉴에서는 오전/오후를 표시
+        am_pm = "오전" if now.hour < 12 else "오후"
+        current_time = f"{am_pm} {current_time}"
     voltage_percentage = read_ina219_percentage()
     with canvas(device) as draw:
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
