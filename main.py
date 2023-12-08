@@ -300,9 +300,18 @@ def get_ip_address():
     except Exception as e:
         return "0.0.0.0"
 
+def display_status_message(message):
+    with canvas(device) as draw:
+        # 메시지 위치 조정. 여기에서는 예시로 (50, 20)을 사용합니다.
+        draw.text((50, 20), message, font=font_st, fill=255)
+
 def shutdown_system():
     display_status_message("시스템 종료 중...")
-    time.sleep(2)  # 메시지를 2초 동안 표시
+    time.sleep(5)  # 메시지를 5초 동안 표시
+
+    # 디스플레이 전원을 끄는 코드 추가
+    GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
+
     os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
 
 try:
@@ -310,7 +319,7 @@ try:
         # 배터리 수준을 확인하고 0%면 시스템 종료
         if read_ina219_percentage() == 0:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
-            shutdown_system()  # 수정된 부분
+            shutdown_system()
             
         if not GPIO.input(BUTTON_PIN_NEXT):
             current_command_index = (current_command_index + 1) % len(commands)
@@ -320,6 +329,7 @@ try:
             time.sleep(0.1)
         update_oled_display()
         time.sleep(0.1)
+
 
 except KeyboardInterrupt:
     GPIO.cleanup()
