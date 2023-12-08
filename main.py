@@ -42,7 +42,7 @@ def read_and_check_voltage():
         return 0
 
 # 핀 설정
-# GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 # GPIO.setup(LED_DEBUGGING, GPIO.OUT)
 # GPIO.setup(LED_SUCCESS, GPIO.OUT)
 # GPIO.setup(LED_ERROR, GPIO.OUT)
