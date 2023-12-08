@@ -38,23 +38,19 @@ def read_and_check_voltage():
     except DeviceRangeError as e:
         return 0
 
-# GPIO 설정
-GPIO.setmode(GPIO.BCM)
+# 핀 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(LED_DEBUGGING, GPIO.OUT)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
-
-# BUTTON_PIN_EXECUTE를 출력으로 설정
-GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.OUT)
+GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.OUT)  # 핀을 출력으로 설정
 
 # trigger_execute_pin 함수 수정
 def trigger_execute_pin():
+    # GPIO 17번 핀을 프로그래밍 방식으로 활성화하는 로직
     GPIO.output(BUTTON_PIN_EXECUTE, GPIO.HIGH)
-    time.sleep(0.1)
+    time.sleep(0.1)  # 버튼이 눌린 것처럼 일시적으로 핀 상태를 유지
     GPIO.output(BUTTON_PIN_EXECUTE, GPIO.LOW)
-
-
 
 def read_ina219_percentage():
     try:
