@@ -103,8 +103,13 @@ def git_pull():
     os.chmod(shell_script_path, 0o755)
 
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("시스템 업데이트 중", position=(0, 23), font_size=15)
 
+with canvas(device) as draw:
+    # '시스템' 메시지를 (0, 23) 위치에 표시
+    draw.text((0, 23), "시스템", font=font, fill=255)
+    # '업데이트 중' 메시지를 (0, 38) 위치에 표시
+    draw.text((0, 38), "업데이트 중", font=font, fill=255)
+    
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         GPIO.output(LED_DEBUGGING, False)
@@ -243,7 +248,7 @@ def execute_command(command_index):
 
         with canvas(device) as draw:
             # '메모리 잠금' 메시지를 (0, 10) 위치에 표시
-            draw.text((15, 10), "메모리 잠금", font=font, fill=255)
+            draw.text((20, 10), "메모리 잠금", font=font, fill=255)
             # '해제 실패' 메시지를 (0, 25) 위치에 표시
             draw.text((30, 27), "해제 실패", font=font, fill=255)
 
