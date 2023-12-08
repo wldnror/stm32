@@ -154,7 +154,13 @@ def display_status_message(message, position=(0, 0), font_size=17):
 def unlock_memory():
     display_progress_bar(0)
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("메모리 잠금\n해제 중",position=(30, 10), font_size=15)
+
+    with canvas(device) as draw:
+        # '메모리 잠금' 메시지를 (30, 10) 위치에 표시
+        draw.text((30, 10), "메모리 잠금", font=font, fill=255)
+        # '해제 중' 메시지를 (30, 25) 위치에 표시
+        draw.text((30, 25), "해제 중", font=font, fill=255)
+
     print("메모리 해제 시도...")
     time.sleep(1)
     display_progress_bar(50)
@@ -223,18 +229,28 @@ def execute_command(command_index):
     GPIO.output(LED_DEBUGGING, False)
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
+
     if command_index == len(commands) - 1:
         git_pull()
         return
+
     if command_index == 2:
         lock_memory_procedure()
         return
+
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
-        display_status_message("메모리 잠금\n해제 실패", position=(0, 10), font_size=15)
+
+        with canvas(device) as draw:
+            # '메모리 잠금' 메시지를 (0, 10) 위치에 표시
+            draw.text((0, 10), "메모리 잠금", font=font, fill=255)
+            # '해제 실패' 메시지를 (0, 25) 위치에 표시
+            draw.text((0, 25), "해제 실패", font=font, fill=255)
+
         time.sleep(2)
         GPIO.output(LED_ERROR, False)
         return
+
     GPIO.output(LED_DEBUGGING, True)
     display_status_message("업데이트 중...", position=(5, 25), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
