@@ -184,9 +184,10 @@ def unlock_memory():
     if result.returncode == 0:
         print("메모리 잠금 해제 성공!")
         display_progress_bar(100)
+        return True  # 성공 시 True 반환
     else:
         print("메모리 잠금 해제 실패!")
-        return result.returncode == 0
+        return False  # 실패 시 False 반환    
 
 def lock_memory_procedure():
     display_progress_bar(0)
