@@ -286,6 +286,7 @@ def update_oled_display():
 
         # 사용자 지정 위치와 폰트 크기로 메시지 표시
         if status_message:
+            draw.rectangle(device.bounding_box, outline="white", fill="black")
             font_custom = ImageFont.truetype(font_path, message_font_size)
             draw.text(message_position, status_message, font=font_custom, fill=255)
         else:
