@@ -106,9 +106,9 @@ def git_pull():
 
     with canvas(device) as draw:
         # '시스템' 메시지를 (0, 23) 위치에 표시
-        draw.text((27, 10), "시스템", font=font, fill=255)
+        draw.text((33, 8), "시스템", font=font, fill=255)
         # '업데이트 중' 메시지를 (0, 38) 위치에 표시
-        draw.text((15, 25), "업데이트 중", font=font, fill=255)
+        draw.text((17, 25), "업데이트 중", font=font, fill=255)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -249,7 +249,7 @@ def execute_command(command_index):
 
         with canvas(device) as draw:
             # '메모리 잠금' 메시지를 (0, 10) 위치에 표시
-            draw.text((20, 10), "메모리 잠금", font=font, fill=255)
+            draw.text((20, 8), "메모리 잠금", font=font, fill=255)
             # '해제 실패' 메시지를 (0, 25) 위치에 표시
             draw.text((28, 27), "해제 실패", font=font, fill=255)
 
