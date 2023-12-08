@@ -103,7 +103,7 @@ def git_pull():
     os.chmod(shell_script_path, 0o755)
 
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("시스템 업데이트 중...")
+    display_status_message("시스템 업데이트 중", position=(5, 25), font_size=15)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
