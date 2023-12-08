@@ -106,9 +106,9 @@ def git_pull():
 
     with canvas(device) as draw:
         # '시스템' 메시지를 (0, 23) 위치에 표시
-        draw.text((0, 23), "시스템", font=font, fill=255)
+        draw.text((23, 23), "시스템", font=font, fill=255)
         # '업데이트 중' 메시지를 (0, 38) 위치에 표시
-        draw.text((0, 38), "업데이트 중", font=font, fill=255)
+        draw.text((10, 38), "업데이트 중", font=font, fill=255)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -210,14 +210,14 @@ def lock_memory_procedure():
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
-            display_status_message("메모리 잠금 성공", position=(0, 25), font_size=15)
+            display_status_message("메모리 잠금 성공", position=(3, 25), font_size=15)
             display_progress_bar(100)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
-            display_status_message("메모리 잠금 실패", position=(0, 25), font_size=15)
+            display_status_message("메모리 잠금 실패", position=(3, 25), font_size=15)
             display_progress_bar(50)
             time.sleep(1)
             GPIO.output(LED_ERROR, False)
@@ -258,10 +258,10 @@ def execute_command(command_index):
         return
 
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("업데이트 중...", position=(13, 25), font_size=15)
+    display_status_message("업데이트 중...", position=(15, 23), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
     while process.poll() is None:
-        display_status_message("업데이트 중...", position=(13, 25), font_size=15)
+        display_status_message("업데이트 중...", position=(15, 23), font_size=15)
         time.sleep(1)
     result = process.returncode
     GPIO.output(LED_DEBUGGING, False)
@@ -269,7 +269,7 @@ def execute_command(command_index):
     if result == 0:
         print(f"'{commands[command_index]}' 업데이트 성공!")
         GPIO.output(LED_SUCCESS, True)
-        display_status_message("업데이트 성공", position=(10, 25), font_size=15)
+        display_status_message("업데이트 성공", position=(10, 23), font_size=15)
         display_progress_bar(100)
         time.sleep(1)
         GPIO.output(LED_SUCCESS, False)
@@ -277,7 +277,7 @@ def execute_command(command_index):
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
-        display_status_message("업데이트 실패", position=(10, 25), font_size=15)
+        display_status_message("업데이트 실패", position=(10, 23), font_size=15)
         display_progress_bar(50)
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
