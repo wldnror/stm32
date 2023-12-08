@@ -38,12 +38,12 @@ def read_and_check_voltage():
     except DeviceRangeError as e:
         return 0
 
-# 핀 설정
-GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(LED_DEBUGGING, GPIO.OUT)
-GPIO.setup(LED_SUCCESS, GPIO.OUT)
-GPIO.setup(LED_ERROR, GPIO.OUT)
-GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.OUT)  # 핀을 출력으로 설정
+# # 핀 설정
+# GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+# GPIO.setup(LED_DEBUGGING, GPIO.OUT)
+# GPIO.setup(LED_SUCCESS, GPIO.OUT)
+# GPIO.setup(LED_ERROR, GPIO.OUT)
+# GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.OUT)  # 핀을 출력으로 설정
 
 # trigger_execute_pin 함수 수정
 def trigger_execute_pin():
@@ -79,6 +79,7 @@ GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(LED_DEBUGGING, GPIO.OUT)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
+PIO.setup(BUTTON_PIN_EXECUTE, GPIO.OUT)  # 핀을 출력으로 설정
 
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
