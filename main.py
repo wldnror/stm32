@@ -300,13 +300,13 @@ def get_ip_address():
     except Exception as e:
         return "0.0.0.0"
 
-def display_status_message(message):
+def display_status_message1(message1):
     with canvas(device) as draw:
         # 메시지 위치 조정. 여기에서는 예시로 (50, 20)을 사용합니다.
-        draw.text((0, 20), message, font=font, fill=255)
+        draw.text((0, 20), message1, font=font, fill=255)
 
 def shutdown_system():
-    display_status_message("시스템 종료 중...")
+    display_status_message1("시스템 종료 중...")
     time.sleep(5)  # 메시지를 5초 동안 표시
 
     # 디스플레이 전원을 끄는 코드 추가
