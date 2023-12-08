@@ -25,6 +25,9 @@ MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 # 새로운 변수 추가
 previous_voltage = None
 voltage_drop_threshold = 0.03  # 전압이 이 값 이상 떨어질 때 반응
+# GPIO 핀 번호 모드 설정
+GPIO.setmode(GPIO.BCM)  # 또는 GPIO.BOARD, 필요한 모드로 설정합니다.
+
 
 def read_and_check_voltage():
     global previous_voltage
