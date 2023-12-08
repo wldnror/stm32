@@ -303,7 +303,7 @@ def get_ip_address():
 def display_status_message(message):
     with canvas(device) as draw:
         # 메시지 위치 조정. 여기에서는 예시로 (50, 20)을 사용합니다.
-        draw.text((50, 20), message, font=font_st, fill=255)
+        draw.text((50, 20), message, font=font, fill=255)
 
 def shutdown_system():
     display_status_message("시스템 종료 중...")
