@@ -353,7 +353,9 @@ def update_oled_display():
             elif command_names[current_command_index] == "ASGD S PNP":
                 draw.text((7, 55), 'ASGD S PNP', font=font_1, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
-                draw.text((1, 55), '시스템 업데이트', font=font_1, fill=255)
+                draw.text((18, 8), "시스템", font=font, fill=255)
+                draw.text((35, 28), "업데이트", font=font, fill=255)
+
 
 def get_ip_address():
     try:
