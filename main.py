@@ -84,7 +84,7 @@ device = sh1107(serial, rotate=1, width=128, height=128)
 
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
-font_big = ImageFont.truetype(font_path, 15)
+font_big = ImageFont.truetype(font_path, 14)
 font_s = ImageFont.truetype(font_path, 15)
 font_st = ImageFont.truetype(font_path, 15)
 font = ImageFont.truetype(font_path, 17)
