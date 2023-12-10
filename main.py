@@ -79,7 +79,7 @@ GPIO.setup(LED_ERROR, GPIO.OUT)
 #         return 0
 # ST7789 디스플레이 초기화
 serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25)
-device = st7789(serial, width=240, height=240, rotate=0)
+device = st7789(serial)
 
 # # OLED 설정
 # serial = i2c(port=1, address=0x3C)
