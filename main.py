@@ -137,9 +137,9 @@ def git_pull():
 
     with canvas(device) as draw:
         # '시스템' 메시지를 (0, 23) 위치에 표시
-        draw.text((36, 8), "시스템", font=font, fill=255)
+        draw.text((35, 37), "시스템", font=font, fill=255)
         # '업데이트 중' 메시지를 (0, 38) 위치에 표시
-        draw.text((19, 27), "업데이트 중", font=font, fill=255)
+        draw.text((19, 57), "업데이트 중", font=font, fill=255)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -193,9 +193,9 @@ def unlock_memory():
 
     with canvas(device) as draw:
         # '메모리 잠금' 메시지를 (30, 10) 위치에 표시
-        draw.text((18, 8), "메모리 잠금", font=font, fill=255)
+        draw.text((25, 37), "메모리 잠금", font=font, fill=255)
         # '해제 중' 메시지를 (30, 25) 위치에 표시
-        draw.text((35, 28), "해제 중", font=font, fill=255)
+        draw.text((35, 57), "해제 중", font=font, fill=255)
 
     print("메모리 해제 시도...")
     time.sleep(1)
@@ -280,9 +280,9 @@ def execute_command(command_index):
 
         with canvas(device) as draw:
             # '메모리 잠금' 메시지를 (0, 10) 위치에 표시
-            draw.text((20, 8), "메모리 잠금", font=font, fill=255)
+            draw.text((25, 37), "메모리 잠금", font=font, fill=255)
             # '해제 실패' 메시지를 (0, 25) 위치에 표시
-            draw.text((28, 27), "해제 실패", font=font, fill=255)
+            draw.text((33, 47), "해제 실패", font=font, fill=255)
 
         time.sleep(2)
         GPIO.output(LED_ERROR, False)
@@ -336,7 +336,7 @@ def update_oled_display():
             draw.text((95, -1), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((63, 2), ip_address, font=font_big, fill=255)
-            # draw.text((0, 100), 'GDSENG', font=font_big, fill=255)
+            draw.text((0, 100), 'GDSENG', font=font_big, fill=255)
             draw.text((80, 100), 'ver 2 .7', font=font_big, fill=255)
             # draw.text((40, 40), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
         draw.text((0, 0), current_time, font=font_time, fill=255)
