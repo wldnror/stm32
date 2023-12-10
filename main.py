@@ -6,7 +6,7 @@ import socket
 from PIL import Image, ImageDraw, ImageFont
 from luma.core.interface.serial import i2c
 from luma.core.render import canvas
-from luma.oled.device import sh1107
+from luma.oled.device import st7789
 import subprocess
 from datetime import datetime
 #from ina219 import INA219, DeviceRangeError
