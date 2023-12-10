@@ -335,8 +335,8 @@ def update_oled_display():
             draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((63, 0), ip_address, font=font_big, fill=255)
-            draw.text((0, 120), 'GDSENG', font=font_big, fill=255)
-            draw.text((90, 120), 'ver 2 .7', font=font_big, fill=255)
+            draw.text((0, 110), 'GDSENG', font=font_big, fill=255)
+            draw.text((90, 110), 'ver 2 .7', font=font_big, fill=255)
             draw.text((42, 40), f'설정 {current_command_index+1}번', font=font_st, fill=255)  
         draw.text((0, -3), current_time, font=font_time, fill=255)
 
@@ -353,7 +353,7 @@ def update_oled_display():
             elif command_names[current_command_index] == "ASGD S PNP":
                 draw.text((7, 55), 'ASGD S PNP', font=font_1, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
-                draw.text((1, 28), '시스템 업데이트', font=font, fill=255)
+                draw.text((1, 55), '시스템 업데이트', font=font, fill=255)
 
 def get_ip_address():
     try:
