@@ -6,7 +6,7 @@ import socket
 from PIL import Image, ImageDraw, ImageFont
 from luma.core.interface.serial import spi
 from luma.core.render import canvas
-from luma.oled.device import st7789
+from luma.lcd.device import st7789  # 여기를 수정
 import subprocess
 from datetime import datetime
 #from ina219 import INA219, DeviceRangeError
