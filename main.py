@@ -12,7 +12,7 @@ reset_pin = digitalio.DigitalInOut(board.D24)  # Reset (RST) 핀
 BAUDRATE = 24000000  # SPI 통신 속도
 
 spi = board.SPI()
-disp = st7789.ST7789(spi, height=280, y_offset=80, rotation=180,
+disp = st7789.ST7789(spi, height=280, rotation=180,
                      cs=cs_pin, dc=dc_pin, rst=reset_pin, baudrate=8000000)
 
 # 디스플레이 크기에 맞는 이미지 생성
