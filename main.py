@@ -6,7 +6,7 @@ import socket
 from PIL import Image, ImageDraw, ImageFont
 from luma.core.interface.serial import spi
 from luma.core.render import canvas
-from luma.oled.device import sh7789
+from luma.oled.device import st7789
 import subprocess
 from datetime import datetime
 #from ina219 import INA219, DeviceRangeError
@@ -77,10 +77,13 @@ GPIO.setup(LED_ERROR, GPIO.OUT)
 #             return min(max(percentage, 0), 100)
 #     except DeviceRangeError as e:
 #         return 0
+# ST7789 디스플레이 초기화
+serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25)
+device = st7789(serial, width=240, height=240, rotate=0)
 
-# OLED 설정
-serial = i2c(port=1, address=0x3C)
-device = sh1107(serial, rotate=1, width=128, height=128)
+# # OLED 설정
+# serial = i2c(port=1, address=0x3C)
+# device = sh1107(serial, rotate=1, width=128, height=128)
 
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
