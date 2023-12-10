@@ -349,12 +349,12 @@ def update_oled_display():
             # if command_names[current_command_index] != "시스템 업데이트":
                 # draw.text((40, 40), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
             if command_names[current_command_index] == "ASGD S":
-                draw.text((30, 40), 'ASGD S', font=font_1, fill=255)
+                draw.text((30, 43), 'ASGD S', font=font_1, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
-                draw.text((7, 40), 'ASGD S PNP', font=font_1, fill=255)
+                draw.text((7, 43), 'ASGD S PNP', font=font_1, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
-                draw.text((35, 40), "시스템", font=font_1, fill=255)
-                draw.text((30, 55), "업데이트", font=font_1, fill=255)
+                draw.text((35, 39), "시스템", font=font_1, fill=255)
+                draw.text((27, 55), "업데이트", font=font_1, fill=255)
 
 
 def get_ip_address():
