@@ -139,7 +139,7 @@ def git_pull():
         # '시스템' 메시지를 (0, 23) 위치에 표시
         draw.text((35, 37), "시스템", font=font_1, fill=255)
         # '업데이트 중' 메시지를 (0, 38) 위치에 표시
-        draw.text((19, 57), "업데이트 중", font=font_1, fill=255)
+        draw.text((15, 57), "업데이트 중", font=font_1, fill=255)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -336,8 +336,8 @@ def update_oled_display():
             draw.text((95, -1), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((63, 2), ip_address, font=font_big, fill=255)
-            draw.text((0, 100), 'GDSENG', font=font_big, fill=255)
-            draw.text((80, 100), 'ver 2 .7', font=font_big, fill=255)
+            draw.text((0, 103), 'GDSENG', font=font_big, fill=255)
+            draw.text((80, 103), 'ver 2 .7', font=font_big, fill=255)
             # draw.text((40, 40), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
         draw.text((0, 0), current_time, font=font_time, fill=255)
 
