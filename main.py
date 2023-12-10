@@ -84,7 +84,7 @@ device = sh1107(serial, rotate=1, width=128, height=128)
 
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
-font_big = ImageFont.truetype(font_path, 13)
+font_big = ImageFont.truetype(font_path, 12)
 font_s = ImageFont.truetype(font_path, 15)
 font_st = ImageFont.truetype(font_path, 14)
 font = ImageFont.truetype(font_path, 17)
@@ -331,7 +331,7 @@ def update_oled_display():
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
             draw.bitmap((90, 100), mode_icon, fill=255)
-            draw.bitmap((90, -8), battery_icon, fill=255)
+            draw.bitmap((90, -9), battery_icon, fill=255)
             draw.text((95, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((63, 2), ip_address, font=font_big, fill=255)
