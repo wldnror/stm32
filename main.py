@@ -90,7 +90,7 @@ font_st = ImageFont.truetype(font_path, 15)
 font = ImageFont.truetype(font_path, 17)
 font_status = ImageFont.truetype(font_path, 13)
 font_1 = ImageFont.truetype(font_path, 20)
-font_time = ImageFont.truetype(font_path, 14)
+font_time = ImageFont.truetype(font_path, 13)
 
 # 배터리 아이콘 로드
 low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
