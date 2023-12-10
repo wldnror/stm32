@@ -86,7 +86,7 @@ device = sh1107(serial, rotate=1, width=128, height=128)
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
 font_big = ImageFont.truetype(font_path, 14)
 font_s = ImageFont.truetype(font_path, 15)
-font_st = ImageFont.truetype(font_path, 15)
+font_st = ImageFont.truetype(font_path, 14)
 font = ImageFont.truetype(font_path, 17)
 font_status = ImageFont.truetype(font_path, 13)
 font_1 = ImageFont.truetype(font_path, 20)
@@ -317,7 +317,7 @@ def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
     ip_address = get_ip_address()
     now = datetime.now()
-    current_time = now.strftime('%I시 %M분')  # 기본 시간 형식
+    current_time = now.strftime('%I시%M분')  # 기본 시간 형식
     mode_icon = auto_mode_icon if is_auto_mode else manual_mode_icon
 
     if command_names[current_command_index] != "시스템 업데이트":
@@ -331,14 +331,14 @@ def update_oled_display():
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
             draw.bitmap((90, 100), mode_icon, fill=255)
-            draw.bitmap((91, -12), battery_icon, fill=255)
+            draw.bitmap((90, -12), battery_icon, fill=255)
             draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((63, 0), ip_address, font=font_big, fill=255)
             draw.text((0, 110), 'GDSENG', font=font_big, fill=255)
             draw.text((90, 110), 'ver 2 .7', font=font_big, fill=255)
             draw.text((42, 40), f'설정 {current_command_index+1}번', font=font_st, fill=255)  
-        draw.text((-2, -3), current_time, font=font_time, fill=255)
+        draw.text((-1, -3), current_time, font=font_time, fill=255)
 
         # 사용자 지정 위치와 폰트 크기로 메시지 표시
         if status_message:
