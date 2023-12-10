@@ -137,9 +137,9 @@ def git_pull():
 
     with canvas(device) as draw:
         # '시스템' 메시지를 (0, 23) 위치에 표시
-        draw.text((35, 37), "시스템", font=font, fill=255)
+        draw.text((35, 37), "시스템", font=font_1, fill=255)
         # '업데이트 중' 메시지를 (0, 38) 위치에 표시
-        draw.text((19, 57), "업데이트 중", font=font, fill=255)
+        draw.text((19, 57), "업데이트 중", font=font_1, fill=255)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
