@@ -338,7 +338,7 @@ def update_oled_display():
             draw.text((0, 105), 'GDSENG', font=font_big, fill=255)
             draw.text((80, 105), 'ver 2 .7', font=font_big, fill=255)
             draw.text((42, 40), f'설정 {current_command_index+1}번', font=font_st, fill=255)  
-        draw.text((0, 0), current_time, font=font_time, fill=255)
+        draw.text((-3, 0), current_time, font=font_time, fill=255)
 
         # 사용자 지정 위치와 폰트 크기로 메시지 표시
         if status_message:
