@@ -387,7 +387,7 @@ try:
         #     shutdown_system()
 
         # 전압 변화 감지
-        read_and_check_voltage()
+        # read_and_check_voltage()
 
         # 두 버튼을 동시에 눌렀을 때 모드 전환
         if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
