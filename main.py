@@ -337,7 +337,7 @@ def update_oled_display():
             draw.text((63, 2), ip_address, font=font_big, fill=255)
             draw.text((0, 100), 'GDSENG', font=font_big, fill=255)
             draw.text((80, 100), 'ver 2 .7', font=font_big, fill=255)
-            draw.text((40, 40), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
+            # draw.text((40, 40), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
         draw.text((0, 0), current_time, font=font_time, fill=255)
 
         # 사용자 지정 위치와 폰트 크기로 메시지 표시
@@ -346,8 +346,8 @@ def update_oled_display():
             font_custom = ImageFont.truetype(font_path, message_font_size)
             draw.text(message_position, status_message, font=font_custom, fill=255)
         else:
-            if command_names[current_command_index] != "시스템 업데이트":
-                draw.text((40, 40), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
+            # if command_names[current_command_index] != "시스템 업데이트":
+                # draw.text((40, 40), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
             if command_names[current_command_index] == "ASGD S":
                 draw.text((30, 55), 'ASGD S', font=font_1, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
