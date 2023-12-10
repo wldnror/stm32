@@ -1,23 +1,34 @@
-import RPi.GPIO as GPIO
-from PIL import Image, ImageDraw, ImageFont
-from luma.core.interface.serial import spi
-from luma.core.render import canvas
-from luma.lcd.device import st7789
+import digitalio
+import board
+from PIL import Image, ImageDraw
+from adafruit_rgb_display import color565
+import adafruit_rgb_display.st7789 as st7789
 
-try:
-    # GPIO 핀 번호 설정 (Raspberry Pi에 따라 변경해야 할 수 있음)
-    RST_PIN = 25  # 예시로 25번 핀 사용
-    DC_PIN = 24   # 예시로 24번 핀 사용
+# 디스플레이 설정
+cs_pin = digitalio.DigitalInOut(board.CE0)  # Chip select (CS) 핀
+dc_pin = digitalio.DigitalInOut(board.D25)  # Data/Command (DC) 핀
+reset_pin = digitalio.DigitalInOut(board.D24)  # Reset (RST) 핀
 
-    # SPI 인터페이스와 ST7789 디스플레이 초기화
-    serial = spi(port=0, device=0, gpio_DC=DC_PIN, gpio_RST=RST_PIN, bus_speed_hz=4000000)
-    device = st7789(serial, rotate=0, width=240, height=280)
+BAUDRATE = 24000000  # SPI 통신 속도
 
-    # 화면에 텍스트 출력
-    with canvas(device) as draw:
-        font = ImageFont.load_default()
-        draw.text((10, 10), "Hello, World!", font=font, fill="white")
+spi = board.SPI()
+disp = st7789.ST7789(spi, height=280, y_offset=80, rotation=180,
+                     cs=cs_pin, dc=dc_pin, rst=reset_pin, baudrate=BAUDRATE)
 
-finally:
-    # GPIO 리소스 정리
-    GPIO.cleanup()
+# 디스플레이 크기에 맞는 이미지 생성
+if disp.rotation % 180 == 90:
+    height = disp.width
+    width = disp.height
+else:
+    width = disp.width
+    height = disp.height
+
+image = Image.new('RGB', (width, height))
+
+# 이미지에 그리기
+draw = ImageDraw.Draw(image)
+draw.rectangle((0, 0, width, height), fill=(0, 0, 0))
+draw.text((10, 10), "Hello World", fill=(255, 255, 255))
+
+# 디스플레이에 이미지 표시
+disp.image(image)
