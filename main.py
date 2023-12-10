@@ -90,7 +90,7 @@ font_st = ImageFont.truetype(font_path, 13)
 font = ImageFont.truetype(font_path, 17)
 font_status = ImageFont.truetype(font_path, 13)
 font_1 = ImageFont.truetype(font_path, 20)
-font_time = ImageFont.truetype(font_path, 12.5)
+font_time = ImageFont.truetype(font_path, 12.3)
 
 # 배터리 아이콘 로드
 low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
@@ -331,14 +331,14 @@ def update_oled_display():
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
             draw.bitmap((90, 100), mode_icon, fill=255)
-            draw.bitmap((90, -9), battery_icon, fill=255)
-            draw.text((95, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
+            draw.bitmap((90, -10), battery_icon, fill=255)
+            draw.text((95, -1), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((63, 2), ip_address, font=font_big, fill=255)
             draw.text((0, 105), 'GDSENG', font=font_big, fill=255)
             draw.text((80, 105), 'ver 2 .7', font=font_big, fill=255)
             draw.text((42, 40), f'설정 {current_command_index+1}번', font=font_st, fill=255)  
-        draw.text((-3, 0), current_time, font=font_time, fill=255)
+        draw.text((-1, 0), current_time, font=font_time, fill=255)
 
         # 사용자 지정 위치와 폰트 크기로 메시지 표시
         if status_message:
