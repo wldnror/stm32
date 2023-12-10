@@ -10,7 +10,7 @@ try:
     DC_PIN = 24   # 예시로 24번 핀 사용
 
     # SPI 인터페이스와 ST7789 디스플레이 초기화
-    serial = spi(port=0, device=0, gpio_DC=DC_PIN, gpio_RST=RST_PIN)
+    serial = spi(port=0, device=0, gpio_DC=DC_PIN, gpio_RST=RST_PIN, bus_speed_hz=4000000)
     device = st7789(serial, rotate=0, width=240, height=280)
 
     # 화면에 텍스트 출력
