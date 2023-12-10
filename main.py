@@ -20,4 +20,4 @@ try:
 
 finally:
     # GPIO 리소스 정리
-    GPIO.cleanup(1)
+    GPIO.cleanup(0)
