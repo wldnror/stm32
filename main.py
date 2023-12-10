@@ -80,7 +80,7 @@ GPIO.setup(LED_ERROR, GPIO.OUT)
 
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
-device = sh1107(serial, rotate=1)
+device = sh1107(serial, rotate=1, width=128, height=128)
 
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
