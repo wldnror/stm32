@@ -317,7 +317,7 @@ def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
     ip_address = get_ip_address()
     now = datetime.now()
-    current_time = now.strftime('%I시 %M분')  # 기본 시간 형식
+    current_time = now.strftime('%I시 %M분')  # 기본 시간 형식
     mode_icon = auto_mode_icon if is_auto_mode else manual_mode_icon
 
     if command_names[current_command_index] != "시스템 업데이트":
