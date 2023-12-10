@@ -347,11 +347,11 @@ def update_oled_display():
             draw.text(message_position, status_message, font=font_custom, fill=255)
         else:
             if command_names[current_command_index] != "시스템 업데이트":
-                draw.text((40, 30), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
+                draw.text((40, 40), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
             if command_names[current_command_index] == "ASGD S":
-                draw.text((30, 45), 'ASGD S', font=font_1, fill=255)
+                draw.text((30, 55), 'ASGD S', font=font_1, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
-                draw.text((7, 45), 'ASGD S PNP', font=font_1, fill=255)
+                draw.text((7, 55), 'ASGD S PNP', font=font_1, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((1, 28), '시스템 업데이트', font=font, fill=255)
 
