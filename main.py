@@ -331,7 +331,7 @@ def update_oled_display():
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
             draw.bitmap((0, 0), mode_icon, fill=255)
-            draw.bitmap((90, -52), battery_icon, fill=255)
+            draw.bitmap((90, -22), battery_icon, fill=255)
             draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((63, 0), ip_address, font=font_big, fill=255)
