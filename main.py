@@ -401,13 +401,15 @@ def shutdown_system():
 
 try:
     while True:
-        # 배터리 수준을 확인하고 0%면 시스템 종료
+         # 배터리 수준을 확인하고 0%면 시스템 종료
         if read_ina219_percentage() == 0:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
 
-        # 전압 변화 감지
-        read_and_check_voltage()
+        # STM32 연결 확인
+        if check_stm32_connection():
+            if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
+                execute_command(current_command_index)
 
         # 두 버튼을 동시에 눌렀을 때 모드 전환
         if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
