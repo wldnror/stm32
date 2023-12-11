@@ -9,7 +9,7 @@ from luma.core.render import canvas
 from luma.oled.device import sh1107
 import subprocess
 from datetime import datetime
-#from ina219 import INA219, DeviceRangeError
+from ina219 import INA219, DeviceRangeError
 
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 22
@@ -48,35 +48,35 @@ GPIO.setup(LED_DEBUGGING, GPIO.OUT)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 
-# 전압 감지 및 처리 로직
-# def read_and_check_voltage():
-#     global previous_voltage
-#     try:
-#         ina = INA219(SHUNT_OHMS)
-#         ina.configure()
-#         voltage = ina.voltage()
-#         if previous_voltage is not None and (previous_voltage - voltage) >= voltage_drop_threshold:
-#             if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
-#                 execute_command(current_command_index)
-#         previous_voltage = voltage
-#     except DeviceRangeError as e:
-#         print("DeviceRangeError:", e)
+전압 감지 및 처리 로직
+def read_and_check_voltage():
+    global previous_voltage
+    try:
+        ina = INA219(SHUNT_OHMS)
+        ina.configure()
+        voltage = ina.voltage()
+        if previous_voltage is not None and (previous_voltage - voltage) >= voltage_drop_threshold:
+            if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
+                execute_command(current_command_index)
+        previous_voltage = voltage
+    except DeviceRangeError as e:
+        print("DeviceRangeError:", e)
 
-# 배터리 상태 확인 함수
-# def read_ina219_percentage():
-#     try:
-#         ina = INA219(SHUNT_OHMS)
-#         ina.configure()
-#         voltage = ina.voltage()
-#         if voltage <= MIN_VOLTAGE:
-#             return 0
-#         elif voltage >= MAX_VOLTAGE:
-#             return 100
-#         else:
-#             percentage = ((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100
-#             return min(max(percentage, 0), 100)
-#     except DeviceRangeError as e:
-#         return 0
+배터리 상태 확인 함수
+def read_ina219_percentage():
+    try:
+        ina = INA219(SHUNT_OHMS)
+        ina.configure()
+        voltage = ina.voltage()
+        if voltage <= MIN_VOLTAGE:
+            return 0
+        elif voltage >= MAX_VOLTAGE:
+            return 100
+        else:
+            percentage = ((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100
+            return min(max(percentage, 0), 100)
+    except DeviceRangeError as e:
+        return 0
 
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
@@ -324,8 +324,8 @@ def update_oled_display():
         # "시스템 업데이트"가 아닌 다른 메뉴에서는 오전/오후를 표시
         am_pm = "오전" if now.hour < 12 else "오후"
         current_time = f"{am_pm} {current_time}"
-        voltage_percentage = 50  # 예시: 임의의 값 50% 할당
-    # voltage_percentage = read_ina219_percentage()
+        # voltage_percentage = 50  # 예시: 임의의 값 50% 할당
+        voltage_percentage = read_ina219_percentage()
 
     with canvas(device) as draw:
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
@@ -386,12 +386,12 @@ def shutdown_system():
 try:
     while True:
         # 배터리 수준을 확인하고 0%면 시스템 종료
-        # if read_ina219_percentage() == 0:
-        #     print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
-        #     shutdown_system()
+        if read_ina219_percentage() == 0:
+            print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
+            shutdown_system()
 
         # 전압 변화 감지
-        # read_and_check_voltage()
+        read_and_check_voltage()
 
         # 두 버튼을 동시에 눌렀을 때 모드 전환
         if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
