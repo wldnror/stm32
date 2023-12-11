@@ -48,7 +48,7 @@ GPIO.setup(LED_DEBUGGING, GPIO.OUT)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 
-전압 감지 및 처리 로직
+# 전압 감지 및 처리 로직
 def read_and_check_voltage():
     global previous_voltage
     try:
@@ -62,7 +62,7 @@ def read_and_check_voltage():
     except DeviceRangeError as e:
         print("DeviceRangeError:", e)
 
-배터리 상태 확인 함수
+# 배터리 상태 확인 함수
 def read_ina219_percentage():
     try:
         ina = INA219(SHUNT_OHMS)
