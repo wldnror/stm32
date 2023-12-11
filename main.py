@@ -3,6 +3,7 @@ import time
 import os
 import sys
 import socket
+import serial  # 직렬 통신을 위한 라이브러리 추가
 from PIL import Image, ImageDraw, ImageFont
 from luma.core.interface.serial import i2c
 from luma.core.render import canvas
@@ -17,6 +18,11 @@ BUTTON_PIN_EXECUTE = 17
 LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
+
+# 직렬 포트 설정
+SERIAL_PORT = '/dev/ttyS0'  # Raspberry Pi의 시리얼 포트
+BAUD_RATE = 9600            # 통신 속도
+ser = serial.Serial(SERIAL_PORT, BAUD_RATE)  # 시리얼 연결 초기화
 
 # INA219 설정
 SHUNT_OHMS = 0.1
@@ -79,8 +85,8 @@ def read_ina219_percentage():
         return 0
 
 # OLED 설정
-serial = i2c(port=1, address=0x3C)
-device = sh1107(serial, rotate=1, width=128, height=128)
+serial_i2c = i2c(port=1, address=0x3C)  # 이름 변경하여 충돌 방지
+device = sh1107(serial_i2c, rotate=1, width=128, height=128)
 
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
@@ -415,4 +421,5 @@ try:
         time.sleep(0.1)
 
 except KeyboardInterrupt:
-    GPIO.cleanup()
+    ser.close()  # 시리얼 연결 종료
+    GPIO.cleanup()  # GPIO 정리
