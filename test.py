@@ -368,19 +368,19 @@ def get_ip_address():
     except Exception as e:
         return "0.0.0.0"
 
-# def shutdown_system():
-#     with canvas(device) as draw:
-#         # 첫 번째 메시지를 (0, 0) 위치에 표시
-#         draw.text((20, 25), "배터리 부족", font=font, fill=255)
-#         # 두 번째 메시지를 (0, 25) 위치에 표시
-#         draw.text((25, 50), "시스템 종료 중...", font=font_st, fill=255)
+def shutdown_system():
+    with canvas(device) as draw:
+        # 첫 번째 메시지를 (0, 0) 위치에 표시
+        draw.text((20, 25), "배터리 부족", font=font, fill=255)
+        # 두 번째 메시지를 (0, 25) 위치에 표시
+        draw.text((25, 50), "시스템 종료 중...", font=font_st, fill=255)
 
-#     time.sleep(5)  # 메시지를 5초 동안 표시
+    time.sleep(5)  # 메시지를 5초 동안 표시
 
-    # 디스플레이 전원을 끄는 코드 추가
-    #GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
+    디스플레이 전원을 끄는 코드 추가
+    GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
 
-#     os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
+    os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
 
 
 try:
