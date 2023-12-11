@@ -338,8 +338,8 @@ def update_oled_display():
             draw.text((63, 2), ip_address, font=font_big, fill=255)
             draw.text((0, 103), 'GDSENG', font=font_big, fill=255)
             draw.text((80, 103), 'ver 2 .7', font=font_big, fill=255)
-            # draw.text((40, 40), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
-        draw.text((0, 0), current_time, font=font_time, fill=255)
+            draw.text((40, 40), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
+        # draw.text((0, 0), current_time, font=font_time, fill=255)
 
         # 사용자 지정 위치와 폰트 크기로 메시지 표시
         if status_message:
@@ -383,12 +383,12 @@ def get_ip_address():
 #     os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
 
 
-# try:
-#     while True:
-#         # 배터리 수준을 확인하고 0%면 시스템 종료
-#         if read_ina219_percentage() == 0:
-#             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
-#             shutdown_system()
+try:
+    while True:
+        # 배터리 수준을 확인하고 0%면 시스템 종료
+        if read_ina219_percentage() == 0:
+            print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
+            shutdown_system()
 
         # # 전압 변화 감지
         # read_and_check_voltage()
