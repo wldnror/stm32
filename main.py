@@ -11,48 +11,6 @@ import subprocess
 from datetime import datetime
 from ina219 import INA219, DeviceRangeError
 
-# 필요한 추가 라이브러리 임포트
-import subprocess
-
-# STM32 연결 상태 확인 함수
-def check_stm32_connection():
-    try:
-        # STM32의 ID를 읽어내는 OpenOCD 명령
-        openocd_command = [
-            "sudo", "openocd",
-            "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-            "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-            "-c", "init",
-            "-c", "targets",
-            "-c", "shutdown"
-        ]
-
-        # 명령 실행
-        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-        # 결과 확인
-        if result.returncode == 0 and "target state: halted" in result.stdout:
-            print("STM32 연결 확인 성공!")
-            return True
-        else:
-            print("STM32 연결 실패. 오류 메시지:", result.stderr)
-            return False
-
-    except Exception as e:
-        print("STM32 연결 확인 중 오류 발생:", str(e))
-        return False
-
-# execute_command 함수 수정
-def execute_command(command_index):
-    # STM32 연결 상태 확인
-    if not check_stm32_connection():
-        print("STM32와의 연결을 확인할 수 없습니다.")
-        GPIO.output(LED_ERROR, True)
-        display_status_message("STM32 연결 실패")
-        time.sleep(2)
-        GPIO.output(LED_ERROR, False)
-        return
-        
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
