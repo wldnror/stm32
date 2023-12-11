@@ -3,7 +3,6 @@ import time
 import os
 import sys
 import socket
-import serial  # 직렬 통신을 위한 라이브러리 추가
 from PIL import Image, ImageDraw, ImageFont
 from luma.core.interface.serial import i2c
 from luma.core.render import canvas
@@ -18,11 +17,6 @@ BUTTON_PIN_EXECUTE = 17
 LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
-
-# 직렬 포트 설정
-SERIAL_PORT = '/dev/ttyS0'  # Raspberry Pi의 시리얼 포트
-BAUD_RATE = 9600            # 통신 속도
-ser = serial.Serial(SERIAL_PORT, BAUD_RATE)  # 시리얼 연결 초기화
 
 # INA219 설정
 SHUNT_OHMS = 0.1
@@ -68,16 +62,6 @@ def read_and_check_voltage():
     except DeviceRangeError as e:
         print("DeviceRangeError:", e)
 
-# STM32 연결 상태 확인 함수
-def check_stm32_connection():
-    # STM32에 '연결 확인' 명령 보내기
-    ser.write(b'check_connection\n')
-    time.sleep(1)  # STM32 응답 대기
-    if ser.in_waiting > 0:
-        response = ser.readline().decode().strip()
-        return response == "connected"
-    return False
-
 # 배터리 상태 확인 함수
 def read_ina219_percentage():
     try:
@@ -95,8 +79,8 @@ def read_ina219_percentage():
         return 0
 
 # OLED 설정
-serial_i2c = i2c(port=1, address=0x3C)  # 이름 변경하여 충돌 방지
-device = sh1107(serial_i2c, rotate=1, width=128, height=128)
+serial = i2c(port=1, address=0x3C)
+device = sh1107(serial, rotate=1, width=128, height=128)
 
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
@@ -401,15 +385,13 @@ def shutdown_system():
 
 try:
     while True:
-         # 배터리 수준을 확인하고 0%면 시스템 종료
+        # 배터리 수준을 확인하고 0%면 시스템 종료
         if read_ina219_percentage() == 0:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
 
-        # STM32 연결 확인
-        if check_stm32_connection():
-            if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
-                execute_command(current_command_index)
+        # 전압 변화 감지
+        read_and_check_voltage()
 
         # 두 버튼을 동시에 눌렀을 때 모드 전환
         if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
@@ -433,5 +415,4 @@ try:
         time.sleep(0.1)
 
 except KeyboardInterrupt:
-    ser.close()  # 시리얼 연결 종료
-    GPIO.cleanup()  # GPIO 정리
+    GPIO.cleanup()
