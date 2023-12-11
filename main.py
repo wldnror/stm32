@@ -12,7 +12,7 @@ from datetime import datetime
 from ina219 import INA219, DeviceRangeError
 
 # GPIO 핀 설정
-BUTTON_PIN_NEXT = 22
+BUTTON_PIN_NEXT = 23
 BUTTON_PIN_EXECUTE = 17
 LED_DEBUGGING = 23
 LED_SUCCESS = 24
