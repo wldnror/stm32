@@ -23,7 +23,7 @@ SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.1  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 previous_voltage = None
-voltage_drop_threshold = 0.04  # 전압이 이 값 이상 떨어질 때 반응
+voltage_drop_threshold = 0.03  # 전압이 이 값 이상 떨어질 때 반응
 
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
