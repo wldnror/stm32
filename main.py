@@ -68,6 +68,16 @@ def read_and_check_voltage():
     except DeviceRangeError as e:
         print("DeviceRangeError:", e)
 
+# STM32 연결 상태 확인 함수
+def check_stm32_connection():
+    # STM32에 '연결 확인' 명령 보내기
+    ser.write(b'check_connection\n')
+    time.sleep(1)  # STM32 응답 대기
+    if ser.in_waiting > 0:
+        response = ser.readline().decode().strip()
+        return response == "connected"
+    return False
+
 # 배터리 상태 확인 함수
 def read_ina219_percentage():
     try:
