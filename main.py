@@ -377,8 +377,8 @@ def shutdown_system():
 
     time.sleep(5)  # 메시지를 5초 동안 표시
 
-    # 디스플레이 전원을 끄는 코드 추가
-    #GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
+    디스플레이 전원을 끄는 코드 추가
+    GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
 
     os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
 
