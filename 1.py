@@ -10,12 +10,15 @@ def extract_file_from_stm32():
 
     # OpenOCD 명령을 사용하여 STM32의 메모리 덤프
     openocd_command = [
-        "sudo", "openocd",
-        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", f"read_image {save_path} {memory_address} {memory_size}",
-        "-c", "shutdown"
+    "sudo", "openocd",
+    "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+    "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+    "-c", "reset halt",
+    "-c", f"dump_image {save_path} {memory_address} {memory_size}",
+    "-c", "reset run",
+    "-c", "shutdown"
     ]
+
     # 명령 실행 및 결과 확인
     try:
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
