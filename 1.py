@@ -13,10 +13,9 @@ def extract_file_from_stm32():
         "sudo", "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
         "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", f"dump_image {save_path} {memory_address} {memory_size}",
+        "-c", f"read_image {save_path} {memory_address} {memory_size}",
         "-c", "shutdown"
     ]
-
     # 명령 실행 및 결과 확인
     try:
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
