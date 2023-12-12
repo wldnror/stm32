@@ -29,8 +29,8 @@ def toggle_mode():
     update_oled_display()  # OLED 화면 업데이트
 
 # 자동 모드와 수동 모드 아이콘 로드 및 크기 조절
-auto_mode_icon = Image.open("/home/user/stm32/img/A.png").resize((new_width, new_height), Image.ANTIALIAS)
-manual_mode_icon = Image.open("/home/user/stm32/img/M.png").resize((new_width, new_height), Image.ANTIALIAS)
+auto_mode_icon = Image.open("/home/user/stm32/img/A.png").resize((new_width, new_height), ANTIALIAS)
+manual_mode_icon = Image.open("/home/user/stm32/img/M.png").resize((new_width, new_height), ANTIALIAS)
 
 # GPIO 설정
 GPIO.setmode(GPIO.BCM)
