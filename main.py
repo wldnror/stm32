@@ -42,25 +42,12 @@ GPIO.setup(LED_DEBUGGING, GPIO.OUT)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 
-# 전압 감지 및 처리 로직
-def read_and_check_voltage():
-    global previous_voltage
-    try:
-        ina = INA219(SHUNT_OHMS)
-        ina.configure()
-        voltage = ina.voltage()
-        if previous_voltage is not None and (previous_voltage - voltage) >= voltage_drop_threshold:
-            if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
-                execute_command(current_command_index)
-        previous_voltage = voltage
-    except DeviceRangeError as e:
-        print("DeviceRangeError:", e)
-
-# 배터리 상태 확인 함수
+# read_ina219_percentage 함수 수정
 def read_ina219_percentage():
-    SHUNT_OHMS = 0.1
+    SHUNT_OHMS = 0.1  # SHUNT_OHMS 값을 설정
     MIN_VOLTAGE = 3.0  # 배터리의 최소 전압 (원하는 값으로 설정)
     MAX_VOLTAGE = 4.2  # 배터리의 최대 전압 (원하는 값으로 설정)
+
     try:
         ina = INA219(SHUNT_OHMS)
         ina.configure()
@@ -74,6 +61,22 @@ def read_ina219_percentage():
             return min(max(percentage, 0), 100)
     except DeviceRangeError as e:
         return 0
+
+# read_and_check_voltage 함수 수정
+def read_and_check_voltage():
+    global previous_voltage
+    try:
+        SHUNT_OHMS = 0.1  # SHUNT_OHMS 값을 설정
+        ina = INA219(SHUNT_OHMS)
+        ina.configure()
+        voltage = ina.voltage()
+        if previous_voltage is not None and (previous_voltage - voltage) >= voltage_drop_threshold:
+            if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
+                execute_command(current_command_index)
+        previous_voltage = voltage
+    except DeviceRangeError as e:
+        print("DeviceRangeError:", e)
+
 
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
