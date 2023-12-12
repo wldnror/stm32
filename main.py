@@ -10,6 +10,8 @@ from luma.oled.device import sh1107
 import subprocess
 from datetime import datetime
 from ina219 import INA219, DeviceRangeError
+from PIL import Image
+
 
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
