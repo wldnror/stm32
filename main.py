@@ -39,7 +39,7 @@ def toggle_mode():
 
 # 자동 모드와 수동 모드 아이콘 로드
 auto_mode_icon = Image.open("/home/user/stm32/img/A.png")
-manual_mode_icon = Image.open("/home/user/stm32/img/X.png")
+manual_mode_icon = Image.open("/home/user/stm32/img/M.png")
 
 # GPIO 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -331,7 +331,7 @@ def update_oled_display():
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
             draw.bitmap((90, 100), mode_icon, fill=255)
-            draw.bitmap((90, -10), battery_icon, fill=255)
+            draw.bitmap((90, -30), battery_icon, fill=255)
             draw.text((0, 100), 'GDSENG', font=font_big, fill=255)
             draw.text((95, -1), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
