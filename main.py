@@ -18,18 +18,9 @@ LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
 
-# INA219 설정
-SHUNT_OHMS = 0.1
-MIN_VOLTAGE = 3.1  # 최소 작동 전압
-MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
-previous_voltage = None
-voltage_drop_threshold = 0.05  # 전압이 이 값 이상 떨어질 때 반응
-
-# 자동 모드와 수동 모드 상태를 추적하는 전역 변수
-is_auto_mode = True
-
-# GPIO 핀 번호 모드 설정
-GPIO.setmode(GPIO.BCM)
+# 가로 및 세로 크기 설정
+new_width = 40
+new_height = 40
 
 # 모드 전환 함수
 def toggle_mode():
@@ -37,11 +28,12 @@ def toggle_mode():
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
 
-# 자동 모드와 수동 모드 아이콘 로드
-auto_mode_icon = Image.open("/home/user/stm32/img/A.png")
-manual_mode_icon = Image.open("/home/user/stm32/img/M.png")
+# 자동 모드와 수동 모드 아이콘 로드 및 크기 조절
+auto_mode_icon = Image.open("/home/user/stm32/img/A.png").resize((new_width, new_height), Image.ANTIALIAS)
+manual_mode_icon = Image.open("/home/user/stm32/img/M.png").resize((new_width, new_height), Image.ANTIALIAS)
 
 # GPIO 설정
+GPIO.setmode(GPIO.BCM)
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(LED_DEBUGGING, GPIO.OUT)
