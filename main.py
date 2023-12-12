@@ -10,8 +10,6 @@ from luma.oled.device import sh1107
 import subprocess
 from datetime import datetime
 from ina219 import INA219, DeviceRangeError
-from PIL import Image
-
 
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
@@ -20,9 +18,18 @@ LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
 
-# 가로 및 세로 크기 설정
-new_width = 40
-new_height = 40
+# INA219 설정
+SHUNT_OHMS = 0.1
+MIN_VOLTAGE = 3.1  # 최소 작동 전압
+MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
+previous_voltage = None
+voltage_drop_threshold = 0.05  # 전압이 이 값 이상 떨어질 때 반응
+
+# 자동 모드와 수동 모드 상태를 추적하는 전역 변수
+is_auto_mode = True
+
+# GPIO 핀 번호 모드 설정
+GPIO.setmode(GPIO.BCM)
 
 # 모드 전환 함수
 def toggle_mode():
@@ -30,24 +37,33 @@ def toggle_mode():
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
 
-# 자동 모드와 수동 모드 아이콘 로드 및 크기 조절
-auto_mode_icon = Image.open("/home/user/stm32/img/A.png").resize((new_width, new_height), Image.LANCZOS)
-manual_mode_icon = Image.open("/home/user/stm32/img/M.png").resize((new_width, new_height), Image.LANCZOS)
+# 자동 모드와 수동 모드 아이콘 로드
+auto_mode_icon = Image.open("/home/user/stm32/img/A.png")
+manual_mode_icon = Image.open("/home/user/stm32/img/X.png")
 
 # GPIO 설정
-GPIO.setmode(GPIO.BCM)
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(LED_DEBUGGING, GPIO.OUT)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 
-# read_ina219_percentage 함수 수정
-def read_ina219_percentage():
-    SHUNT_OHMS = 0.1  # SHUNT_OHMS 값을 설정
-    MIN_VOLTAGE = 3.0  # 배터리의 최소 전압 (원하는 값으로 설정)
-    MAX_VOLTAGE = 4.2  # 배터리의 최대 전압 (원하는 값으로 설정)
+# 전압 감지 및 처리 로직
+def read_and_check_voltage():
+    global previous_voltage
+    try:
+        ina = INA219(SHUNT_OHMS)
+        ina.configure()
+        voltage = ina.voltage()
+        if previous_voltage is not None and (previous_voltage - voltage) >= voltage_drop_threshold:
+            if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
+                execute_command(current_command_index)
+        previous_voltage = voltage
+    except DeviceRangeError as e:
+        print("DeviceRangeError:", e)
 
+# 배터리 상태 확인 함수
+def read_ina219_percentage():
     try:
         ina = INA219(SHUNT_OHMS)
         ina.configure()
@@ -61,22 +77,6 @@ def read_ina219_percentage():
             return min(max(percentage, 0), 100)
     except DeviceRangeError as e:
         return 0
-
-# read_and_check_voltage 함수 수정
-def read_and_check_voltage():
-    global previous_voltage
-    try:
-        SHUNT_OHMS = 0.1  # SHUNT_OHMS 값을 설정
-        ina = INA219(SHUNT_OHMS)
-        ina.configure()
-        voltage = ina.voltage()
-        if previous_voltage is not None and (previous_voltage - voltage) >= voltage_drop_threshold:
-            if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
-                execute_command(current_command_index)
-        previous_voltage = voltage
-    except DeviceRangeError as e:
-        print("DeviceRangeError:", e)
-
 
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
@@ -331,7 +331,7 @@ def update_oled_display():
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
             draw.bitmap((90, 100), mode_icon, fill=255)
-            draw.bitmap((90, -30), battery_icon, fill=255)
+            draw.bitmap((90, -10), battery_icon, fill=255)
             draw.text((0, 100), 'GDSENG', font=font_big, fill=255)
             draw.text((95, -1), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
