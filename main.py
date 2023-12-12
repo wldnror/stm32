@@ -59,6 +59,8 @@ def read_and_check_voltage():
 # 배터리 상태 확인 함수
 def read_ina219_percentage():
     SHUNT_OHMS = 0.1
+    MIN_VOLTAGE = 3.0  # 배터리의 최소 전압 (원하는 값으로 설정)
+    MAX_VOLTAGE = 4.2  # 배터리의 최대 전압 (원하는 값으로 설정)
     try:
         ina = INA219(SHUNT_OHMS)
         ina.configure()
