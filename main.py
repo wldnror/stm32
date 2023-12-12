@@ -58,6 +58,7 @@ def read_and_check_voltage():
 
 # 배터리 상태 확인 함수
 def read_ina219_percentage():
+    SHUNT_OHMS = 0.1
     try:
         ina = INA219(SHUNT_OHMS)
         ina.configure()
