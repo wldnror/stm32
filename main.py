@@ -346,6 +346,10 @@ def update_oled_display():
 
     with canvas(device) as draw:
         if command_names[current_command_index] != "시스템 업데이트":
+            # "시스템 업데이트"가 아닌 다른 메뉴에서는 오전/오후를 표시
+            am_pm = "오전" if now.hour < 12 else "오후"
+            current_time = f"{am_pm} {current_time}"
+
             # 모드에 따라 'A' 또는 'M' 선택
             mode_char = 'A' if is_auto_mode else 'M'
             outer_ellipse_box = (2, 13, 22, 33)  # 외부 동그라미 좌표 (크기 조정)
