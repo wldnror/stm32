@@ -3,7 +3,7 @@ import time
 import os
 import sys
 import socket
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageResampling
 from luma.core.interface.serial import i2c
 from luma.core.render import canvas
 from luma.oled.device import sh1107
@@ -37,11 +37,12 @@ def toggle_mode():
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
 
-# 자동 모드와 수동 모드 아이콘 로드 및 크기 조정
+# 이미지를 불러오고 크기를 조정하는 함수
 def load_and_resize_image(image_path, size):
     with Image.open(image_path) as img:
-        return img.resize(size, Image.ANTIALIAS)
+        return img.resize(size, ImageResampling.LANCZOS)  # ANTIALIAS 대신 LANCZOS 사용
 
+# 자동 모드와 수동 모드 아이콘 로드 및 크기 조정
 auto_mode_icon_path = "/home/user/stm32/img/A.png"
 manual_mode_icon_path = "/home/user/stm32/img/M.png"
 
