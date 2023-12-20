@@ -340,14 +340,19 @@ def update_oled_display():
     with canvas(device) as draw:
         # 모드 표시 ('A' 또는 'M')
         mode_letter = "A" if is_auto_mode else "M"
-        draw.text((0, 0), mode_letter, font=font_mode, fill="white")
         
+        # A와 M을 원하는 위치에 표시
+        draw.text((0, 0), mode_letter, font=font_mode, fill="white")
 
-    if command_names[current_command_index] != "시스템 업데이트":
-        # "시스템 업데이트"가 아닌 다른 메뉴에서는 오전/오후를 표시
-        am_pm = "오전" if now.hour < 12 else "오후"
-        current_time = f"{am_pm} {current_time}"
-    voltage_percentage = read_ina219_percentage()
+        # 기존의 내용을 추가로 표시
+        if command_names[current_command_index] != "시스템 업데이트":
+            # "시스템 업데이트"가 아닌 다른 메뉴에서는 오전/오후를 표시
+            am_pm = "오전" if now.hour < 12 else "오후"
+            current_time = f"{am_pm} {current_time}"
+        voltage_percentage = read_ina219_percentage()
+
+        # 나머지 코드는 그대로 두세요.
+
 
     with canvas(device) as draw:
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
