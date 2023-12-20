@@ -49,18 +49,40 @@ GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 
 # 전압 감지 및 처리 로직
-def read_and_check_voltage():
-    global previous_voltage
+# def read_and_check_voltage():
+#     global previous_voltage
+#     try:
+#         ina = INA219(SHUNT_OHMS)
+#         ina.configure()
+#         voltage = ina.voltage()
+#         if previous_voltage is not None and (previous_voltage - voltage) >= voltage_drop_threshold:
+#             if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
+#                 execute_command(current_command_index)
+#         previous_voltage = voltage
+#     except DeviceRangeError as e:
+#         print("DeviceRangeError:", e)
+
+
+def check_stm32_connection():
     try:
-        ina = INA219(SHUNT_OHMS)
-        ina.configure()
-        voltage = ina.voltage()
-        if previous_voltage is not None and (previous_voltage - voltage) >= voltage_drop_threshold:
-            if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
-                execute_command(current_command_index)
-        previous_voltage = voltage
-    except DeviceRangeError as e:
-        print("DeviceRangeError:", e)
+        command = [
+            "sudo", "openocd",
+            "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+            "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+            "-c", "init",
+            "-c", "exit"
+        ]
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        if result.returncode == 0:
+            print("STM32 연결 성공")
+            return True
+        else:
+            print("STM32 연결 실패:", result.stderr)
+            return False
+    except Exception as e:
+        print(f"오류 발생: {e}")
+        return False
 
 # 배터리 상태 확인 함수
 def read_ina219_percentage():
@@ -386,8 +408,9 @@ try:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
 
-        # 전압 변화 감지
-        read_and_check_voltage()
+        # STM32 연결 상태 확인
+        if is_auto_mode and check_stm32_connection():
+            execute_command(current_command_index)
 
         # 두 버튼을 동시에 눌렀을 때 모드 전환
         if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
