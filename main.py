@@ -355,8 +355,8 @@ def update_oled_display():
             outer_ellipse_box = (2, 13, 22, 33)  # 외부 동그라미 좌표 (크기 조정)
             inner_ellipse_box = (8, 19, 16, 27)  # 내부 동그라미 좌표 (두께 조정)
             text_position = {
-                'A': (7, 6),
-                'M': (6, 6)
+                'A': (7, 8),
+                'M': (5, 8)
             }
             draw.ellipse(outer_ellipse_box, outline="white", fill=None)    # 외부 동그라미 그리기 (두께 조정)
             draw.ellipse(inner_ellipse_box, outline="black", fill="black") # 내부 동그라미 그리기
