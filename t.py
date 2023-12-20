@@ -1,31 +1,27 @@
-import spidev
+import subprocess
 import time
 
-spi = spidev.SpiDev()
-spi.open(0, 0)  # 0: 첫 번째 SPI 버스, 0: 첫 번째 장치
-spi.max_speed_hz = 1000000  # 1 MHz
-
-def check_spi_device():
+def check_stm32_connection():
     try:
-        # 예시: 단순한 데이터 전송 및 응답 받기
-        # 이 부분은 연결된 장치의 특성에 맞게 수정되어야 합니다.
-        to_send = [0x00]  # 더미 데이터
-        response = spi.xfer(to_send)
+        # OpenOCD를 통해 STM32와의 연결을 시도하는 명령
+        command = ["openocd", "-f", "/path/to/openocd.cfg", "-c", "init", "-c", "exit"]
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-        # 예시: 응답을 검증하여 장치의 연결 상태 확인
-        # 실제 연결된 장치에 따라 응답 검증 로직은 달라져야 합니다.
-        if response[0] == 0x00:  # 예상 응답
+        # 결과를 확인하여 연결 상태를 판단
+        if result.returncode == 0:
+            print("STM32 연결 성공")
             return True
         else:
+            print("STM32 연결 실패")
             return False
     except Exception as e:
-        print(f"SPI 통신 오류: {e}")
+        print(f"오류 발생: {e}")
         return False
 
-# 메인 루프
+# 주기적으로 연결 확인
 while True:
-    if check_spi_device():
-        print("장치 연결됨.")
+    if check_stm32_connection():
+        print("STM32 연결됨")
     else:
-        print("장치 연결 끊김 또는 응답 없음.")
-    time.sleep(1)  # 1초 대기
+        print("STM32 연결 끊김")
+    time.sleep(5)  # 5초 간격으로 확인
