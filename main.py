@@ -351,10 +351,22 @@ def update_oled_display():
     voltage_percentage = read_ina219_percentage()
 
     with canvas(device) as draw:
+        # 모드에 따라 동그라미 안에 'A' 또는 'M' 표시
+        if is_auto_mode:
+            # 동그라미 그리기
+            draw.ellipse((2, 2, 18, 18), outline="white", fill="black")
+            # 'A' 글자 그리기
+            draw.text((5, 5), 'A', font=font, fill=255)
+        else:
+            # 'M'의 경우도 비슷하게 처리
+            # 동그라미 그리기
+            draw.ellipse((2, 2, 18, 18), outline="white", fill="black")
+            # 'M' 글자 그리기
+            draw.text((5, 5), 'M', font=font, fill=255)
         
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
-            draw.text((5, 5), mode_text, font=font, fill=255)
+            # draw.text((5, 5), mode_text, font=font, fill=255)
             draw.bitmap((90, -12), battery_icon, fill=255)
             draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
