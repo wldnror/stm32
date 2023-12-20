@@ -37,6 +37,9 @@ def toggle_mode():
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
 
+# 자동 모드와 수동 모드 아이콘 로드
+auto_mode_icon = Image.open("/home/user/stm32/img/A.png")
+manual_mode_icon = Image.open("/home/user/stm32/img/M.png")
 
 # GPIO 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -331,34 +334,22 @@ def execute_command(command_index):
         GPIO.output(LED_ERROR, False)
 
 def update_oled_display():
-    # global current_command_index, status_message, message_position, message_font_size
-    # ip_address = get_ip_address()
-    # now = datetime.now()
-    # current_time = now.strftime('%I시 %M분')  # 기본 시간 형식
-    # font_mode = ImageFont.truetype(font_path, 17)  # 모드를 나타내는 폰트 크기 설정
-
-    # with canvas(device) as draw:
-    #     # 모드 표시 ('A' 또는 'M')
-    #     mode_letter = "A" if is_auto_mode else "M"
-    #     draw.text((0, 0), mode_letter, font=font_mode, fill="white")
-        
+    global current_command_index, status_message, message_position, message_font_size
+    ip_address = get_ip_address()
+    now = datetime.now()
+    current_time = now.strftime('%I시 %M분')  # 기본 시간 형식
+    mode_icon = auto_mode_icon if is_auto_mode else manual_mode_icon
 
     if command_names[current_command_index] != "시스템 업데이트":
         # "시스템 업데이트"가 아닌 다른 메뉴에서는 오전/오후를 표시
         am_pm = "오전" if now.hour < 12 else "오후"
         current_time = f"{am_pm} {current_time}"
     voltage_percentage = read_ina219_percentage()
-    
-    with canvas(device) as draw:
-        # 모드 표시 ('A' 또는 'M')
-        mode_letter = "A" if is_auto_mode else "M"
-        draw.text((0, 0), mode_letter, font=font_mode, fill="white")
-        
 
     with canvas(device) as draw:
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
-            # draw.bitmap((0, 0), mode_icon, fill=255)
+            draw.bitmap((0, 0), mode_icon, fill=255)
             draw.bitmap((90, -14), battery_icon, fill=255)
             draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
@@ -415,7 +406,7 @@ try:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
 
-        # STM32 연결 상태 확인
+        # STM32 연결 상태 확인 및 명령 실행
         if is_auto_mode and check_stm32_connection() and connection_success:
             execute_command(current_command_index)
 
