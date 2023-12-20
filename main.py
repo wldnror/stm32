@@ -37,20 +37,35 @@ def toggle_mode():
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
 
-# 이미지를 불러오고 크기를 조정하는 함수
-def load_and_resize_image(image_path, size):
-    with Image.open(image_path) as img:
-        # PIL의 최신 버전에서는 Image.Resampling.LANCZOS를 사용합니다.
-        return img.resize(size, Image.Resampling.LANCZOS)
+def create_circle_with_letter(letter, size, font_path, font_size):
+    # 새 이미지와 드로잉 객체 생성
+    image = Image.new('1', size, "white")  # '1'은 1-bit 픽셀, 흑백 모드
+    draw = ImageDraw.Draw(image)
 
-# 자동 모드와 수동 모드 아이콘 로드 및 크기 조정
-auto_mode_icon_path = "/home/user/stm32/img/A.png"
-manual_mode_icon_path = "/home/user/stm32/img/M.png"
+    # 원 그리기
+    draw.ellipse([(0, 0), size], outline="black", fill="white")
 
-# 디스플레이에 맞는 크기로 조정 (예: 32x32)
-desired_size = (64, 64)
-auto_mode_icon = load_and_resize_image(auto_mode_icon_path, desired_size)
-manual_mode_icon = load_and_resize_image(manual_mode_icon_path, desired_size)
+    # 글자를 중앙에 배치하기 위한 폰트와 위치 계산
+    font = ImageFont.truetype(font_path, font_size)
+    text_width, text_height = draw.textsize(letter, font=font)
+    text_x = (size[0] - text_width) / 2
+    text_y = (size[1] - text_height) / 2
+
+    # 글자 그리기
+    draw.text((text_x, text_y), letter, font=font, fill="black")
+
+    return image
+
+# 폰트 경로와 크기 설정
+font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
+font_size = 30
+
+# 이미지 크기 설정 (예: 64x64)
+size = (64, 64)
+
+# 'A'와 'M' 이미지 생성
+auto_mode_icon = create_circle_with_letter("A", size, font_path, font_size)
+manual_mode_icon = create_circle_with_letter("M", size, font_path, font_size)
 
 
 
