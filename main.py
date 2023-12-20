@@ -423,24 +423,23 @@ try:
 
         # STM32 연결 상태 확인 및 명령 실행
         if command_names[current_command_index] != "시스템 업데이트":
-            # STM32 연결 상태 확인 및 명령 실행
             if is_auto_mode and check_stm32_connection() and connection_success:
                 execute_command(current_command_index)
 
-            # 두 버튼을 동시에 눌렀을 때 모드 전환
-            if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
-                toggle_mode()
-                time.sleep(1)  # 디바운싱을 위한 지연
+        # 두 버튼을 동시에 눌렀을 때 모드 전환
+        if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
+            toggle_mode()
+            time.sleep(1)  # 디바운싱을 위한 지연
 
-            # NEXT 버튼 처리
-            elif not GPIO.input(BUTTON_PIN_NEXT):
-                current_command_index = (current_command_index + 1) % len(commands)
-                time.sleep(0.1)
+        # NEXT 버튼 처리
+        elif not GPIO.input(BUTTON_PIN_NEXT):
+            current_command_index = (current_command_index + 1) % len(commands)
+            time.sleep(0.1)
 
-            # EXECUTE 버튼 처리
-            elif not GPIO.input(BUTTON_PIN_EXECUTE):
-                execute_command(current_command_index)
-                time.sleep(0.1)
+        # EXECUTE 버튼 처리
+        elif not GPIO.input(BUTTON_PIN_EXECUTE):
+            execute_command(current_command_index)
+            time.sleep(0.1)
 
         # OLED 디스플레이 업데이트
         update_oled_display()
@@ -450,6 +449,7 @@ try:
 
 except KeyboardInterrupt:
     GPIO.cleanup()
+
 # try:
 #     while True:
 #         # 배터리 수준을 확인하고 0%면 시스템 종료
