@@ -355,8 +355,8 @@ def update_oled_display():
             outer_ellipse_box = (2, 13, 22, 33)  # 외부 동그라미 좌표 (크기 조정)
             inner_ellipse_box = (8, 19, 16, 27)  # 내부 동그라미 좌표 (두께 조정)
             text_position = {
-                'A': (7, 8),
-                'M': (5, 8)
+                'A': (8, 9),
+                'M': (5, 9)
             }
             draw.ellipse(outer_ellipse_box, outline="white", fill=None)    # 외부 동그라미 그리기 (두께 조정)
             draw.ellipse(inner_ellipse_box, outline="black", fill="black") # 내부 동그라미 그리기
@@ -422,23 +422,25 @@ try:
             shutdown_system()
 
         # STM32 연결 상태 확인 및 명령 실행
-        if is_auto_mode and check_stm32_connection() and connection_success:
-            execute_command(current_command_index)
+        if command_names[current_command_index] != "시스템 업데이트":
+            # STM32 연결 상태 확인 및 명령 실행
+            if is_auto_mode and check_stm32_connection() and connection_success:
+                execute_command(current_command_index)
 
-        # 두 버튼을 동시에 눌렀을 때 모드 전환
-        if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
-            toggle_mode()
-            time.sleep(1)  # 디바운싱을 위한 지연
+            # 두 버튼을 동시에 눌렀을 때 모드 전환
+            if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
+                toggle_mode()
+                time.sleep(1)  # 디바운싱을 위한 지연
 
-        # NEXT 버튼 처리
-        elif not GPIO.input(BUTTON_PIN_NEXT):
-            current_command_index = (current_command_index + 1) % len(commands)
-            time.sleep(0.1)
+            # NEXT 버튼 처리
+            elif not GPIO.input(BUTTON_PIN_NEXT):
+                current_command_index = (current_command_index + 1) % len(commands)
+                time.sleep(0.1)
 
-        # EXECUTE 버튼 처리
-        elif not GPIO.input(BUTTON_PIN_EXECUTE):
-            execute_command(current_command_index)
-            time.sleep(0.1)
+            # EXECUTE 버튼 처리
+            elif not GPIO.input(BUTTON_PIN_EXECUTE):
+                execute_command(current_command_index)
+                time.sleep(0.1)
 
         # OLED 디스플레이 업데이트
         update_oled_display()
@@ -448,3 +450,37 @@ try:
 
 except KeyboardInterrupt:
     GPIO.cleanup()
+# try:
+#     while True:
+#         # 배터리 수준을 확인하고 0%면 시스템 종료
+#         if read_ina219_percentage() == 0:
+#             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
+#             shutdown_system()
+
+#         # STM32 연결 상태 확인 및 명령 실행
+#         if is_auto_mode and check_stm32_connection() and connection_success:
+#             execute_command(current_command_index)
+
+#         # 두 버튼을 동시에 눌렀을 때 모드 전환
+#         if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
+#             toggle_mode()
+#             time.sleep(1)  # 디바운싱을 위한 지연
+
+#         # NEXT 버튼 처리
+#         elif not GPIO.input(BUTTON_PIN_NEXT):
+#             current_command_index = (current_command_index + 1) % len(commands)
+#             time.sleep(0.1)
+
+#         # EXECUTE 버튼 처리
+#         elif not GPIO.input(BUTTON_PIN_EXECUTE):
+#             execute_command(current_command_index)
+#             time.sleep(0.1)
+
+#         # OLED 디스플레이 업데이트
+#         update_oled_display()
+
+#         # 짧은 지연
+#         time.sleep(0.1)
+
+# except KeyboardInterrupt:
+#     GPIO.cleanup()
