@@ -1,22 +1,20 @@
 import spidev
 import time
 
-# SPI 인스턴스 생성
 spi = spidev.SpiDev()
+spi.open(0, 0)  # 0: 첫 번째 SPI 버스, 0: 첫 번째 장치
+spi.max_speed_hz = 1000000  # 1 MHz
 
-# SPI 통신 시작
-spi.open(0, 0)  # 첫 번째 숫자는 SPI 버스 번호, 두 번째 숫자는 장치 번호
-
-# SPI 통신 설정
-spi.max_speed_hz = 500000  # 통신 속도 설정
-spi.mode = 0  # SPI 모드 설정
-
-def check_device():
+def check_spi_device():
     try:
-        # 테스트를 위한 데이터 전송 (예: 0x00)
-        response = spi.xfer([0x00])
-        # 응답 확인 (장치에 따라 응답이 다를 수 있음)
-        if response[0] == 0x00:  # 예상 응답값 확인
+        # 예시: 단순한 데이터 전송 및 응답 받기
+        # 이 부분은 연결된 장치의 특성에 맞게 수정되어야 합니다.
+        to_send = [0x00]  # 더미 데이터
+        response = spi.xfer(to_send)
+
+        # 예시: 응답을 검증하여 장치의 연결 상태 확인
+        # 실제 연결된 장치에 따라 응답 검증 로직은 달라져야 합니다.
+        if response[0] == 0x00:  # 예상 응답
             return True
         else:
             return False
@@ -24,10 +22,10 @@ def check_device():
         print(f"SPI 통신 오류: {e}")
         return False
 
-# 주기적인 연결 상태 확인
+# 메인 루프
 while True:
-    if check_device():
+    if check_spi_device():
         print("장치 연결됨.")
     else:
-        print("장치 연결 끊김!")
-    time.sleep(5)  # 5초마다 체크
+        print("장치 연결 끊김 또는 응답 없음.")
+    time.sleep(1)  # 1초 대기
