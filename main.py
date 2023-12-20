@@ -39,7 +39,7 @@ def toggle_mode():
 
 # 자동 모드와 수동 모드 아이콘 로드
 auto_mode_icon = Image.open("/home/user/stm32/img/A.png")
-manual_mode_icon = Image.open("/home/user/stm32/img/X.png")
+manual_mode_icon = Image.open("/home/user/stm32/img/M.png")
 
 # GPIO 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
