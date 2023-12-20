@@ -342,38 +342,33 @@ def update_oled_display():
     ip_address = get_ip_address()
     now = datetime.now()
     current_time = now.strftime('%I시 %M분')  # 기본 시간 형식
-    mode_text = auto_mode_text if is_auto_mode else manual_mode_text
-
-    if command_names[current_command_index] != "시스템 업데이트":
-        # "시스템 업데이트"가 아닌 다른 메뉴에서는 오전/오후를 표시
-        am_pm = "오전" if now.hour < 12 else "오후"
-        current_time = f"{am_pm} {current_time}"
     voltage_percentage = read_ina219_percentage()
 
     with canvas(device) as draw:
-        # 모드에 따라 'A' 또는 'M' 선택
-        mode_char = 'A' if is_auto_mode else 'M'
-        outer_ellipse_box = (2, 13, 22, 33)  # 외부 동그라미 좌표 (크기 조정)
-        inner_ellipse_box = (8, 19, 16, 27)  # 내부 동그라미 좌표 (두께 조정)
-        text_position = {
-            'A': (7, 6),
-            'M': (6, 6)
-        }
-        draw.ellipse(outer_ellipse_box, outline="white", fill=None)    # 외부 동그라미 그리기 (두꺼운 테두리)
-        draw.ellipse(inner_ellipse_box, outline="black", fill="black") # 내부 동그라미 그리기 (빈 영역 생성)
-        draw.text(text_position[mode_char], mode_char, font=font, fill=255)  # 글자 그리기
-        
+        if command_names[current_command_index] != "시스템 업데이트":
+            # 모드에 따라 'A' 또는 'M' 선택
+            mode_char = 'A' if is_auto_mode else 'M'
+            outer_ellipse_box = (2, 13, 22, 33)  # 외부 동그라미 좌표 (크기 조정)
+            inner_ellipse_box = (8, 19, 16, 27)  # 내부 동그라미 좌표 (두께 조정)
+            text_position = {
+                'A': (7, 6),
+                'M': (6, 6)
+            }
+            draw.ellipse(outer_ellipse_box, outline="white", fill=None)    # 외부 동그라미 그리기 (두께 조정)
+            draw.ellipse(inner_ellipse_box, outline="black", fill="black") # 내부 동그라미 그리기
+            draw.text(text_position[mode_char], mode_char, font=font, fill=255)  # 글자 그리기
+
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
-            # draw.text((5, 5), mode_text, font=font, fill=255)
             draw.bitmap((90, -12), battery_icon, fill=255)
             draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((63, 0), ip_address, font=font_big, fill=255)
             draw.text((0, 50), 'GDSENG', font=font_big, fill=255)
             draw.text((90, 50), 'ver 2.8', font=font_big, fill=255)
-            # draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_st, fill=255)  
+        
         draw.text((0, -3), current_time, font=font_time, fill=255)
+
 
         # 사용자 지정 위치와 폰트 크기로 메시지 표시
         if status_message:
