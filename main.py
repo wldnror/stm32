@@ -365,7 +365,7 @@ def update_oled_display():
             font_custom = ImageFont.truetype(font_path, message_font_size)
             draw.text(message_position, status_message, font=font_custom, fill=255)
         else:
-            if command_names[current_command_index] != "시스템 업데이트":
+            # if command_names[current_command_index] != "시스템 업데이트":
                 # draw.text((40, 20), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
             if command_names[current_command_index] == "ASGD S":
                 draw.text((30, 35), 'ASGD S', font=font_1, fill=255)
