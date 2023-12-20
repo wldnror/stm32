@@ -63,7 +63,12 @@ GPIO.setup(LED_ERROR, GPIO.OUT)
 #         print("DeviceRangeError:", e)
 
 
+# 연결 상태를 추적하기 위한 변수
+connection_success = False
+connection_failed_since_last_success = False
+
 def check_stm32_connection():
+    global connection_success, connection_failed_since_last_success
     try:
         command = [
             "sudo", "openocd",
@@ -75,13 +80,21 @@ def check_stm32_connection():
         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
         if result.returncode == 0:
-            print("STM32 연결 성공")
+            if connection_failed_since_last_success:
+                print("STM32 재연결 성공")
+                connection_success = True
+                connection_failed_since_last_success = False  # 성공 후 실패 플래그 초기화
+            else:
+                print("STM32 연결 성공")
+                connection_success = False  # 연속적인 성공을 방지
             return True
         else:
             print("STM32 연결 실패:", result.stderr)
+            connection_failed_since_last_success = True  # 실패 플래그 설정
             return False
     except Exception as e:
         print(f"오류 발생: {e}")
+        connection_failed_since_last_success = True  # 실패 플래그 설정
         return False
 
 # 배터리 상태 확인 함수
@@ -409,7 +422,7 @@ try:
             shutdown_system()
 
         # STM32 연결 상태 확인
-        if is_auto_mode and check_stm32_connection():
+        if is_auto_mode and check_stm32_connection() and connection_success:
             execute_command(current_command_index)
 
         # 두 버튼을 동시에 눌렀을 때 모드 전환
