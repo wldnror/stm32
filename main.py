@@ -356,7 +356,7 @@ def update_oled_display():
             draw.text((63, 0), ip_address, font=font_big, fill=255)
             draw.text((0, 50), 'GDSENG', font=font_big, fill=255)
             draw.text((90, 50), 'ver 2.8', font=font_big, fill=255)
-            draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_st, fill=255)  
+            # draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_st, fill=255)  
         draw.text((0, -3), current_time, font=font_time, fill=255)
 
         # 사용자 지정 위치와 폰트 크기로 메시지 표시
@@ -372,7 +372,7 @@ def update_oled_display():
             elif command_names[current_command_index] == "ASGD S PNP":
                 draw.text((1, 27), 'ASGD S PNP', font=font_1, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
-                draw.text((1, 28), '시스템 업데이트', font=font, fill=255)
+                draw.text((1, 27), '시스템 업데이트', font=font, fill=255)
 
 def get_ip_address():
     try:
