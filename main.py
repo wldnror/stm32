@@ -48,7 +48,7 @@ auto_mode_icon_path = "/home/user/stm32/img/A.png"
 manual_mode_icon_path = "/home/user/stm32/img/M.png"
 
 # 디스플레이에 맞는 크기로 조정 (예: 32x32)
-desired_size = (40, 40)
+desired_size = (64, 64)
 auto_mode_icon = load_and_resize_image(auto_mode_icon_path, desired_size)
 manual_mode_icon = load_and_resize_image(manual_mode_icon_path, desired_size)
 
