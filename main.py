@@ -38,8 +38,12 @@ def toggle_mode():
     update_oled_display()  # OLED 화면 업데이트
 
 # 자동 모드와 수동 모드 아이콘 로드
-auto_mode_icon = Image.open("/home/user/stm32/img/A.png")
-manual_mode_icon = Image.open("/home/user/stm32/img/M.png")
+# auto_mode_icon = Image.open("/home/user/stm32/img/A.png")
+# manual_mode_icon = Image.open("/home/user/stm32/img/M.png")
+
+# 자동 모드와 수동 모드 아이콘 대신 문자열 사용
+auto_mode_text = 'A'
+manual_mode_text = 'M'
 
 # GPIO 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -338,7 +342,7 @@ def update_oled_display():
     ip_address = get_ip_address()
     now = datetime.now()
     current_time = now.strftime('%I시 %M분')  # 기본 시간 형식
-    mode_icon = auto_mode_icon if is_auto_mode else manual_mode_icon
+    mode_text = auto_mode_text if is_auto_mode else manual_mode_text
 
     if command_names[current_command_index] != "시스템 업데이트":
         # "시스템 업데이트"가 아닌 다른 메뉴에서는 오전/오후를 표시
@@ -347,9 +351,10 @@ def update_oled_display():
     voltage_percentage = read_ina219_percentage()
 
     with canvas(device) as draw:
+        
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
-            draw.bitmap((0, 0), mode_icon, fill=700)
+            draw.text((5, 5), mode_text, font=font, fill=255)
             draw.bitmap((90, -12), battery_icon, fill=255)
             draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
