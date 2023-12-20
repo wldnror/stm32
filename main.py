@@ -37,9 +37,19 @@ def toggle_mode():
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
 
-# 자동 모드와 수동 모드 아이콘 로드
-auto_mode_icon = Image.open("/home/user/stm32/img/A.png")
-manual_mode_icon = Image.open("/home/user/stm32/img/M.png")
+# 자동 모드와 수동 모드 아이콘 로드 및 크기 조정
+def load_and_resize_image(image_path, size):
+    with Image.open(image_path) as img:
+        return img.resize(size, Image.ANTIALIAS)
+
+auto_mode_icon_path = "/home/user/stm32/img/A.png"
+manual_mode_icon_path = "/home/user/stm32/img/M.png"
+
+# 디스플레이에 맞는 크기로 조정 (예: 32x32)
+desired_size = (32, 32)
+auto_mode_icon = load_and_resize_image(auto_mode_icon_path, desired_size)
+manual_mode_icon = load_and_resize_image(manual_mode_icon_path, desired_size)
+
 
 # GPIO 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -47,21 +57,6 @@ GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(LED_DEBUGGING, GPIO.OUT)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
-
-# 전압 감지 및 처리 로직
-# def read_and_check_voltage():
-#     global previous_voltage
-#     try:
-#         ina = INA219(SHUNT_OHMS)
-#         ina.configure()
-#         voltage = ina.voltage()
-#         if previous_voltage is not None and (previous_voltage - voltage) >= voltage_drop_threshold:
-#             if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
-#                 execute_command(current_command_index)
-#         previous_voltage = voltage
-#     except DeviceRangeError as e:
-#         print("DeviceRangeError:", e)
-
 
 # 연결 상태를 추적하기 위한 변수
 connection_success = False
