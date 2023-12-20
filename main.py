@@ -368,9 +368,9 @@ def update_oled_display():
             # if command_names[current_command_index] != "시스템 업데이트":
                 # draw.text((40, 20), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
             if command_names[current_command_index] == "ASGD S":
-                draw.text((30, 30), 'ASGD S', font=font_1, fill=255)
+                draw.text((28, 30), 'ASGD S', font=font_1, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
-                draw.text((7, 30), 'ASGD S PNP', font=font_1, fill=255)
+                draw.text((4, 30), 'ASGD S PNP', font=font_1, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((1, 28), '시스템 업데이트', font=font, fill=255)
 
@@ -418,12 +418,12 @@ try:
         # NEXT 버튼 처리
         elif not GPIO.input(BUTTON_PIN_NEXT):
             current_command_index = (current_command_index + 1) % len(commands)
-            time.sleep(0.1)
+            time.sleep(0)
 
         # EXECUTE 버튼 처리
         elif not GPIO.input(BUTTON_PIN_EXECUTE):
             execute_command(current_command_index)
-            time.sleep(0.1)
+            time.sleep(0)
 
         # OLED 디스플레이 업데이트
         update_oled_display()
