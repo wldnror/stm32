@@ -350,12 +350,12 @@ def update_oled_display():
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
             draw.bitmap((0, 0), mode_icon, fill=255)
-            draw.bitmap((90, -14), battery_icon, fill=255)
+            draw.bitmap((90, -5), battery_icon, fill=255)
             draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((63, 0), ip_address, font=font_big, fill=255)
-            draw.text((0, 53), 'GDSENG', font=font_big, fill=255)
-            draw.text((90, 50), 'ver 2 .8', font=font_big, fill=255)
+            draw.text((0, 50), 'GDSENG', font=font_big, fill=255)
+            draw.text((90, 50), 'ver 2.8', font=font_big, fill=255)
             draw.text((42, 15), f'설정 {current_command_index+1}번', font=font_st, fill=255)  
         draw.text((0, -3), current_time, font=font_time, fill=255)
 
@@ -366,7 +366,7 @@ def update_oled_display():
             draw.text(message_position, status_message, font=font_custom, fill=255)
         else:
             if command_names[current_command_index] != "시스템 업데이트":
-                draw.text((40, 20), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
+                # draw.text((40, 20), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
             if command_names[current_command_index] == "ASGD S":
                 draw.text((30, 35), 'ASGD S', font=font_1, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
