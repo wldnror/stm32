@@ -109,7 +109,7 @@ font_s = ImageFont.truetype(font_path, 13)
 font_st = ImageFont.truetype(font_path, 11)
 font = ImageFont.truetype(font_path, 17)
 font_status = ImageFont.truetype(font_path, 13)
-font_1 = ImageFont.truetype(font_path, 23)
+font_1 = ImageFont.truetype(font_path, 21)
 font_time = ImageFont.truetype(font_path, 12)
 
 # 배터리 아이콘 로드
