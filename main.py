@@ -23,7 +23,7 @@ SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.1  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 previous_voltage = None
-# voltage_drop_threshold = 0.05  # 전압이 이 값 이상 떨어질 때 반응
+voltage_drop_threshold = 0.05  # 전압이 이 값 이상 떨어질 때 반응
 
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
@@ -48,35 +48,35 @@ GPIO.setup(LED_DEBUGGING, GPIO.OUT)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 
-# # 전압 감지 및 처리 로직
-# def read_and_check_voltage():
-#     global previous_voltage
-#     try:
-#         ina = INA219(SHUNT_OHMS)
-#         ina.configure()
-#         voltage = ina.voltage()
-#         if previous_voltage is not None and (previous_voltage - voltage) >= voltage_drop_threshold:
-#             if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
-#                 execute_command(current_command_index)
-#         previous_voltage = voltage
-#     except DeviceRangeError as e:
-#         print("DeviceRangeError:", e)
+# 전압 감지 및 처리 로직
+def read_and_check_voltage():
+    global previous_voltage
+    try:
+        ina = INA219(SHUNT_OHMS)
+        ina.configure()
+        voltage = ina.voltage()
+        if previous_voltage is not None and (previous_voltage - voltage) >= voltage_drop_threshold:
+            if is_auto_mode and command_names[current_command_index] != "시스템 업데이트":
+                execute_command(current_command_index)
+        previous_voltage = voltage
+    except DeviceRangeError as e:
+        print("DeviceRangeError:", e)
 
-# # 배터리 상태 확인 함수
-# def read_ina219_percentage():
-#     try:
-#         ina = INA219(SHUNT_OHMS)
-#         ina.configure()
-#         voltage = ina.voltage()
-#         if voltage <= MIN_VOLTAGE:
-#             return 0
-#         elif voltage >= MAX_VOLTAGE:
-#             return 100
-#         else:
-#             percentage = ((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100
-#             return min(max(percentage, 0), 100)
-#     except DeviceRangeError as e:
-#         return 0
+# 배터리 상태 확인 함수
+def read_ina219_percentage():
+    try:
+        ina = INA219(SHUNT_OHMS)
+        ina.configure()
+        voltage = ina.voltage()
+        if voltage <= MIN_VOLTAGE:
+            return 0
+        elif voltage >= MAX_VOLTAGE:
+            return 100
+        else:
+            percentage = ((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100
+            return min(max(percentage, 0), 100)
+    except DeviceRangeError as e:
+        return 0
 
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
@@ -324,14 +324,14 @@ def update_oled_display():
         # "시스템 업데이트"가 아닌 다른 메뉴에서는 오전/오후를 표시
         am_pm = "오전" if now.hour < 12 else "오후"
         current_time = f"{am_pm} {current_time}"
-    # voltage_percentage = read_ina219_percentage()
+    voltage_percentage = read_ina219_percentage()
 
     with canvas(device) as draw:
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
-            # battery_icon = select_battery_icon(voltage_percentage)
+            battery_icon = select_battery_icon(voltage_percentage)
             draw.bitmap((0, 0), mode_icon, fill=255)
-            # draw.bitmap((90, -14), battery_icon, fill=255)
-            # draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
+            draw.bitmap((90, -14), battery_icon, fill=255)
+            draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((63, 0), ip_address, font=font_big, fill=255)
             draw.text((0, 53), 'GDSENG', font=font_big, fill=255)
@@ -374,7 +374,7 @@ def shutdown_system():
     time.sleep(5)  # 메시지를 5초 동안 표시
 
     # 디스플레이 전원을 끄는 코드 추가
-    #GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
+    GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
 
     os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
 
@@ -382,12 +382,12 @@ def shutdown_system():
 try:
     while True:
         # 배터리 수준을 확인하고 0%면 시스템 종료
-        # if read_ina219_percentage() == 0:
-        #     print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
-        #     shutdown_system()
+        if read_ina219_percentage() == 0:
+            print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
+            shutdown_system()
 
         # 전압 변화 감지
-        # read_and_check_voltage()
+        read_and_check_voltage()
 
         # 두 버튼을 동시에 눌렀을 때 모드 전환
         if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
