@@ -353,8 +353,8 @@ def update_oled_display():
     with canvas(device) as draw:
         # 모드에 따라 'A' 또는 'M' 선택
         mode_char = 'A' if is_auto_mode else 'M'
-        outer_ellipse_box = (2, 10, 22, 30)  # 외부 동그라미 좌표 (크기 조정)
-        inner_ellipse_box = (6, 14, 18, 26)  # 내부 동그라미 좌표 (두께 조정)
+        outer_ellipse_box = (2, 13, 22, 33)  # 외부 동그라미 좌표 (크기 조정)
+        inner_ellipse_box = (6, 17, 18, 29)  # 내부 동그라미 좌표 (두께 조정)
         text_position = {
             'A': (7, 6),
             'M': (6, 6)
