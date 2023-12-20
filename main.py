@@ -3,7 +3,7 @@ import time
 import os
 import sys
 import socket
-from PIL import Image, ImageDraw, ImageFont, ImageResampling
+from PIL import Image, ImageDraw, ImageFont
 from luma.core.interface.serial import i2c
 from luma.core.render import canvas
 from luma.oled.device import sh1107
@@ -40,7 +40,8 @@ def toggle_mode():
 # 이미지를 불러오고 크기를 조정하는 함수
 def load_and_resize_image(image_path, size):
     with Image.open(image_path) as img:
-        return img.resize(size, ImageResampling.LANCZOS)  # ANTIALIAS 대신 LANCZOS 사용
+        # PIL의 최신 버전에서는 Image.Resampling.LANCZOS를 사용합니다.
+        return img.resize(size, Image.Resampling.LANCZOS)
 
 # 자동 모드와 수동 모드 아이콘 로드 및 크기 조정
 auto_mode_icon_path = "/home/user/stm32/img/A.png"
@@ -50,6 +51,7 @@ manual_mode_icon_path = "/home/user/stm32/img/M.png"
 desired_size = (32, 32)
 auto_mode_icon = load_and_resize_image(auto_mode_icon_path, desired_size)
 manual_mode_icon = load_and_resize_image(manual_mode_icon_path, desired_size)
+
 
 
 # GPIO 설정
