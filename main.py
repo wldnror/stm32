@@ -47,7 +47,10 @@ def create_circle_with_letter(letter, size, font_path, font_size):
 
     # 글자를 중앙에 배치하기 위한 폰트와 위치 계산
     font = ImageFont.truetype(font_path, font_size)
-    text_width, text_height = draw.textsize(letter, font=font)
+    
+    # textsize 메소드를 폰트 객체를 사용하여 호출
+    text_width, text_height = font.getsize(letter)
+    
     text_x = (size[0] - text_width) / 2
     text_y = (size[1] - text_height) / 2
 
@@ -66,7 +69,6 @@ size = (64, 64)
 # 'A'와 'M' 이미지 생성
 auto_mode_icon = create_circle_with_letter("A", size, font_path, font_size)
 manual_mode_icon = create_circle_with_letter("M", size, font_path, font_size)
-
 
 
 # GPIO 설정
