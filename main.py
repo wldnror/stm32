@@ -351,19 +351,17 @@ def update_oled_display():
     voltage_percentage = read_ina219_percentage()
 
     with canvas(device) as draw:
-        # 모드에 따라 동그라미 안에 'A' 또는 'M' 표시
-        if is_auto_mode:
-            # 동그라미 그리기
-            outer_ellipse_box = (2, 2, 20, 20)  # 외부 동그라미 좌표 (크기 조정)
-            inner_ellipse_box = (4, 4, 18, 18)  # 내부 동그라미 좌표 (두께 조정)
-            # 'A' 글자 그리기
-            draw.text((8, 5), 'A', font=font, fill=255)
-        else:
-            # 'M'의 경우도 비슷하게 처리
-            # 동그라미 그리기
-            draw.ellipse((2, 2, 18, 18), outline="white", fill="black")
-            # 'M' 글자 그리기
-            draw.text((5, 5), 'M', font=font, fill=255)
+        # 모드에 따라 'A' 또는 'M' 선택
+        mode_char = 'A' if is_auto_mode else 'M'
+        outer_ellipse_box = (2, 2, 20, 20)  # 외부 동그라미 좌표 (크기 조정)
+        inner_ellipse_box = (4, 4, 18, 18)  # 내부 동그라미 좌표 (두께 조정)
+        text_position = {
+            'A': (6, 4),
+            'M': (5, 4)
+        }
+        draw.ellipse(outer_ellipse_box, outline="white", fill=None)    # 외부 동그라미 그리기 (두꺼운 테두리)
+        draw.ellipse(inner_ellipse_box, outline="black", fill="black") # 내부 동그라미 그리기 (빈 영역 생성)
+        draw.text(text_position[mode_char], mode_char, font=font, fill=255)  # 글자 그리기
         
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
