@@ -48,8 +48,8 @@ def create_circle_with_letter(letter, size, font_path, font_size):
     # 글자를 중앙에 배치하기 위한 폰트와 위치 계산
     font = ImageFont.truetype(font_path, font_size)
     
-    # textsize 메소드를 폰트 객체를 사용하여 호출
-    text_width, text_height = font.getsize(letter)
+    # ImageDraw.textsize 메서드를 사용하여 문자열의 크기를 계산
+    text_width, text_height = draw.textsize(letter, font=font)
     
     text_x = (size[0] - text_width) / 2
     text_y = (size[1] - text_height) / 2
