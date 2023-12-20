@@ -335,8 +335,7 @@ def update_oled_display():
     ip_address = get_ip_address()
     now = datetime.now()
     current_time = now.strftime('%I시 %M분')  # 기본 시간 형식
-    mode_icon = auto_mode_icon if is_auto_mode else manual_mode_icon
-    font = ImageFont.truetype('/usr/share/fonts/truetype/malgun/malgunbd.ttf', 17)
+    font_mode = ImageFont.truetype(font_path, 17)  # 모드를 나타내는 폰트 크기 설정
 
     with canvas(device) as draw:
         # 모드 표시 ('A' 또는 'M')
