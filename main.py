@@ -353,11 +353,11 @@ def update_oled_display():
     with canvas(device) as draw:
         # 모드에 따라 'A' 또는 'M' 선택
         mode_char = 'A' if is_auto_mode else 'M'
-        outer_ellipse_box = (2, 2, 20, 20)  # 외부 동그라미 좌표 (크기 조정)
-        inner_ellipse_box = (4, 4, 18, 18)  # 내부 동그라미 좌표 (두께 조정)
+        outer_ellipse_box = (2, 4, 22, 24)  # 외부 동그라미 좌표 (크기 조정)
+        inner_ellipse_box = (6, 8, 18, 20)  # 내부 동그라미 좌표 (두께 조정)
         text_position = {
-            'A': (6, 4),
-            'M': (5, 4)
+            'A': (7, 6),
+            'M': (6, 6)
         }
         draw.ellipse(outer_ellipse_box, outline="white", fill=None)    # 외부 동그라미 그리기 (두꺼운 테두리)
         draw.ellipse(inner_ellipse_box, outline="black", fill="black") # 내부 동그라미 그리기 (빈 영역 생성)
