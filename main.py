@@ -37,35 +37,6 @@ def toggle_mode():
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
 
-def create_circle_with_unicode_letter(unicode_char, size, font_path, font_size):
-    # 새 이미지와 드로잉 객체 생성
-    image = Image.new('1', size, "white")  # '1'은 1-bit 픽셀, 흑백 모드
-    draw = ImageDraw.Draw(image)
-
-    # 폰트와 위치 계산
-    font = ImageFont.truetype(font_path, font_size)
-    text_width, text_height = draw.textsize(unicode_char, font=font)
-    text_x = (size[0] - text_width) / 2
-    text_y = (size[1] - text_height) / 2
-
-    # 유니코드 문자 그리기
-    draw.text((text_x, text_y), unicode_char, font=font, fill="black")
-
-    return image
-
-# 폰트 경로와 크기 설정
-font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
-font_size = 40
-
-# 이미지 크기 설정 (예: 64x64)
-size = (64, 64)
-
-# 유니코드 문자로 'A'와 'M'을 나타내는 이미지 생성
-# 유니코드 문자는 실제 환경에 맞게 조정 필요
-auto_mode_icon = create_circle_with_unicode_letter("\u24B6", size, font_path, font_size)  # 'Ⓐ' 문자
-manual_mode_icon = create_circle_with_unicode_letter("\u24C2", size, font_path, font_size)  # 'Ⓜ' 문자
-
-
 
 # GPIO 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -365,6 +336,13 @@ def update_oled_display():
     now = datetime.now()
     current_time = now.strftime('%I시 %M분')  # 기본 시간 형식
     mode_icon = auto_mode_icon if is_auto_mode else manual_mode_icon
+    font = ImageFont.truetype('/usr/share/fonts/truetype/malgun/malgunbd.ttf', 17)
+
+    with canvas(device) as draw:
+        # 모드 표시 ('A' 또는 'M')
+        mode_letter = "A" if is_auto_mode else "M"
+        draw.text((0, 0), mode_letter, font=font, fill="white")
+        
 
     if command_names[current_command_index] != "시스템 업데이트":
         # "시스템 업데이트"가 아닌 다른 메뉴에서는 오전/오후를 표시
