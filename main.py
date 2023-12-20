@@ -109,7 +109,7 @@ font_s = ImageFont.truetype(font_path, 13)
 font_st = ImageFont.truetype(font_path, 11)
 font = ImageFont.truetype(font_path, 17)
 font_status = ImageFont.truetype(font_path, 13)
-font_1 = ImageFont.truetype(font_path, 20)
+font_1 = ImageFont.truetype(font_path, 25)
 font_time = ImageFont.truetype(font_path, 12)
 
 # 배터리 아이콘 로드
@@ -368,9 +368,9 @@ def update_oled_display():
             # if command_names[current_command_index] != "시스템 업데이트":
                 # draw.text((40, 20), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
             if command_names[current_command_index] == "ASGD S":
-                draw.text((30, 35), 'ASGD S', font=font_1, fill=255)
+                draw.text((30, 30), 'ASGD S', font=font_1, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
-                draw.text((7, 35), 'ASGD S PNP', font=font_1, fill=255)
+                draw.text((7, 30), 'ASGD S PNP', font=font_1, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((1, 28), '시스템 업데이트', font=font, fill=255)
 
