@@ -340,7 +340,7 @@ def update_oled_display():
     with canvas(device) as draw:
         # 모드 표시 ('A' 또는 'M')
         mode_letter = "A" if is_auto_mode else "M"
-        draw.text((0, 0), mode_letter, font=font, fill="white")
+        draw.text((0, 0), mode_letter, font=font_mode, fill="white")
         
 
     if command_names[current_command_index] != "시스템 업데이트":
