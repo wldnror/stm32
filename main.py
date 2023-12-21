@@ -21,7 +21,7 @@ LED_ERROR = 25
 # INA219 설정
 SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.1  # 최소 작동 전압
-MAX_VOLTAGE = 4.5  # 최대 전압 (완충 시)
+MAX_VOLTAGE = 4.3  # 최대 전압 (완충 시)
 previous_voltage = None
 voltage_drop_threshold = 0.1  # 전압이 이 값 이상 떨어질 때 반응
 
