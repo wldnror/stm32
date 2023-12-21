@@ -12,7 +12,7 @@ device = sh1107(serial, rotate=1)
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
 font = ImageFont.truetype(font_path, 12)
 
-def display_loading_bar(duration=5):
+def display_loading_bar(duration=3):
     start_time = time.time()
     while time.time() - start_time < duration:
         with canvas(device) as draw:
@@ -25,4 +25,4 @@ def display_loading_bar(duration=5):
         time.sleep(0.1)
 
 if __name__ == '__main__':
-    display_loading_bar(5)
+    display_loading_bar(3)
