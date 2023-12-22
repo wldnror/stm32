@@ -3,13 +3,37 @@ import time
 import os
 import sys
 import socket
+import smbus  # DS3231 모듈을 위한 smbus 라이브러리 추가
 from PIL import Image, ImageDraw, ImageFont
 from luma.core.interface.serial import i2c
 from luma.core.render import canvas
 from luma.oled.device import sh1107
 import subprocess
-from datetime import datetime
 from ina219 import INA219, DeviceRangeError
+
+# DS3231 실시간 시계 클래스
+class DS3231:
+    def __init__(self, bus_number=1):
+        self.bus = smbus.SMBus(bus_number)
+        self.address = 0x68
+
+    def read_byte(self, reg):
+        return self.bus.read_byte_data(self.address, reg)
+
+    def bcd_to_dec(self, bcd):
+        return ((bcd & 0xF0) >> 4) * 10 + (bcd & 0x0F)
+
+    def get_time(self):
+        second = self.bcd_to_dec(self.read_byte(0x00))
+        minute = self.bcd_to_dec(self.read_byte(0x01))
+        hour = self.bcd_to_dec(self.read_byte(0x02))
+        day = self.bcd_to_dec(self.read_byte(0x04))
+        month = self.bcd_to_dec(self.read_byte(0x05))
+        year = self.bcd_to_dec(self.read_byte(0x06)) + 2000
+        return time.struct_time((year, month, day, hour, minute, second, 0, 0, -1))
+
+# DS3231 객체 생성
+rtc = DS3231()
 
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
@@ -336,9 +360,11 @@ def execute_command(command_index):
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
     ip_address = get_ip_address()
-    now = datetime.now()
-    current_time = now.strftime('%I시 %M분')  # 기본 시간 형식
+    now = rtc.get_time()  # DS3231에서 현재 시간을 가져옵니다.
+    current_time = time.strftime('%I시 %M분', now)  # '시:분' 형식으로 변환
     voltage_percentage = read_ina219_percentage()
+
+    
 
     with canvas(device) as draw:
         if command_names[current_command_index] != "시스템 업데이트":
