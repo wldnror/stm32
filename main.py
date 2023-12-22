@@ -349,11 +349,11 @@ def update_oled_display():
 
             # 모드에 따라 'A' 또는 'M' 선택
             mode_char = 'A' if is_auto_mode else 'M'
-            outer_ellipse_box = (2, -1, 22, 19)  # 외부 동그라미 좌표 (크기 조정)
+            outer_ellipse_box = (2, 0, 22, 20)  # 외부 동그라미 좌표 (크기 조정)
             # inner_ellipse_box = (8, 19, 16, 27)  # 내부 동그라미 좌표 (두께 조정)
             text_position = {
-                'A': (8, -5),
-                'M': (5, -5)
+                'A': (8, -4),
+                'M': (5, -4)
             }
             draw.ellipse(outer_ellipse_box, outline="white", fill=None)    # 외부 동그라미 그리기 (두께 조정)
             # draw.ellipse(inner_ellipse_box, outline="black", fill=None) # 내부 동그라미 그리기
@@ -363,7 +363,7 @@ def update_oled_display():
             battery_icon = select_battery_icon(voltage_percentage)
             draw.bitmap((90, -12), battery_icon, fill=255)
             draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
-            draw.text((25, -3), current_time, font=font_time, fill=255)
+            draw.text((25, 0), current_time, font=font_time, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((0, 51), ip_address, font=font_big, fill=255)
             draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
