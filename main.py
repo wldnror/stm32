@@ -198,7 +198,7 @@ def restart_script():
     print("스크립트를 재시작합니다.")
     display_status_message("재시작 중",position=(20, 20), font_size=15)
     def restart():
-        time.sleep(1)  # 1초 후에 스크립트를 재시작합니다.
+        time.sleep(3)  # 1초 후에 스크립트를 재시작합니다.
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart).start()
 
