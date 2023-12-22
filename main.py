@@ -10,6 +10,8 @@ from luma.core.render import canvas
 from luma.oled.device import sh1107
 import subprocess
 from ina219 import INA219, DeviceRangeError
+import threading
+
 
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
