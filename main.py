@@ -349,14 +349,14 @@ def update_oled_display():
 
             # 모드에 따라 'A' 또는 'M' 선택
             mode_char = 'A' if is_auto_mode else 'M'
-            outer_ellipse_box = (2, 5, 22, 25)  # 외부 동그라미 좌표 (크기 조정)
+            outer_ellipse_box = (2, 0, 22, 20)  # 외부 동그라미 좌표 (크기 조정)
             inner_ellipse_box = (8, 19, 16, 27)  # 내부 동그라미 좌표 (두께 조정)
             text_position = {
-                'A': (8, 9),
-                'M': (5, 9)
+                'A': (8, 0),
+                'M': (5, 0)
             }
             draw.ellipse(outer_ellipse_box, outline="white", fill=None)    # 외부 동그라미 그리기 (두께 조정)
-            draw.ellipse(inner_ellipse_box, outline="black", fill="black") # 내부 동그라미 그리기
+            draw.ellipse(inner_ellipse_box, outline="black", fill=None) # 내부 동그라미 그리기
             draw.text(text_position[mode_char], mode_char, font=font, fill=255)  # 글자 그리기
 
         if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
@@ -368,7 +368,7 @@ def update_oled_display():
             draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
             draw.text((90, 50), 'ver 3.1', font=font_big, fill=255)
         
-        draw.text((0, -3), current_time, font=font_time, fill=255)
+        draw.text((20, -3), current_time, font=font_time, fill=255)
 
 
         # 사용자 지정 위치와 폰트 크기로 메시지 표시
