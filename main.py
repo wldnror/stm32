@@ -210,6 +210,8 @@ def display_progress_and_message(percentage, message, message_position=(0, 0), f
         # 진행 상태 바 표시
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")  # 상태 바의 외곽선
         draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")  # 상태 바의 내용
+# 함수 사용 예시
+display_progress_and_message(0, "여기에 상태 메시지 입력", message_position=(x, y), font_size=17)
 
 def unlock_memory():
     print("메모리 해제 시도...")
