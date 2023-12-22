@@ -169,8 +169,8 @@ def git_pull():
         
         if result.returncode == 0:
             print("업데이트 성공!")
-            GPIO.output(LED_SUCCESS, True)
             display_status_message("업데이트 성공!",position=(15, 20), font_size=15)
+            GPIO.output(LED_SUCCESS, True)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
             restart_script()
@@ -193,6 +193,8 @@ def git_pull():
 
 def restart_script():
     print("스크립트를 재시작합니다.")
+    display_status_message("재시작 중",position=(15, 20), font_size=15)
+    time.sleep(1)
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 def display_progress_bar(percentage):
