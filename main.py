@@ -11,6 +11,26 @@ from luma.oled.device import sh1107
 import subprocess
 from ina219 import INA219, DeviceRangeError
 
+# GPIO 핀 설정
+BUTTON_PIN_NEXT = 27
+BUTTON_PIN_EXECUTE = 17
+LED_DEBUGGING = 23
+LED_SUCCESS = 24
+LED_ERROR = 25
+
+# INA219 설정
+SHUNT_OHMS = 0.1
+MIN_VOLTAGE = 3.1  # 최소 작동 전압
+MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
+previous_voltage = None
+voltage_drop_threshold = 0.1  # 전압이 이 값 이상 떨어질 때 반응
+
+# 자동 모드와 수동 모드 상태를 추적하는 전역 변수
+is_auto_mode = True
+
+# GPIO 핀 번호 모드 설정
+GPIO.setmode(GPIO.BCM)
+
 # 모드 전환 함수
 def toggle_mode():
     global is_auto_mode
