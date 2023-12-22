@@ -364,8 +364,8 @@ def update_oled_display():
             draw.text((99, 0), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((0, 51), ip_address, font=font_big, fill=255)
-            draw.text((70, -3), 'GDSENG', font=font_big, fill=255)
-            draw.text((90, 50), 'ver 2.8', font=font_big, fill=255)
+            draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
+            draw.text((90, 50), 'ver 3.1', font=font_big, fill=255)
         
         draw.text((0, -3), current_time, font=font_time, fill=255)
 
