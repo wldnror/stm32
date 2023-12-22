@@ -172,6 +172,7 @@ def git_pull():
             GPIO.output(LED_SUCCESS, True)
             display_status_message("업데이트 성공!",position=(15, 20), font_size=15)
             time.sleep(1)
+            GPIO.output(LED_SUCCESS, False)
             restart_script()
         else:
             print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
