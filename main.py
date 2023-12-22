@@ -200,8 +200,6 @@ def restart_script():
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart).start()
 
-restart_script()
-
 def display_progress_bar(percentage):
     with canvas(device) as draw:
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
