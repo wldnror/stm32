@@ -11,36 +11,43 @@ from luma.oled.device import sh1107
 import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
+
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
 LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
+
 # INA219 설정
 SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.1  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 previous_voltage = None
 voltage_drop_threshold = 0.1  # 전압이 이 값 이상 떨어질 때 반응
+
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
 # GPIO 핀 번호 모드 설정
 GPIO.setmode(GPIO.BCM)
+
 # 모드 전환 함수
 def toggle_mode():
     global is_auto_mode
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
+
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
 auto_mode_text = 'A'
 manual_mode_text = 'M'
+
 # GPIO 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(LED_DEBUGGING, GPIO.OUT)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
+
 # 연결 상태를 추적하기 위한 변수
 connection_success = False
 connection_failed_since_last_success = False
@@ -72,6 +79,7 @@ def check_stm32_connection():
         print(f"오류 발생: {e}")
         connection_failed_since_last_success = True  # 실패 플래그 설정
         return False
+
 # 배터리 상태 확인 함수
 def read_ina219_percentage():
     try:
@@ -87,9 +95,11 @@ def read_ina219_percentage():
             return min(max(percentage, 0), 100)
     except DeviceRangeError as e:
         return 0
+
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
+
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
 font_big = ImageFont.truetype(font_path, 12)
@@ -200,7 +210,6 @@ def unlock_memory():
 
     # '메모리 잠금' 및 '해제 중' 메시지와 함께 초기 진행 상태 바 표시
     display_progress_and_message(0, "메모리 잠금\n해제 중", message_position=(18, 8), font_size=15)
-    display_progress_and_message(0, "메모리 잠금", "해제 중", message_position=(18, 5), font_size=15)
 
     # 메모리 잠금 해제 로직 구현...
     openocd_command = [
@@ -228,49 +237,7 @@ def restart_script():
         time.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart).start()   
-# def display_progress_bar(percentage):
-#     with canvas(device) as draw:
-#         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
-#         draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")
-# def display_status_message(message, position=(0, 0), font_size=17):
-#     global status_message, message_position, message_font_size
-#     status_message = message
-#     message_position = position
-#     message_font_size = font_size
-#     update_oled_display()
-#     time.sleep(1)
-#     status_message = ""
-#     update_oled_display()
-# def unlock_memory():
-#     display_progress_bar(0)
-#     GPIO.output(LED_DEBUGGING, True)
-#     with canvas(device) as draw:
-#         # '메모리 잠금' 메시지를 (30, 10) 위치에 표시
-#         draw.text((18, 8), "메모리 잠금", font=font, fill=255)
-#         # '해제 중' 메시지를 (30, 25) 위치에 표시
-#         draw.text((35, 28), "해제 중", font=font, fill=255)
-#     print("메모리 해제 시도...")
-#     time.sleep(1)
-#     display_progress_bar(50)
-#     openocd_command = [
-#         "sudo", "openocd",
-#         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-#         "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-#         "-c", "init",
-#         "-c", "reset halt",
-#         "-c", "stm32f1x unlock 0",
-#         "-c", "reset run",
-#         "-c", "shutdown"
-#     ]
-#     result = subprocess.run(openocd_command)
-#     GPIO.output(LED_DEBUGGING, False)
-#     if result.returncode == 0:
-#         print("메모리 잠금 해제 성공!")
-#         display_progress_bar(100)
-#         return True  # 성공 시 True 반환
-#     else:
-#         print("메모리 잠금 해제 실패!")
-#         return False  # 실패 시 False 반환
+
 def lock_memory_procedure():
     # display_progress_bar(0)
     GPIO.output(LED_DEBUGGING, True)
