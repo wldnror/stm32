@@ -372,7 +372,7 @@ def execute_command(command_index):
     display_progress_and_message(0, "업데이트 중...", message_position=(17, 20), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
     while process.poll() is None:
-        display_progress_and_message(50,"업데이트 중...", position=(17, 20), font_size=15)
+        display_progress_and_message(50, "업데이트 중...", message_position=(17, 20), font_size=15)
         time.sleep(1)
     result = process.returncode
     GPIO.output(LED_DEBUGGING, False)
