@@ -380,7 +380,7 @@ def execute_command(command_index):
     if result == 0:
         print(f"'{commands[command_index]}' 업데이트 성공!")
         GPIO.output(LED_SUCCESS, True)
-        display_progress_and_message(100,"업데이트 성공", position=(15, 20), font_size=15)
+        display_progress_and_message(100, "업데이트 성공!", message_position=(15, 20), font_size=15)
         # display_progress_bar(100)
         time.sleep(1)
         GPIO.output(LED_SUCCESS, False)
