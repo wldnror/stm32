@@ -202,23 +202,25 @@ def restart_script():
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart).start()
 
-def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
+def display_progress_and_message(percentage, message_line1, message_line2, message_position=(18, 5), font_size=15):
     with canvas(device) as draw:
-        # 메시지 표시
-        draw.text(message_position, message, font=font, fill=255)
+        # 첫 번째 줄 메시지 표시
+        draw.text(message_position, message_line1, font=font, fill=255)
+
+        # 두 번째 줄 메시지 표시 (Y 좌표 조정)
+        second_line_y = message_position[1] + 20  # 예: 첫 번째 줄 아래에 20픽셀 간격
+        draw.text((message_position[0], second_line_y), message_line2, font=font, fill=255)
         
         # 진행 상태 바 표시
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")  # 상태 바의 외곽선
         draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")  # 상태 바의 내용
-# 함수 사용 예시
-# display_progress_and_message(0, "여기에 상태 메시지 입력", message_position=(20, 20), font_size=17)
 
 def unlock_memory():
     print("메모리 해제 시도...")
     GPIO.output(LED_DEBUGGING, True)
 
     # '메모리 잠금' 및 '해제 중' 메시지와 함께 초기 진행 상태 바 표시
-    display_progress_and_message(0, "메모리 잠금\n해제 중", message_position=(18, 8), font_size=15)
+    display_progress_and_message(0, "메모리 잠금", "해제 중", message_position=(18, 5), font_size=15)
 
     # 메모리 잠금 해제 로직 구현...
     openocd_command = [
