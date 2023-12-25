@@ -211,7 +211,7 @@ def display_progress_and_message(percentage, message, message_position=(0, 0), f
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")  # 상태 바의 외곽선
         draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")  # 상태 바의 내용
 # 함수 사용 예시
-display_progress_and_message(0, "여기에 상태 메시지 입력", message_position=(20, 20), font_size=17)
+# display_progress_and_message(0, "여기에 상태 메시지 입력", message_position=(20, 20), font_size=17)
 
 def unlock_memory():
     print("메모리 해제 시도...")
@@ -321,14 +321,14 @@ def lock_memory_procedure():
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
-            display_progress_and_message(100,"메모리 잠금 성공", position=(6, 20), font_size=15)
+            display_progress_and_message(100,"메모리 잠금 성공", message_position=(6, 20), font_size=15)
             # display_progress_bar(100)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
-            display_progress_and_message(50,"메모리 잠금 실패", position=(6, 20), font_size=15)
+            display_progress_and_message(50,"메모리 잠금 실패", message_position=(6, 20), font_size=15)
             # display_progress_bar(50)
             time.sleep(1)
             GPIO.output(LED_ERROR, False)
@@ -388,7 +388,7 @@ def execute_command(command_index):
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
-        display_progress_and_message(50,"업데이트 실패", position=(15, 20), font_size=15)
+        display_progress_and_message(50,"업데이트 실패", message_position=(15, 20), font_size=15)
         # display_progress_bar(50)
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
