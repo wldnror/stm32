@@ -301,9 +301,9 @@ def restart_script():
 #         return False  # 실패 시 False 반환
 
 def lock_memory_procedure():
-    display_progress_bar(0)
+    # display_progress_bar(0)
     GPIO.output(LED_DEBUGGING, True)
-    display_status_message("메모리 잠금 중",position=(15, 20), font_size=15)
+    display_progress_and_message(0, "메모리 잠금 중", message_position=(15, 20), font_size=15)
     openocd_command = [
         "sudo",
         "openocd",
