@@ -172,7 +172,7 @@ def git_pull():
         if result.returncode == 0:
             print("업데이트 성공!")
             GPIO.output(LED_SUCCESS, True)
-            display_status_message("업데이트 성공!",position=(15, 20), font_size=15)
+            display_progress_and_message(100, "업데이트 성공!", message_position=(15, 20), font_size=15)
             
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
@@ -181,13 +181,13 @@ def git_pull():
             print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
             print("오류 메시지:", result.stderr)
             GPIO.output(LED_ERROR, True)
-            display_status_message("업데이트 실패!",position=(15, 20), font_size=15)
+            display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(15, 20), font_size=15)
             time.sleep(1)
 
     except Exception as e:
         print("명령 실행 중 오류 발생:", str(e))
         GPIO.output(LED_ERROR, True)
-        display_status_message("명령 실행 중 오류 발생")
+        display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(15, 20), font_size=15)
         time.sleep(1)
     finally:
         GPIO.output(LED_DEBUGGING, False)
