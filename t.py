@@ -1,33 +1,28 @@
 import subprocess
-import time
+import os
 
-def check_stm32_connection():
+# OpenOCD를 사용하여 STM32 마이크로컨트롤러에서 펌웨어 추출
+def extract_firmware():
+    firmware_path = "/home/pi/stm32_firmware.bin"  # 추출된 펌웨어를 저장할 경로
+    openocd_command = [
+        "sudo", "openocd",
+        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "init",
+        "-c", "reset halt",
+        "-c", "stm32f1x dump_image " + firmware_path + " 0x08000000 0x10000",  # 추출할 메모리 주소와 크기
+        "-c", "reset run",
+        "-c", "shutdown"
+    ]
+
     try:
-        # OpenOCD를 사용하여 STM32와의 연결을 시도하는 명령
-        command = [
-            "sudo", "openocd",
-            "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-            "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-            "-c", "init",
-            "-c", "exit"
-        ]
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-        # 결과를 확인하여 연결 상태를 판단
+        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
-            print("STM32 연결 성공")
-            return True
+            print("펌웨어 추출 성공:", firmware_path)
         else:
-            print("STM32 연결 실패:", result.stderr)
-            return False
+            print("펌웨어 추출 실패:", result.stderr)
     except Exception as e:
-        print(f"오류 발생: {e}")
-        return False
+        print("펌웨어 추출 중 오류 발생:", str(e))
 
-# 메인 루프
-while True:
-    if check_stm32_connection():
-        print("STM32 연결됨")
-    else:
-        print("STM32 연결 끊김 또는 응답 없음")
-    time.sleep(5)  # 5초 간격으로 확인
+# 펌웨어 추출 함수 실행
+extract_firmware()
