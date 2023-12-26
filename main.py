@@ -171,7 +171,7 @@ def git_pull():
         
         if result.returncode == 0:
             print("업데이트 성공!")
-            GPIO.output(LED_SUCCESS, True)
+            # GPIO.output(LED_SUCCESS, True)
             display_progress_and_message(100, "업데이트 성공!", message_position=(10, 10), font_size=15)
             
             time.sleep(1)
