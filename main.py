@@ -236,11 +236,11 @@ def unlock_memory():
     GPIO.output(LED_DEBUGGING, False)
 
     if result.returncode == 0:
-        display_progress_and_message(100, "메모리 잠금\n  해제 성공!", message_position=(20, 0), font_size=15)
+        display_progress_and_message(100, "메모리 잠금\n해제 성공!", message_position=(20, 0), font_size=15)
         time.sleep(1)
         return True
     else:
-        display_progress_and_message(0, "메모리 잠금\n  해제 실패!", message_position=(20, 0), font_size=15)
+        display_progress_and_message(0, "메모리 잠금\n해제 실패!", message_position=(20, 0), font_size=15)
         time.sleep(1)
         return False
 
@@ -256,7 +256,7 @@ def restart_script():
 def lock_memory_procedure():
     # display_progress_bar(0)
     GPIO.output(LED_DEBUGGING, True)
-    display_progress_and_message(0, "메모리 잠금 중", message_position=(0, 10), font_size=15)
+    display_progress_and_message(0, "메모리 잠금 중", message_position=(3, 10), font_size=15)
     openocd_command = [
         "sudo",
         "openocd",
@@ -274,14 +274,14 @@ def lock_memory_procedure():
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
-            display_progress_and_message(100,"메모리 잠금\n     성공", message_position=(20, 0), font_size=15)
+            display_progress_and_message(100,"메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
             # display_progress_bar(100)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
-            display_progress_and_message(50,"메모리 잠금\n     실패", message_position=(20, 0), font_size=15)
+            display_progress_and_message(50,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
             # display_progress_bar(50)
             time.sleep(1)
             GPIO.output(LED_ERROR, False)
