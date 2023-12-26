@@ -172,7 +172,7 @@ def git_pull():
         if result.returncode == 0:
             print("업데이트 성공!")
             GPIO.output(LED_SUCCESS, True)
-            display_progress_and_message(100, "업데이트 성공!", message_position=(10, 20), font_size=15)
+            display_progress_and_message(100, "업데이트 성공!", message_position=(10, 10), font_size=15)
             
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
@@ -181,13 +181,13 @@ def git_pull():
             print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
             print("오류 메시지:", result.stderr)
             GPIO.output(LED_ERROR, True)
-            display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(0, 20), font_size=15)
+            display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(0, 10), font_size=15)
             time.sleep(1)
 
     except Exception as e:
         print("명령 실행 중 오류 발생:", str(e))
         GPIO.output(LED_ERROR, True)
-        display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(0, 20), font_size=15)
+        display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(0, 10), font_size=15)
         time.sleep(1)
     finally:
         GPIO.output(LED_DEBUGGING, False)
@@ -331,7 +331,7 @@ def execute_command(command_index):
     if result == 0:
         print(f"'{commands[command_index]}'업데이트 성공!")
         GPIO.output(LED_SUCCESS, True)
-        display_progress_and_message(100, "업데이트 성공!", message_position=(9, 0), font_size=15)
+        display_progress_and_message(100, "업데이트 성공!", message_position=(9, 10), font_size=15)
         # display_progress_bar(100)
         time.sleep(1)
         GPIO.output(LED_SUCCESS, False)
@@ -339,7 +339,7 @@ def execute_command(command_index):
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
-        display_progress_and_message(50,"업데이트 실패", message_position=(9, 0), font_size=15)
+        display_progress_and_message(50,"업데이트 실패", message_position=(9, 10), font_size=15)
         # display_progress_bar(50)
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
