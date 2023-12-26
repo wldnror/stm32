@@ -70,24 +70,18 @@ def check_stm32_connection():
         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
         if result.returncode == 0:
-            if connection_failed_since_last_success:
+            connection_success = True
+            connection_failed_since_last_success = False
+            if connection_lost:
                 print("STM32 재연결 성공")
-                connection_success = True
-                connection_failed_since_last_success = False
-                connection_lost = False  # 재연결이 확인되면 connection_lost를 False로 설정
-            else:
-                if connection_lost:
-                    print("STM32 연결 해제 후 재연결 확인")
-                else:
-                    print("STM32 연결 성공")
-                connection_success = True
                 connection_lost = False
-            return True
+                return True  # 재연결이 성공했으므로 True 반환
+            return False  # 연결이 계속 유지되고 있으므로 False 반환
         else:
             print("STM32 연결 실패:", result.stderr)
             connection_failed_since_last_success = True
             connection_success = False
-            connection_lost = True  # 연결 실패가 감지되면 connection_lost를 True로 설정
+            connection_lost = True
             return False
     except Exception as e:
         print(f"오류 발생: {e}")
@@ -446,12 +440,13 @@ try:
         # STM32 연결 상태 확인 및 명령 실행
         if command_names[current_command_index] != "시스템 업데이트":
             if is_auto_mode:
-                if check_stm32_connection() and connection_success:
-                    execute_command(current_command_index)
-                elif connection_lost:
-                    time.sleep(15)  # 연결이 끊긴 상태에서 15초 대기
-                    if check_stm32_connection() and connection_success:
-                        execute_command(current_command_index)  # 재연결 후 명령 실행
+            connection_check = check_stm32_connection()
+            if connection_check and connection_success:
+                execute_command(current_command_index)
+            elif connection_lost:
+                print("STM32 연결이 끊어졌습니다. 15초 후 재시도합니다.")
+                time.sleep(15)  # 15초 대기
+                continue   # 재연결 후 명령 실행
 
         # 두 버튼을 동시에 눌렀을 때 모드 전환
         if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
