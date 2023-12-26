@@ -71,6 +71,7 @@ def check_stm32_connection():
                 print("STM32 재연결 성공")
                 connection_success = True
                 connection_failed_since_last_success = False  # 성공 후 실패 플래그 초기화
+                time.sleep(10)
             else:
                 print("STM32 연결 성공")
                 connection_success = False  # 연속적인 성공을 방지
