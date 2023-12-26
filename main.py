@@ -236,10 +236,10 @@ def unlock_memory():
     GPIO.output(LED_DEBUGGING, False)
 
     if result.returncode == 0:
-        display_progress_and_message(100, "메모리 잠금\n  해제 성공!", message_position=(13, 0), font_size=15)
+        display_progress_and_message(100, "메모리 잠금\n  해제 성공!", message_position=(20, 0), font_size=15)
         return True
     else:
-        display_progress_and_message(0, "메모리 잠금\n  해제 실패!", message_position=(13, 0), font_size=15)
+        display_progress_and_message(0, "메모리 잠금\n  해제 실패!", message_position=(20, 0), font_size=15)
         return False
 
 def restart_script():
