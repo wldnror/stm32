@@ -244,7 +244,7 @@ def unlock_memory():
 
 def restart_script():
     print("스크립트를 재시작합니다.")
-    display_progress_and_message(0, "재시작 중", message_position=(20, 0), font_size=15)
+    display_progress_and_message(0, "재시작 중", message_position=(20, 10), font_size=15)
     def restart():
         time.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
