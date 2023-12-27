@@ -70,23 +70,24 @@ def check_stm32_connection():
         if result.returncode == 0:
             if connection_failed_since_last_success:
                 print("STM32 재연결 성공")
+                GPIO.output(21, GPIO.LOW)  # STM32 재연결 성공 시, GPIO 21번을 GND로 활성화
                 connection_success = True
                 connection_failed_since_last_success = False  # 성공 후 실패 플래그 초기화
-                GPIO.output(21, GPIO.LOW)  # STM32 재연결 성공 시, GPIO 21번을 GND로 활성화
+                
             else:
                 print("STM32 연결 성공")
-                connection_success = False  # 연속적인 성공을 방지
                 GPIO.output(21, GPIO.LOW)  # STM32 연결 성공 시, GPIO 21번을 GND로 활성화
+                connection_success = False  # 연속적인 성공을 방지
             return True
         else:
             print("STM32 연결 실패:", result.stderr)
-            connection_failed_since_last_success = True  # 실패 플래그 
             GPIO.output(21, GPIO.HIGH)  # STM32 연결 실패 시, GPIO 21번 비활성화
+            connection_failed_since_last_success = True  # 실패 플래그 
             return False
     except Exception as e:
         print(f"오류 발생: {e}")
-        connection_failed_since_last_success = True  # 실패 플래그 설정
         GPIO.output(21, GPIO.HIGH)  # 예외 발생 시, GPIO 21번 비활성화
+        connection_failed_since_last_success = True  # 실패 플래그 설정
         return False
 
 # 배터리 상태 확인 함수
