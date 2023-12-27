@@ -12,13 +12,13 @@ import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
 
-
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
 LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
+
 
 # INA219 설정
 SHUNT_OHMS = 0.1
@@ -32,6 +32,7 @@ is_auto_mode = True
 
 # GPIO 핀 번호 모드 설정
 GPIO.setmode(GPIO.BCM)
+GPIO.setup(21, GPIO.OUT)  # GPIO 21번 핀을 출력 모드로 설정
 
 # 모드 전환 함수
 def toggle_mode():
@@ -71,17 +72,21 @@ def check_stm32_connection():
                 print("STM32 재연결 성공")
                 connection_success = True
                 connection_failed_since_last_success = False  # 성공 후 실패 플래그 초기화
+                GPIO.output(21, GPIO.LOW)  # STM32 재연결 성공 시, GPIO 21번을 GND로 활성화
             else:
                 print("STM32 연결 성공")
                 connection_success = False  # 연속적인 성공을 방지
+                GPIO.output(21, GPIO.LOW)  # STM32 연결 성공 시, GPIO 21번을 GND로 활성화
             return True
         else:
             print("STM32 연결 실패:", result.stderr)
-            connection_failed_since_last_success = True  # 실패 플래그 설정
+            connection_failed_since_last_success = True  # 실패 플래그 
+            GPIO.output(21, GPIO.HIGH)  # STM32 연결 실패 시, GPIO 21번 비활성화
             return False
     except Exception as e:
         print(f"오류 발생: {e}")
         connection_failed_since_last_success = True  # 실패 플래그 설정
+        GPIO.output(21, GPIO.HIGH)  # 예외 발생 시, GPIO 21번 비활성화
         return False
 
 # 배터리 상태 확인 함수
