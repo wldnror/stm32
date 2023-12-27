@@ -30,9 +30,13 @@ voltage_drop_threshold = 0.1  # 전압이 이 값 이상 떨어질 때 반응
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
 
-# GPIO 핀 번호 모드 설정
+# # GPIO 핀 번호 모드 설정
+# GPIO.setmode(GPIO.BCM)
+# GPIO.setup(21, GPIO.OUT)  # GPIO 21번 핀을 출력 모드로 설정
+# GPIO 핀 번호 모드 설정 및 초기 상태 설정
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(21, GPIO.OUT)  # GPIO 21번 핀을 출력 모드로 설정
+GPIO.setup(21, GPIO.OUT, initial=GPIO.HIGH)  # GPIO 21번 핀을 출력 모드로 설정하고 초기 상태를 HIGH로 설정
+
 
 # 모드 전환 함수
 def toggle_mode():
