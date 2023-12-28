@@ -244,13 +244,13 @@ def unlock_memory():
 
     GPIO.output(LED_DEBUGGING, False)
 
-    if result.returncode == 0:
+    if result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         display_progress_and_message(100, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
         time.sleep(1)
         return True
     else:
-        display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
         GPIO.output(LED_ERROR, True)
+        display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
         time.sleep(3)
         GPIO.output(LED_ERROR, False)
         return False
