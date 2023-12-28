@@ -480,6 +480,9 @@ def shutdown_system():
 
     os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
 
+# 초기 디스플레이 업데이트
+update_oled_display()
+
 # 메인 루프
 try:
     while True:
