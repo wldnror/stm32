@@ -13,7 +13,6 @@ from ina219 import INA219, DeviceRangeError
 import threading
 
 # GPIO 핀 설정
-GPIO.cleanup()             # GPIO 설정 초기화
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
 LED_DEBUGGING = 23
