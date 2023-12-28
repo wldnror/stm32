@@ -134,13 +134,17 @@ def select_battery_icon(percentage):
 
 # 명령어 설정
 commands = [
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V353_0X009D2B79.bin verify reset exit 0x08000000\"",
-    # "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/extracted_file.bin verify reset exit 0x08000000\"",
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000\"",
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ARF-T.bin verify reset exit 0x08000000\"",
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/HC100.bin verify reset exit 0x08000000\"",
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
+    # "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/extracted_file.bin verify reset exit 0x08000000\"",
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
-command_names = ["ASGD S", "ASGD S PNP", "시스템 업데이트"]
+command_names = ["ORG","HMDS","ARF-T","HC100","IPA", "ASGD S PNP", "시스템 업데이트"]
 
 current_command_index = 0
 status_message = ""
@@ -374,7 +378,7 @@ def update_oled_display():
             # draw.ellipse(inner_ellipse_box, outline="black", fill=None) # 내부 동그라미 그리기
             draw.text(text_position[mode_char], mode_char, font=font, fill=255)  # 글자 그리기
 
-        if command_names[current_command_index] in ["ASGD S", "ASGD S PNP"]:
+        if command_names[current_command_index] in ["ORG","HMDS","ARF-T","HC100","IPA", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
             draw.bitmap((90, -9), battery_icon, fill=255)
             draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
@@ -394,8 +398,16 @@ def update_oled_display():
         else:
             # if command_names[current_command_index] != "시스템 업데이트":
                 # draw.text((40, 20), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
-            if command_names[current_command_index] == "ASGD S":
-                draw.text((28, 27), 'ASGD S', font=font_1, fill=255)
+            if command_names[current_command_index] == "ORG":
+                draw.text((28, 27), 'ORG', font=font_1, fill=255)
+            elif command_names[current_command_index] == "HMDS":
+                draw.text((1, 27), 'HMDS', font=font_1, fill=255)
+            elif command_names[current_command_index] == "ARF-T":
+                draw.text((1, 27), 'ARF-T', font=font_1, fill=255)
+            elif command_names[current_command_index] == "HC100":
+                draw.text((1, 27), 'HC100', font=font_1, fill=255)
+            elif command_names[current_command_index] == "IPA":
+                draw.text((1, 27), 'IPA', font=font_1, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
                 draw.text((1, 27), 'ASGD S PNP', font=font_1, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
