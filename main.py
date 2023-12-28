@@ -30,11 +30,6 @@ voltage_drop_threshold = 0.1  # 전압이 이 값 이상 떨어질 때 반응
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
 
-# GPIO 핀 번호 모드 설정 및 초기 상태 설정
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
 # 모드 전환 함수
 def toggle_mode():
     global is_auto_mode
@@ -46,6 +41,7 @@ auto_mode_text = 'A'
 manual_mode_text = 'M'
 
 # GPIO 설정
+GPIO.setmode(GPIO.BCM)
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(LED_DEBUGGING, GPIO.OUT)
