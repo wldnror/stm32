@@ -6,7 +6,7 @@ def extract_file_from_stm32():
     memory_size = "256K"
 
     # 추출된 데이터를 저장할 파일 경로
-    save_path = "/home/user/stm32/Download/HC100.bin"
+    save_path = "/home/user/stm32/Download/ARF-T.bin"
 
     # OpenOCD 명령을 사용하여 STM32의 메모리 덤프
     openocd_command = [
