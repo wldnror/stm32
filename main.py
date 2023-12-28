@@ -268,7 +268,7 @@ def restart_script():
 def lock_memory_procedure():
     # display_progress_bar(0)
     # GPIO.output(LED_DEBUGGING, True)
-    display_progress_and_message(90, "메모리 잠금 중", message_position=(3, 10), font_size=15)
+    display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
     openocd_command = [
         "sudo",
         "openocd",
@@ -350,14 +350,14 @@ def execute_command(command_index):
     while process.poll() is None:
         elapsed = time.time() - start_time
         current_progress = 30 + (elapsed * progress_increment)
-        current_progress = min(current_progress, 90)  # 70%를 초과하지 않도록 제한
+        current_progress = min(current_progress, 80)  # 70%를 초과하지 않도록 제한
         display_progress_and_message(current_progress, "업데이트 중...", message_position=(12, 10), font_size=15)
         time.sleep(0.5)
         
     result = process.returncode# GPIO.output(LED_DEBUGGING, False)
     if result == 0:
         print(f"'{commands[command_index]}'업데이트 성공!")# GPIO.output(LED_SUCCESS, True)
-        display_progress_and_message(90, "업데이트 성공!", message_position=(7, 10), font_size=15)# display_progress_bar(100)
+        display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)# display_progress_bar(100)
         time.sleep(0.5)# GPIO.output(LED_SUCCESS, False)
         lock_memory_procedure()
     else:
