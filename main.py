@@ -488,12 +488,12 @@ try:
         # 두 버튼을 동시에 눌렀을 때 모드 전환
         if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
             toggle_mode()
-            time.sleep(0.01)  # 디바운싱을 위한 지연
+            time.sleep(0.03)  # 디바운싱을 위한 지연
 
         # NEXT 버튼 처리
         elif not GPIO.input(BUTTON_PIN_NEXT):
             current_command_index = (current_command_index + 1) % len(commands)
-            time.sleep(0.01) # EXECUTE 버튼 처리 - 이 부분을 수정합니다
+            time.sleep(0.03) # EXECUTE 버튼 처리 - 이 부분을 수정합니다
         elif not GPIO.input(BUTTON_PIN_EXECUTE):
             if is_auto_mode:
                 # 오토 모드일 때 이전 버튼으로 작동
@@ -501,7 +501,7 @@ try:
             else:
                 # 수동 모드일 때 기존 명령 실행 기능 유지
                 execute_command(current_command_index)
-            time.sleep(0.01)
+            time.sleep(0.03)
 
 except KeyboardInterrupt:
     GPIO.cleanup()
