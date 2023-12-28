@@ -18,17 +18,19 @@ BUTTON_PIN_EXECUTE = 17
 LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
+LED_ERROR1 = 23
 GPIO.setmode(GPIO.BCM)
 # 입력 핀 설정
 GPIO.setup([BUTTON_PIN_NEXT, BUTTON_PIN_EXECUTE], GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 # 출력 핀 설정
-GPIO.setup([LED_DEBUGGING, LED_SUCCESS, LED_ERROR], GPIO.OUT)
+GPIO.setup([LED_DEBUGGING, LED_SUCCESS, LED_ERROR, LED_ERROR1], GPIO.OUT)
 
 # LED 상태 초기화
 GPIO.output(LED_DEBUGGING, False)
 GPIO.output(LED_SUCCESS, False)
 GPIO.output(LED_ERROR, False)
+GPIO.output(LED_ERROR1, False)
 
 # INA219 설정
 SHUNT_OHMS = 0.1
@@ -171,9 +173,9 @@ def git_pull():
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        GPIO.output(LED_DEBUGGING, False)
-        GPIO.output(LED_SUCCESS, False)
-        GPIO.output(LED_ERROR, False)
+        # GPIO.output(LED_DEBUGGING, False)
+        # GPIO.output(LED_SUCCESS, False)
+        # GPIO.output(LED_ERROR, False)
         
         if result.returncode == 0:
             print("업데이트 성공!")
@@ -187,18 +189,21 @@ def git_pull():
             print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
             print("오류 메시지:", result.stderr)
             GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
             display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(0, 10), font_size=15)
             time.sleep(1)
 
     except Exception as e:
         print("명령 실행 중 오류 발생:", str(e))
         GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
         display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(0, 10), font_size=15)
         time.sleep(1)
     finally:
         GPIO.output(LED_DEBUGGING, False)
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
 
 def restart_script():
     print("스크립트를 재시작합니다.")
@@ -243,6 +248,7 @@ def unlock_memory():
         return True
     else:
         GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
         display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
         time.sleep(3)
         return False
@@ -280,15 +286,19 @@ def lock_memory_procedure():
         else:
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
             display_progress_and_message(50,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
             time.sleep(1)
             GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
     except Exception as e:
         print("명령 실행 중 오류 발생:", str(e))
         GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
         display_progress_and_message(0,"오류 발생")
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
 
 def execute_command(command_index):
     print("업데이트 시도...")
@@ -307,6 +317,7 @@ def execute_command(command_index):
 
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
 
         with canvas(device) as draw:
             # '메모리 잠금' 메시지를 (0, 10) 위치에 표시
@@ -316,6 +327,7 @@ def execute_command(command_index):
 
         time.sleep(2)
         GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
         return
 
     display_progress_and_message(0, "업데이트 중...", message_position=(12, 10), font_size=15)
@@ -332,9 +344,11 @@ def execute_command(command_index):
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
         display_progress_and_message(0,"업데이트 실패", message_position=(7, 10), font_size=15)
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
