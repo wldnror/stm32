@@ -141,7 +141,6 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/HC100.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
-    # "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/extracted_file.bin verify reset exit 0x08000000\"",
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
@@ -217,13 +216,10 @@ def display_progress_and_message(percentage, message, message_position=(0, 0), f
         # 진행 상태 바 표시
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")  # 상태 바의 외곽선
         draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")  # 상태 바의 내용
-# 함수 사용 예시
-# display_progress_and_message(0, "여기에 상태 메시지 입력", message_position=(20, 20), font_size=17)
 
 def unlock_memory():
     print("메모리 해제 시도...")
-    GPIO.output(LED_DEBUGGING, True)
-
+    
     # '메모리 잠금' 및 '해제 중' 메시지와 함께 초기 진행 상태 바 표시
     display_progress_and_message(0, "메모리 잠금\n   해제 중", message_position=(18, 0), font_size=15)
     time.sleep(1)
@@ -241,8 +237,6 @@ def unlock_memory():
     ]
     result = subprocess.run(openocd_command)
 
-    GPIO.output(LED_DEBUGGING, False)
- # if result.returncode == 0:
     if result.returncode == 0:
         display_progress_and_message(100, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
         time.sleep(1)
@@ -251,7 +245,6 @@ def unlock_memory():
         GPIO.output(LED_ERROR, True)
         display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
         time.sleep(3)
-        GPIO.output(LED_ERROR, False)
         return False
 
 def restart_script():
@@ -264,8 +257,6 @@ def restart_script():
 
 
 def lock_memory_procedure():
-    # display_progress_bar(0)
-    GPIO.output(LED_DEBUGGING, True)
     display_progress_and_message(0, "메모리 잠금 중", message_position=(3, 10), font_size=15)
     openocd_command = [
         "sudo",
@@ -280,12 +271,10 @@ def lock_memory_procedure():
     ]
     try:
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        GPIO.output(LED_DEBUGGING, False)
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
             display_progress_and_message(100,"메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
-            # display_progress_bar(100)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
@@ -293,23 +282,21 @@ def lock_memory_procedure():
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_SUCCESS, True)
             display_progress_and_message(50,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
-            # display_progress_bar(50)
             time.sleep(1)
             GPIO.output(LED_ERROR, False)
     except Exception as e:
         print("명령 실행 중 오류 발생:", str(e))
         GPIO.output(LED_ERROR, True)
         display_progress_and_message(0,"오류 발생")
-        # display_progress_bar(0)
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
 
 def execute_command(command_index):
     print("업데이트 시도...")
     # display_progress_bar(0)
-    GPIO.output(LED_DEBUGGING, False)
-    GPIO.output(LED_SUCCESS, False)
-    GPIO.output(LED_ERROR, False)
+    # GPIO.output(LED_DEBUGGING, False)
+    # GPIO.output(LED_SUCCESS, False)
+    # GPIO.output(LED_ERROR, False)
 
     if command_index == len(commands) - 1:
         git_pull()
@@ -332,28 +319,21 @@ def execute_command(command_index):
         GPIO.output(LED_ERROR, False)
         return
 
-    GPIO.output(LED_DEBUGGING, True)
     display_progress_and_message(0, "업데이트 중...", message_position=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
     while process.poll() is None:
         display_progress_and_message(50, "업데이트 중...", message_position=(12, 10), font_size=15)
         time.sleep(1)
     result = process.returncode
-    GPIO.output(LED_DEBUGGING, False)
-    # display_progress_bar(50)
     if result == 0:
         print(f"'{commands[command_index]}'업데이트 성공!")
-        # GPIO.output(LED_SUCCESS, True)
         display_progress_and_message(100, "업데이트 성공!", message_position=(7, 10), font_size=15)
-        # display_progress_bar(100)
         time.sleep(1)
-        # GPIO.output(LED_SUCCESS, False)
         lock_memory_procedure()
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
-        display_progress_and_message(50,"업데이트 실패", message_position=(7, 10), font_size=15)
-        # display_progress_bar(50)
+        display_progress_and_message(0,"업데이트 실패", message_position=(7, 10), font_size=15)
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
 
@@ -374,13 +354,11 @@ def update_oled_display():
             # 모드에 따라 'A' 또는 'M' 선택
             mode_char = 'A' if is_auto_mode else 'M'
             outer_ellipse_box = (2, 0, 22, 20)  # 외부 동그라미 좌표 (크기 조정)
-            # inner_ellipse_box = (8, 19, 16, 27)  # 내부 동그라미 좌표 (두께 조정)
             text_position = {
                 'A': (8, -3),
                 'M': (5, -3)
             }
             draw.ellipse(outer_ellipse_box, outline="white", fill=None)    # 외부 동그라미 그리기 (두께 조정)
-            # draw.ellipse(inner_ellipse_box, outline="black", fill=None) # 내부 동그라미 그리기
             draw.text(text_position[mode_char], mode_char, font=font, fill=255)  # 글자 그리기
 
         if command_names[current_command_index] in ["ORG","HMDS","ARF-T","HC100","IPA", "ASGD S PNP"]:
