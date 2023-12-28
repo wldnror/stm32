@@ -475,7 +475,7 @@ try:
         update_oled_display()
 
         # 짧은 지연
-        time.sleep(1)
+        time.sleep(0.1)
 
 except KeyboardInterrupt:
     GPIO.cleanup()
