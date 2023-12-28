@@ -2,6 +2,12 @@ import subprocess
 import re
 import time
 
+# main.py 파일의 경로를 정확하게 지정하세요.
+path_to_main_py = "/home/user/stm32/main.py"
+
+# main.py를 백그라운드에서 실행
+subprocess.Popen(["python3", path_to_main_py])
+
 # Wi-Fi 네트워크를 스캔하는 함수
 def scan_wifi_networks(interface="wlan0"):
     cmd = ["sudo", "iwlist", interface, "scan"]
