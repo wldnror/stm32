@@ -245,7 +245,7 @@ def unlock_memory():
     ]
     result = subprocess.run(openocd_command)
 
-    GPIO.output(LED_DEBUGGING, False)
+    # GPIO.output(LED_DEBUGGING, False)
 
     if result.returncode == 0:
         display_progress_and_message(100, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
