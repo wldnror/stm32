@@ -292,6 +292,7 @@ def lock_memory_procedure():
         else:
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_SUCCESS, True)
             display_progress_and_message(50,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
             # display_progress_bar(50)
             time.sleep(1)
