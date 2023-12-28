@@ -466,6 +466,10 @@ def button_handler():
         elif not GPIO.input(BUTTON_PIN_EXECUTE):
             execute_command(current_command_index)
             time.sleep(0.1)
+# 스레드 시작
+button_thread = threading.Thread(target=button_handler)
+button_thread.daemon = True  # 프로그램 종료 시 스레드도 함께 종료되도록 설정
+button_thread.start()
 try:
     while True:
         # 배터리 수준을 확인하고 0%면 시스템 종료
