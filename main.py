@@ -444,15 +444,15 @@ def button_handler():
     while True:  # 무한 루프 추가
         if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
             toggle_mode()
-            time.sleep(0.1)  # 디바운싱을 위한 지연
+            time.sleep(0.3)  # 디바운싱을 위한 지연
 
         elif not GPIO.input(BUTTON_PIN_NEXT):
             current_command_index = (current_command_index + 1) % len(commands)
-            time.sleep(0.1)
+            time.sleep(0.3)
 
         elif not GPIO.input(BUTTON_PIN_EXECUTE):
             execute_command(current_command_index)
-            time.sleep(0.1)
+            time.sleep(0.3)
 
 # 스레드 시작
 button_thread = threading.Thread(target=button_handler)
