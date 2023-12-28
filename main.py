@@ -228,7 +228,6 @@ def unlock_memory():
     # '메모리 잠금' 및 '해제 중' 메시지와 함께 초기 진행 상태 바 표시
     display_progress_and_message(0, "메모리 잠금\n   해제 중", message_position=(18, 0), font_size=15)
     time.sleep(1)
-    return True
 
     # 메모리 잠금 해제 로직 구현...
     openocd_command = [
