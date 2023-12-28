@@ -18,7 +18,8 @@ BUTTON_PIN_EXECUTE = 17
 LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
-
+GPIO.setmode(GPIO.BCM)
+GPIO.setup([BUTTON_PIN_NEXT, BUTTON_PIN_EXECUTE, LED_DEBUGGING, LED_SUCCESS, LED_ERROR], GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 # INA219 설정
 SHUNT_OHMS = 0.1
@@ -29,6 +30,8 @@ voltage_drop_threshold = 0.1  # 전압이 이 값 이상 떨어질 때 반응
 
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
+current_command_index = 0
+status_message = ""
 
 # 모드 전환 함수
 def toggle_mode():
@@ -39,14 +42,6 @@ def toggle_mode():
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
 auto_mode_text = 'A'
 manual_mode_text = 'M'
-
-# GPIO 설정
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(LED_DEBUGGING, GPIO.OUT)
-GPIO.setup(LED_SUCCESS, GPIO.OUT)
-GPIO.setup(LED_ERROR, GPIO.OUT)
 
 # 연결 상태를 추적하기 위한 변수
 connection_success = False
