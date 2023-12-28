@@ -399,15 +399,15 @@ def update_oled_display():
             # if command_names[current_command_index] != "시스템 업데이트":
                 # draw.text((40, 20), f'설정 {current_command_index+1}번', font=font_s, fill=255)  
             if command_names[current_command_index] == "ORG":
-                draw.text((35, 27), 'ORG', font=font_1, fill=255)
+                draw.text((37, 27), 'ORG', font=font_1, fill=255)
             elif command_names[current_command_index] == "HMDS":
-                draw.text((30, 27), 'HMDS', font=font_1, fill=255)
+                draw.text((31, 27), 'HMDS', font=font_1, fill=255)
             elif command_names[current_command_index] == "ARF-T":
-                draw.text((30, 27), 'ARF-T', font=font_1, fill=255)
+                draw.text((32, 27), 'ARF-T', font=font_1, fill=255)
             elif command_names[current_command_index] == "HC100":
-                draw.text((29, 27), 'HC100', font=font_1, fill=255)
+                draw.text((30, 27), 'HC100', font=font_1, fill=255)
             elif command_names[current_command_index] == "IPA":
-                draw.text((35, 27), 'IPA', font=font_1, fill=255)
+                draw.text((40, 27), 'IPA', font=font_1, fill=255)
             elif command_names[current_command_index] == "ASGD S PNP":
                 draw.text((1, 27), 'ASGD S PNP', font=font_1, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
