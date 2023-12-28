@@ -32,9 +32,6 @@ is_auto_mode = True
 
 # GPIO 핀 번호 모드 설정 및 초기 상태 설정
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(21, GPIO.OUT)
-GPIO.output(21, GPIO.HIGH)  # 시스템 시작 시 GPIO 21번 핀을 비활성화
-
 
 # 모드 전환 함수
 def toggle_mode():
@@ -72,23 +69,19 @@ def check_stm32_connection():
         if result.returncode == 0:
             if connection_failed_since_last_success:
                 print("STM32 재연결 성공")
-                GPIO.output(21, GPIO.LOW)  # STM32 재연결 성공 시, GPIO 21번을 GND로 활성화
                 connection_success = True
                 connection_failed_since_last_success = False  # 성공 후 실패 플래그 초기화
                 
             else:
                 print("STM32 연결 성공")
-                GPIO.output(21, GPIO.LOW)  # STM32 연결 성공 시, GPIO 21번을 GND로 활성화
                 connection_success = False  # 연속적인 성공을 방지
             return True
         else:
             print("STM32 연결 실패:", result.stderr)
-            GPIO.output(21, GPIO.HIGH)  # STM32 연결 실패 시, GPIO 21번 비활성화
             connection_failed_since_last_success = True  # 실패 플래그 
             return False
     except Exception as e:
         print(f"오류 발생: {e}")
-        GPIO.output(21, GPIO.HIGH)  # 예외 발생 시, GPIO 21번 비활성화
         connection_failed_since_last_success = True  # 실패 플래그 설정
         return False
 
@@ -388,7 +381,7 @@ def update_oled_display():
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((0, 51), ip_address, font=font_big, fill=255)
             draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
-            draw.text((90, 50), 'ver 3.1', font=font_big, fill=255)
+            draw.text((90, 50), 'ver 3.2', font=font_big, fill=255)
             draw.text((0, -3), current_time, font=font_time, fill=255)
 
 
