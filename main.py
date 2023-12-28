@@ -26,7 +26,6 @@ SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.1  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 previous_voltage = None
-voltage_drop_threshold = 0.1  # 전압이 이 값 이상 떨어질 때 반응
 
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
@@ -101,10 +100,10 @@ device = sh1107(serial, rotate=1)
 # 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
 font_big = ImageFont.truetype(font_path, 12)
-font_s = ImageFont.truetype(font_path, 13)
-font_st = ImageFont.truetype(font_path, 11)
+# font_s = ImageFont.truetype(font_path, 13)
+# font_st = ImageFont.truetype(font_path, 11)
 font = ImageFont.truetype(font_path, 17)
-font_status = ImageFont.truetype(font_path, 13)
+# font_status = ImageFont.truetype(font_path, 13)
 font_1 = ImageFont.truetype(font_path, 21)
 font_time = ImageFont.truetype(font_path, 12)
 
