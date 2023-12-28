@@ -1,5 +1,6 @@
 import subprocess
 import re
+import time
 
 # Wi-Fi 네트워크를 스캔하는 함수
 def scan_wifi_networks(interface="wlan0"):
@@ -17,7 +18,6 @@ def scan_wifi_networks(interface="wlan0"):
 
 # 암호화되지 않은 네트워크에 연결하는 함수
 def connect_to_open_network(ssid):
-    # NetworkManager를 사용하여 공개 네트워크에 연결 시도
     cmd = ["sudo", "nmcli", "dev", "wifi", "connect", ssid]
     result = subprocess.run(cmd, capture_output=True, text=True)
 
@@ -26,12 +26,30 @@ def connect_to_open_network(ssid):
     else:
         print(f"Failed to connect to {ssid}. Error: {result.stderr}")
 
+# 네트워크 연결 상태를 확인하는 함수
+def is_connected(interface="wlan0"):
+    try:
+        cmd = ["iwconfig", interface]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return "Access Point" in result.stdout
+    except Exception as e:
+        print(f"Error checking network status: {e}")
+        return False
+
 # 메인 로직
 if __name__ == "__main__":
-    open_networks = scan_wifi_networks()
-    if open_networks:
-        print("Open networks found:", open_networks)
-        for ssid in open_networks:
-            connect_to_open_network(ssid)
-    else:
-        print("No open networks found.")
+    while True:
+        if not is_connected():
+            print("Network disconnected. Scanning for open networks...")
+            open_networks = scan_wifi_networks()
+            if open_networks:
+                print("Open networks found:", open_networks)
+                for ssid in open_networks:
+                    connect_to_open_network(ssid)
+            else:
+                print("No open networks found.")
+        else:
+            print("Already connected to a network.")
+        
+        # 일정 시간 동안 대기 (예: 5분)
+        time.sleep(300)
