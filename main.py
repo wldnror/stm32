@@ -484,23 +484,23 @@ try:
         # 두 버튼을 동시에 눌렀을 때 모드 전환
         if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
             toggle_mode()
-            time.sleep(0)  # 디바운싱을 위한 지연
+            time.sleep(0.01)  # 디바운싱을 위한 지연
 
         # NEXT 버튼 처리
         elif not GPIO.input(BUTTON_PIN_NEXT):
             current_command_index = (current_command_index + 1) % len(commands)
-            time.sleep(0)
+            time.sleep(0.01)
 
         # EXECUTE 버튼 처리
         elif not GPIO.input(BUTTON_PIN_EXECUTE):
             execute_command(current_command_index)
-            time.sleep(0)
+            time.sleep(0.01)
 
         # OLED 디스플레이 업데이트
         update_oled_display()
 
         # 짧은 지연
-        time.sleep(0)
+        time.sleep(0.01)
 
 except KeyboardInterrupt:
     GPIO.cleanup()
