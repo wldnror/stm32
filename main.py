@@ -248,7 +248,7 @@ def unlock_memory():
     # GPIO.output(LED_DEBUGGING, False)
 
     if result.returncode == 0:
-        display_progress_and_message(20, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
+        display_progress_and_message(30, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
         time.sleep(1)
         return True
     else:
@@ -340,7 +340,7 @@ def execute_command(command_index):
         return
 
     # GPIO.output(LED_DEBUGGING, True)
-    display_progress_and_message(0, "업데이트 중...", message_position=(12, 10), font_size=15)
+    display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
     while process.poll() is None:
         display_progress_and_message(50, "업데이트 중...", message_position=(12, 10), font_size=15)
