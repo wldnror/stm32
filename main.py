@@ -34,19 +34,26 @@ is_auto_mode = True
 # GPIO 핀 번호 모드 설정 및 초기 상태 설정
 GPIO.setmode(GPIO.BCM)
 
-# 인터럽트 핸들러 함수들
 def button_next_callback(channel):
     global current_command_index
-    current_command_index = (current_command_index + 1) % len(commands)
-    update_oled_display()
+    # EXECUTE 버튼도 눌려있는지 확인
+    if not GPIO.input(BUTTON_PIN_EXECUTE):
+        toggle_mode()  # 모드 전환
+    else:
+        current_command_index = (current_command_index + 1) % len(commands)
+        update_oled_display()
 
 def button_execute_callback(channel):
     global current_command_index
-    if is_auto_mode:
-        current_command_index = (current_command_index - 1) % len(commands)
+    # NEXT 버튼도 눌려있는지 확인
+    if not GPIO.input(BUTTON_PIN_NEXT):
+        toggle_mode()  # 모드 전환
     else:
-        execute_command(current_command_index)
-    update_oled_display()
+        if is_auto_mode:
+            current_command_index = (current_command_index - 1) % len(commands)
+        else:
+            execute_command(current_command_index)
+        update_oled_display()
     
 
 # 모드 전환 함수
