@@ -15,7 +15,7 @@ def extract_file_from_stm32():
         "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
         "-c", "init",
         "-c", "reset halt",
-        "-c", f"flash read_bank 0 {save_path}",  # 수정된 부분
+        "-c", f"flash read_image {save_path} {memory_address} {memory_size}",
         "-c", "reset run",
         "-c", "shutdown",
     ]
