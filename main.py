@@ -34,17 +34,19 @@ is_auto_mode = True
 # GPIO 핀 번호 모드 설정 및 초기 상태 설정
 GPIO.setmode(GPIO.BCM)
 
+need_update = False
+
 def button_next_callback(channel):
-    global current_command_index
+    global current_command_index, need_update
     # EXECUTE 버튼도 눌려있는지 확인
     if not GPIO.input(BUTTON_PIN_EXECUTE):
         toggle_mode()  # 모드 전환
     else:
         current_command_index = (current_command_index + 1) % len(commands)
-        update_oled_display()
+    need_update = True
 
 def button_execute_callback(channel):
-    global current_command_index
+    global current_command_index, need_update
     # NEXT 버튼도 눌려있는지 확인
     if not GPIO.input(BUTTON_PIN_NEXT):
         toggle_mode()  # 모드 전환
@@ -53,7 +55,7 @@ def button_execute_callback(channel):
             current_command_index = (current_command_index - 1) % len(commands)
         else:
             execute_command(current_command_index)
-        update_oled_display()
+    need_update = True
     
 
 # 모드 전환 함수
@@ -506,9 +508,11 @@ try:
         #     else:
         #         # 수동 모드일 때 기존 명령 실행 기능 유지
         #         execute_command(current_command_index)
-            time.sleep(0.03)
+    
         # OLED 디스플레이 업데이트
-        update_oled_display()
-
+       if need_update:
+            update_oled_display()
+            need_update = False
+        time.sleep(0.03)
 except KeyboardInterrupt:
     GPIO.cleanup()
