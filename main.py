@@ -344,7 +344,7 @@ def execute_command(command_index):
     process = subprocess.Popen(commands[command_index], shell=True)
     
     start_time = time.time()
-    max_duration = 8  # 최대 지속 시간을 초 단위로 설정 (이 값은 조정 가능)
+    max_duration = 6  # 최대 지속 시간을 초 단위로 설정 (이 값은 조정 가능)
     progress_increment = 20 / max_duration  # 50%에서 70%까지 증가
     
     while process.poll() is None:
