@@ -349,8 +349,8 @@ def execute_command(command_index):
     
     while process.poll() is None:
         elapsed = time.time() - start_time
-        current_progress = 50 + (elapsed * progress_increment)
-        current_progress = min(current_progress, 70)  # 70%를 초과하지 않도록 제한
+        current_progress = 30 + (elapsed * progress_increment)
+        current_progress = min(current_progress, 90)  # 70%를 초과하지 않도록 제한
         display_progress_and_message(current_progress, "업데이트 중...", message_position=(12, 10), font_size=15)
         time.sleep(0.5)
         
