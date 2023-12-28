@@ -502,6 +502,8 @@ try:
                 # 수동 모드일 때 기존 명령 실행 기능 유지
                 execute_command(current_command_index)
             time.sleep(0.03)
+        # OLED 디스플레이 업데이트
+        update_oled_display()
 
 except KeyboardInterrupt:
     GPIO.cleanup()
