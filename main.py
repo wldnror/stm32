@@ -32,6 +32,8 @@ is_auto_mode = True
 
 # GPIO 핀 번호 모드 설정 및 초기 상태 설정
 GPIO.setmode(GPIO.BCM)
+GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 # 모드 전환 함수
 def toggle_mode():
@@ -437,6 +439,24 @@ def shutdown_system():
 
     os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
 
+def button_handler():
+# 두 버튼을 동시에 눌렀을 때 모드 전환
+        if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
+            toggle_mode()
+            time.sleep(0.03)  # 디바운싱을 위한 지연
+
+        # NEXT 버튼 처리
+        elif not GPIO.input(BUTTON_PIN_NEXT):
+            current_command_index = (current_command_index + 1) % len(commands)
+            time.sleep(0.03)
+
+        # EXECUTE 버튼 처리
+        elif not GPIO.input(BUTTON_PIN_EXECUTE):
+            execute_command(current_command_index)
+            time.sleep(0.03)
+button_thread = threading.Thread(target=button_handler)
+button_thread.start()
+
 
 try:
     while True:
@@ -450,20 +470,20 @@ try:
             if is_auto_mode and check_stm32_connection() and connection_success:
                 execute_command(current_command_index)
 
-        # 두 버튼을 동시에 눌렀을 때 모드 전환
-        if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
-            toggle_mode()
-            time.sleep(0.01)  # 디바운싱을 위한 지연
+        # # 두 버튼을 동시에 눌렀을 때 모드 전환
+        # if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
+        #     toggle_mode()
+        #     time.sleep(0.01)  # 디바운싱을 위한 지연
 
-        # NEXT 버튼 처리
-        elif not GPIO.input(BUTTON_PIN_NEXT):
-            current_command_index = (current_command_index + 1) % len(commands)
-            time.sleep(0)
+        # # NEXT 버튼 처리
+        # elif not GPIO.input(BUTTON_PIN_NEXT):
+        #     current_command_index = (current_command_index + 1) % len(commands)
+        #     time.sleep(0)
 
-        # EXECUTE 버튼 처리
-        elif not GPIO.input(BUTTON_PIN_EXECUTE):
-            execute_command(current_command_index)
-            time.sleep(0)
+        # # EXECUTE 버튼 처리
+        # elif not GPIO.input(BUTTON_PIN_EXECUTE):
+        #     execute_command(current_command_index)
+        #     time.sleep(0)
 
         # OLED 디스플레이 업데이트
         update_oled_display()
