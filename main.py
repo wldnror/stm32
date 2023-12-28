@@ -49,9 +49,8 @@ def button_next_callback(channel):
 def button_execute_callback(channel):
     global current_command_index, need_update
     # 시스템 업데이트 화면에서 선택 버튼으로 작동
-    if current_command_index == command_names.index("시스템 업데이트"):
-    # NEXT 버튼도 눌려있는지 확인
-    if not GPIO.input(BUTTON_PIN_NEXT):
+    if current_command_index == command_names.index("시스템 업데이트"):# NEXT 버튼도 눌려있는지 확인
+        if not GPIO.input(BUTTON_PIN_NEXT):
         toggle_mode()  # 모드 전환
         need_update = True
     else:
