@@ -248,7 +248,7 @@ def unlock_memory():
     # GPIO.output(LED_DEBUGGING, False)
 
     if result.returncode == 0:
-        display_progress_and_message(100, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
+        display_progress_and_message(20, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
         time.sleep(1)
         return True
     else:
@@ -258,7 +258,7 @@ def unlock_memory():
 
 def restart_script():
     print("스크립트를 재시작합니다.")
-    display_progress_and_message(0, "재시작 중", message_position=(20, 10), font_size=15)
+    display_progress_and_message(25, "재시작 중", message_position=(20, 10), font_size=15)
     def restart():
         time.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
@@ -268,7 +268,7 @@ def restart_script():
 def lock_memory_procedure():
     # display_progress_bar(0)
     # GPIO.output(LED_DEBUGGING, True)
-    display_progress_and_message(0, "메모리 잠금 중", message_position=(3, 10), font_size=15)
+    display_progress_and_message(10, "메모리 잠금 중", message_position=(3, 10), font_size=15)
     openocd_command = [
         "sudo",
         "openocd",
@@ -294,7 +294,7 @@ def lock_memory_procedure():
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            display_progress_and_message(50,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
+            display_progress_and_message(85,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
             # display_progress_bar(50)
             time.sleep(1)
             GPIO.output(LED_ERROR, False)
@@ -351,7 +351,7 @@ def execute_command(command_index):
     if result == 0:
         print(f"'{commands[command_index]}'업데이트 성공!")
         # GPIO.output(LED_SUCCESS, True)
-        display_progress_and_message(100, "업데이트 성공!", message_position=(7, 10), font_size=15)
+        display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
         # display_progress_bar(100)
         time.sleep(0.5)
         # GPIO.output(LED_SUCCESS, False)
