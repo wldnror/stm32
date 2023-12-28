@@ -52,8 +52,8 @@ def button_execute_callback(channel):
     if not GPIO.input(BUTTON_PIN_NEXT):
         toggle_mode()  # 모드 전환
         need_update = True
-        if current_command_index == command_names.index("시스템 업데이트"):
-            execute_command(current_command_index)
+    if current_command_index == command_names.index("시스템 업데이트"):
+        execute_command(current_command_index)
     else:
         if is_auto_mode:
             current_command_index = (current_command_index - 1) % len(commands)
