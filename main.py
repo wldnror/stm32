@@ -48,11 +48,12 @@ def button_next_callback(channel):
 
 def button_execute_callback(channel):
     global current_command_index, need_update
-    if current_command_index == command_names.index("시스템 업데이트"):
-        execute_command(current_command_index)# NEXT 버튼도 눌려있는지 확인
-        if not GPIO.input(BUTTON_PIN_NEXT):
-            toggle_mode()  # 모드 전환
-            need_update = True
+    # NEXT 버튼도 눌려있는지 확인
+    if not GPIO.input(BUTTON_PIN_NEXT):
+        toggle_mode()  # 모드 전환
+        need_update = True
+        if current_command_index == command_names.index("시스템 업데이트"):
+            execute_command(current_command_index)
     else:
         if is_auto_mode:
             current_command_index = (current_command_index - 1) % len(commands)
