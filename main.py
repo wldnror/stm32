@@ -26,7 +26,7 @@ SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.1  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 previous_voltage = None
-voltage_drop_threshold = 0.1  # 전압이 이 값 이상 떨어질 때 반응
+# voltage_drop_threshold = 0.1  # 전압이 이 값 이상 떨어질 때 반응
 
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
@@ -45,8 +45,8 @@ auto_mode_text = 'A'
 manual_mode_text = 'M'
 
 # GPIO 설정
-GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+# GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+# GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 # GPIO.setup(LED_DEBUGGING, GPIO.OUT)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
@@ -450,25 +450,25 @@ def shutdown_system():
 
     os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
 
-def button_handler():
-    global current_command_index  # 전역 변수 사용을 위한 global 선언
-    while True:  # 무한 루프 추가
-        if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
-            toggle_mode()
-            time.sleep(0.03)  # 디바운싱을 위한 지연
+# def button_handler():
+#     global current_command_index  # 전역 변수 사용을 위한 global 선언
+#     while True:  # 무한 루프 추가
+#         if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
+#             toggle_mode()
+#             time.sleep(0.03)  # 디바운싱을 위한 지연
 
-        elif not GPIO.input(BUTTON_PIN_NEXT):
-            current_command_index = (current_command_index + 1) % len(commands)
-            time.sleep(0.03)
+#         elif not GPIO.input(BUTTON_PIN_NEXT):
+#             current_command_index = (current_command_index + 1) % len(commands)
+#             time.sleep(0.03)
 
-        elif not GPIO.input(BUTTON_PIN_EXECUTE):
-            execute_command(current_command_index)
-            time.sleep(0.03)
+#         elif not GPIO.input(BUTTON_PIN_EXECUTE):
+#             execute_command(current_command_index)
+#             time.sleep(0.03)
             
 # 스레드 시작
-button_thread = threading.Thread(target=button_handler)
-button_thread.daemon = True  # 프로그램 종료 시 스레드도 함께 종료되도록 설정
-button_thread.start()
+# button_thread = threading.Thread(target=button_handler)
+# button_thread.daemon = True  # 프로그램 종료 시 스레드도 함께 종료되도록 설정
+# button_thread.start()
 try:
     while True:
         # 배터리 수준을 확인하고 0%면 시스템 종료
@@ -481,20 +481,20 @@ try:
             if is_auto_mode and check_stm32_connection() and connection_success:
                 execute_command(current_command_index)
 
-        # # 두 버튼을 동시에 눌렀을 때 모드 전환
-        # if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
-        #     toggle_mode()
-        #     time.sleep(1)  # 디바운싱을 위한 지연
+        # 두 버튼을 동시에 눌렀을 때 모드 전환
+        if not GPIO.input(BUTTON_PIN_NEXT) and not GPIO.input(BUTTON_PIN_EXECUTE):
+            toggle_mode()
+            time.sleep(1)  # 디바운싱을 위한 지연
 
-        # # NEXT 버튼 처리
-        # elif not GPIO.input(BUTTON_PIN_NEXT):
-        #     current_command_index = (current_command_index + 1) % len(commands)
-        #     time.sleep(0.1)
+        # NEXT 버튼 처리
+        elif not GPIO.input(BUTTON_PIN_NEXT):
+            current_command_index = (current_command_index + 1) % len(commands)
+            time.sleep(0.1)
 
-        # # EXECUTE 버튼 처리
-        # elif not GPIO.input(BUTTON_PIN_EXECUTE):
-        #     execute_command(current_command_index)
-        #     time.sleep(0.1)
+        # EXECUTE 버튼 처리
+        elif not GPIO.input(BUTTON_PIN_EXECUTE):
+            execute_command(current_command_index)
+            time.sleep(0.1)
 
         # OLED 디스플레이 업데이트
         update_oled_display()
