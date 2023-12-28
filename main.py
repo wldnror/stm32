@@ -268,7 +268,7 @@ def restart_script():
 def lock_memory_procedure():
     # display_progress_bar(0)
     # GPIO.output(LED_DEBUGGING, True)
-    display_progress_and_message(10, "메모리 잠금 중", message_position=(3, 10), font_size=15)
+    display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
     openocd_command = [
         "sudo",
         "openocd",
@@ -294,7 +294,7 @@ def lock_memory_procedure():
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            display_progress_and_message(85,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
+            display_progress_and_message(0,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
             # display_progress_bar(50)
             time.sleep(1)
             GPIO.output(LED_ERROR, False)
@@ -360,7 +360,7 @@ def execute_command(command_index):
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        display_progress_and_message(50,"업데이트 실패", message_position=(7, 10), font_size=15)
+        display_progress_and_message(0,"업데이트 실패", message_position=(7, 10), font_size=15)
         # display_progress_bar(50)
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
