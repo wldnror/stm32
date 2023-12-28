@@ -51,5 +51,5 @@ if __name__ == "__main__":
         else:
             print("Already connected to a network.")
         
-        # 일정 시간 동안 대기 (예: 5분)
-        time.sleep(300)
+        # 3분 동안 대기
+        time.sleep(180)
