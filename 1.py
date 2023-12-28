@@ -6,7 +6,7 @@ def extract_file_from_stm32():
     memory_size = "256K"
 
     # 추출된 데이터를 저장할 파일 경로
-    save_path = "/home/user/yongjun/extracted_file.bin"
+    save_path = "/home/user/Desktop/1128/extracted_file.bin"
 
     # OpenOCD 명령을 사용하여 STM32의 메모리 덤프
     openocd_command = [
