@@ -57,7 +57,7 @@ def button_execute_callback(channel):
             current_command_index = (current_command_index - 1) % len(commands)
         else:
             execute_command(current_command_index)
-        need_update = True
+    need_update = True
 
     
 
