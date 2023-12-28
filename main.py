@@ -41,21 +41,24 @@ def button_next_callback(channel):
     # EXECUTE 버튼도 눌려있는지 확인
     if not GPIO.input(BUTTON_PIN_EXECUTE):
         toggle_mode()  # 모드 전환
+        need_update = True
     else:
         current_command_index = (current_command_index + 1) % len(commands)
-    need_update = True
+        need_update = True
 
 def button_execute_callback(channel):
     global current_command_index, need_update
     # NEXT 버튼도 눌려있는지 확인
     if not GPIO.input(BUTTON_PIN_NEXT):
         toggle_mode()  # 모드 전환
+        need_update = True
     else:
         if is_auto_mode:
             current_command_index = (current_command_index - 1) % len(commands)
         else:
             execute_command(current_command_index)
-    need_update = True
+        need_update = True
+
     
 
 # 모드 전환 함수
