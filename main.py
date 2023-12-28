@@ -342,29 +342,33 @@ def execute_command(command_index):
     # GPIO.output(LED_DEBUGGING, True)
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
+    
+    start_time = time.time()
+    max_duration = 30  # 최대 지속 시간을 초 단위로 설정 (이 값은 조정 가능)
+    progress_increment = 20 / max_duration  # 50%에서 70%까지 증가
+    
     while process.poll() is None:
-        display_progress_and_message(50, "업데이트 중...", message_position=(12, 10), font_size=15)
+        elapsed = time.time() - start_time
+        current_progress = 50 + (elapsed * progress_increment)
+        current_progress = min(current_progress, 70)  # 70%를 초과하지 않도록 제한
+        display_progress_and_message(current_progress, "업데이트 중...", message_position=(12, 10), font_size=15)
         time.sleep(0.5)
-    result = process.returncode
-    # GPIO.output(LED_DEBUGGING, False)
-    # display_progress_bar(50)
-    if result == 0:
-        print(f"'{commands[command_index]}'업데이트 성공!")
-        # GPIO.output(LED_SUCCESS, True)
-        display_progress_and_message(90, "업데이트 성공!", message_position=(7, 10), font_size=15)
-        # display_progress_bar(100)
-        time.sleep(0.5)
-        # GPIO.output(LED_SUCCESS, False)
-        lock_memory_procedure()
-    else:
-        print(f"'{commands[command_index]}' 업데이트 실패!")
-        GPIO.output(LED_ERROR, True)
-        GPIO.output(LED_ERROR1, True)
-        display_progress_and_message(0,"업데이트 실패", message_position=(7, 10), font_size=15)
-        # display_progress_bar(50)
-        time.sleep(1)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
+        
+        result = process.returncode# GPIO.output(LED_DEBUGGING, False)
+        if result == 0:
+            print(f"'{commands[command_index]}'업데이트 성공!")# GPIO.output(LED_SUCCESS, True)
+            display_progress_and_message(90, "업데이트 성공!", message_position=(7, 10), font_size=15)# display_progress_bar(100)
+            time.sleep(0.5)# GPIO.output(LED_SUCCESS, False)
+            lock_memory_procedure()
+        else:
+            print(f"'{commands[command_index]}' 업데이트 실패!")
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            display_progress_and_message(0,"업데이트 실패", message_position=(7, 10), font_size=15)# display_progress_bar(50)
+            time.sleep(1)
+            GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
+
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
     ip_address = get_ip_address()
