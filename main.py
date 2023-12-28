@@ -344,6 +344,7 @@ def execute_command(command_index):
     process = subprocess.Popen(commands[command_index], shell=True)
     while process.poll() is None:
     result = process.returncode
+    time.sleep(0.5)
     # GPIO.output(LED_DEBUGGING, False)
     # display_progress_bar(50)
     display_progress_and_message(70, "업데이트 중...", message_position=(12, 10), font_size=15)
