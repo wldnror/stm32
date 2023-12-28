@@ -343,13 +343,14 @@ def execute_command(command_index):
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
     while process.poll() is None:
-        display_progress_and_message(50, "업데이트 중...", message_position=(12, 10), font_size=15)
-        time.sleep(0.5)
-    result = process.returncode
-    # GPIO.output(LED_DEBUGGING, False)
-    # display_progress_bar(50)
-        display_progress_and_message(70, "업데이트 중...", message_position=(12, 10), font_size=15)
-        time.sleep(0.5)
+    display_progress_and_message(50, "업데이트 중...", message_position=(12, 10), font_size=15)
+    time.sleep(0.5)
+result = process.returncode
+# GPIO.output(LED_DEBUGGING, False)
+# display_progress_bar(50)
+    display_progress_and_message(70, "업데이트 중...", message_position=(12, 10), font_size=15)
+    time.sleep(0.5)
+
     if result == 0:
         print(f"'{commands[command_index]}'업데이트 성공!")
         # GPIO.output(LED_SUCCESS, True)
