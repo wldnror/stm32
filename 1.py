@@ -3,7 +3,7 @@ import subprocess
 def extract_file_from_stm32():
     # 추출할 파일의 STM32 메모리 주소 및 크기 설정
     memory_address = "0x08000000"  # 예시 주소
-    memory_size = "1M"  # 예시 크
+    memory_size = "1M"  # 예시 크기
 
     # 추출된 데이터를 저장할 파일 경로
     save_path = "/home/user/yongjun/extracted_file.bin"
@@ -15,7 +15,7 @@ def extract_file_from_stm32():
         "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
         "-c", "init",
         "-c", "reset halt",
-        "-c", "flash read_bank 0 " + output_file,
+        "-c", f"flash read_bank 0 {save_path}",  # 수정된 부분
         "-c", "reset run",
         "-c", "shutdown",
     ]
