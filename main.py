@@ -249,8 +249,8 @@ def unlock_memory():
         time.sleep(1)
         return True
     else:
-        GPIO.output(LED_ERROR, True)
         display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
+        GPIO.output(LED_ERROR, True)
         time.sleep(3)
         GPIO.output(LED_ERROR, False)
         return False
