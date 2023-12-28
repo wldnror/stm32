@@ -489,18 +489,18 @@ try:
         # NEXT 버튼 처리
         elif not GPIO.input(BUTTON_PIN_NEXT):
             current_command_index = (current_command_index + 1) % len(commands)
-            time.sleep(0.1)
+            time.sleep(0.03)
 
         # EXECUTE 버튼 처리
         elif not GPIO.input(BUTTON_PIN_EXECUTE):
             execute_command(current_command_index)
-            time.sleep(0.1)
+            time.sleep(0.03)
 
         # OLED 디스플레이 업데이트
         update_oled_display()
 
         # 짧은 지연
-        time.sleep(0.1)
+        time.sleep(0.05)
 
 except KeyboardInterrupt:
     GPIO.cleanup()
