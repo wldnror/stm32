@@ -3,7 +3,7 @@ import subprocess
 def extract_file_from_stm32():
     # 추출할 파일의 STM32 메모리 주소 및 크기 설정
     memory_address = "0x08000000"  # 예시 주소
-    memory_size = "1M"  # 예시 크기
+    memory_size = "512K"  # 플래시 크기에 따라 수정
 
     # 추출된 데이터를 저장할 파일 경로
     save_path = "/home/user/yongjun/extracted_file.bin"
