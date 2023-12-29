@@ -88,7 +88,8 @@ connection_success = False
 connection_failed_since_last_success = False
 
 def check_stm32_connection():
-    global connection_success, connection_failed_since_last_success
+    with display_lock:
+        global connection_success, connection_failed_since_last_success
     try:
         command = [
             "sudo", "openocd",
