@@ -189,7 +189,9 @@ def git_pull():
         with open(shell_script_path, 'w') as script_file:
             script_file.write("#!/bin/bash\n")
             script_file.write("cd /home/user/stm32\n")
-            script_file.write("git pull\n")
+            script_file.write("git stash\n")   # 임시로 변경사항을 저장
+            script_file.write("git pull\n")    # 원격 저장소의 변경사항을 가져옴
+            script_file.write("git stash pop\n")  # 저장했던 변경사항을 다시 적용
             script_file.flush()
             os.fsync(script_file.fileno())
 
