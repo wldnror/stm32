@@ -74,10 +74,9 @@ def button_execute_callback(channel):
 def execute_command(command_index):
     if command_names[command_index] == "시스템 업데이트":
                     current_command_index = (current_command_index - 1) % len(commands)
-            else:
-                # 수동 모드에서는 현재 화면의 명령 실행
-                execute_command(current_command_index)
-            need_update = True
+    else: # 수동 모드에서는 현재 화면의 명령 실행
+        execute_command(current_command_index)
+    need_update = True
 
 
 # def button_execute_callback(channel):
