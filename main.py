@@ -73,10 +73,11 @@ def execute_command(command_index):
     if command_names[command_index] == "시스템 업데이트":
         git_pull()
     elif command_names[command_index] == "ORG":
-        # ORG에 대한 명령 실행 코드
-        pass  # 'pass'는 아무 작업도 수행하지 않는 키워드입니다. 여기에 실제 작업을 구현하세요.
+        # 여기에 ORG 명령에 대한 처리 로직을 구현하세요.
+        # 예: subprocess.run([...], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     else:
         print("알 수 없는 명령")
+
 
 
 
