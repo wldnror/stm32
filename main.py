@@ -67,9 +67,14 @@ def button_execute_callback(channel):
         # NEXT 버튼도 눌려있는지 확인
         if not GPIO.input(BUTTON_PIN_NEXT):
             toggle_mode()  # 모드 전환
-        elif not is_auto_mode:
-            execute_command(current_command_index)  # 수동 모드에서 명령 실행
-        need_update = True
+            need_update = True
+        else:
+            # 수동 모드에서만 명령 실행
+            if not is_auto_mode:
+                if current_command_index == command_names.index("시스템 업데이트"):
+                    execute_command(current_command_index)
+                need_update = True
+
         
     
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
