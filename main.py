@@ -357,38 +357,29 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR1, False)
 
 def execute_command(command_index):
-    print("업데이트 시도...")
     # "시스템 업데이트" 명령일 경우
     if command_names[command_index] == "시스템 업데이트":
         git_pull()
         return
-    # display_progress_bar(0)
-    # GPIO.output(LED_DEBUGGING, False)
-    GPIO.output(LED_SUCCESS, False)
-    GPIO.output(LED_ERROR, False)
-    GPIO.output(LED_ERROR1, False)
 
-    if command_index == len(commands) - 1:
-        git_pull()
-        return
-
-    if command_index == 6:
-        lock_memory_procedure()
-        return
-        
+    # 메모리 잠금 해제 시도
     if not unlock_memory():
-         GPIO.output(LED_ERROR, True)
-         GPIO.output(LED_ERROR1, True)
-         with canvas(device) as draw:
-             # '메모리 잠금' 메시지를 (0, 10) 위치에 표시
-             draw.text((20, 8), "메모리 잠금", font=font, fill=255)
-             # '해제 실패' 메시지를 (0, 25) 위치에 표시
-             draw.text((28, 27), "해제 실패", font=font, fill=255)
+        print("메모리 잠금 해제 실패")
+        return
 
-         time.sleep(2)
-         GPIO.output(LED_ERROR, False)
-         GPIO.output(LED_ERROR1, False)
-         return
+    # 실제 명령 실행
+    try:
+        print(f"실행 중인 명령: {commands[command_index]}")
+        process = subprocess.Popen(commands[command_index], shell=True)
+        process.wait()  # 명령이 완료될 때까지 대기
+        print(f"명령 완료: {commands[command_index]}")
+
+        # 메모리 잠금 로직
+        lock_memory_procedure()
+    except Exception as e:
+        print(f"명령 실행 중 오류 발생: {e}")
+        # 오류 처리 로직
+
 
     # GPIO.output(LED_DEBUGGING, True)
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
