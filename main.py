@@ -1,10 +1,3 @@
-아니 내가 전체 코드를 줄께
-수동모드에서 예를들어 IPA화면에서는 IPA에대한 명령
-HMDS화면에서는 HMDS에대한 명령 이 실행되는거
-ORG 는 마찬가지로 ORG
-
-아래는 전체코드
-
 from datetime import datetime
 import RPi.GPIO as GPIO
 import time
@@ -365,6 +358,10 @@ def lock_memory_procedure():
 
 def execute_command(command_index):
     print("업데이트 시도...")
+    # "시스템 업데이트" 명령일 경우
+    if command_names[command_index] == "시스템 업데이트":
+        git_pull()
+        return
     # display_progress_bar(0)
     # GPIO.output(LED_DEBUGGING, False)
     GPIO.output(LED_SUCCESS, False)
