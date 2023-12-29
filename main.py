@@ -12,6 +12,7 @@ import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
 
+display_lock = threading.Lock()
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
@@ -37,35 +38,37 @@ GPIO.setmode(GPIO.BCM)
 need_update = False
 
 def button_next_callback(channel):
-    global current_command_index, need_update
-    # EXECUTE 버튼도 눌려있는지 확인
-    if not GPIO.input(BUTTON_PIN_EXECUTE):
-        toggle_mode()  # 모드 전환
-        need_update = True
-    else:
-        current_command_index = (current_command_index + 1) % len(commands)
-        need_update = True
+    with display_lock:
+        global current_command_index, need_update# EXECUTE 버튼도 눌려있는지 확인
+        if not GPIO.input(BUTTON_PIN_EXECUTE):
+            toggle_mode()  # 모드 전환
+            need_update = True
+        else:
+            current_command_index = (current_command_index + 1) % len(commands)
+            need_update = True
 
 def button_execute_callback(channel):
-    global current_command_index, need_update
-    # NEXT 버튼도 눌려있는지 확인
-    if not GPIO.input(BUTTON_PIN_NEXT):
-        toggle_mode()  # 모드 전환
-        need_update = True
-    if current_command_index == command_names.index("시스템 업데이트"):
-        execute_command(current_command_index)
-    else:
-        if is_auto_mode:
-            current_command_index = (current_command_index - 1) % len(commands)
-        else:
+    with display_lock:
+        global current_command_index, need_update
+        # NEXT 버튼도 눌려있는지 확인
+        if not GPIO.input(BUTTON_PIN_NEXT):
+            toggle_mode()  # 모드 전환
+            need_update = True
+        if current_command_index == command_names.index("시스템 업데이트"):
             execute_command(current_command_index)
-    need_update = True
+        else:
+            if is_auto_mode:
+                current_command_index = (current_command_index - 1) % len(commands)
+            else:
+                execute_command(current_command_index)
+        need_update = True
 
 # 모드 전환 함수
 def toggle_mode():
-    global is_auto_mode
-    is_auto_mode = not is_auto_mode
-    update_oled_display()  # OLED 화면 업데이트
+    with display_lock:
+        global is_auto_mode
+        is_auto_mode = not is_auto_mode
+        update_oled_display()  # OLED 화면 업데이트
     
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
 auto_mode_text = 'A'
@@ -74,8 +77,8 @@ manual_mode_text = 'M'
 # GPIO 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=200)
-GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=700)
+GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=400)
+GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=400)
 # GPIO.setup(LED_DEBUGGING, GPIO.OUT)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
@@ -186,7 +189,9 @@ def git_pull():
         with open(shell_script_path, 'w') as script_file:
             script_file.write("#!/bin/bash\n")
             script_file.write("cd /home/user/stm32\n")
-            script_file.write("git pull\n")
+            script_file.write("git stash\n")   # 임시로 변경사항을 저장
+            script_file.write("git pull\n")    # 원격 저장소의 변경사항을 가져옴
+            script_file.write("git stash pop\n")  # 저장했던 변경사항을 다시 적용
             script_file.flush()
             os.fsync(script_file.fileno())
 
