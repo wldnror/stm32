@@ -64,19 +64,22 @@ def button_execute_callback(channel):
         if not GPIO.input(BUTTON_PIN_NEXT):
             toggle_mode()
         else:
-            if is_auto_mode:
-                execute_command(current_command_index)
-            else:
-                # 수동 모드에서는 현재 선택된 명령 실행
-                execute_command(current_command_index)
+            # 자동 모드 또는 수동 모드에서 현재 화면의 명령 실행
+            execute_command(current_command_index)
         need_update = True
 
 def execute_command(command_index):
+    print(f"Executing command: {command_names[command_index]}")
+    # 여기에 각 명령에 대한 실행 로직을 구현하세요.
+    # 예를 들어, '시스템 업데이트' 명령일 경우 git_pull 함수 호출 등
     if command_names[command_index] == "시스템 업데이트":
-                    current_command_index = (current_command_index - 1) % len(commands)
-    else: # 수동 모드에서는 현재 화면의 명령 실행
-        execute_command(current_command_index)
-    need_update = True
+        git_pull()
+    elif command_names[command_index] == "ORG":
+        # ORG 명령 실행 로직
+    # 추가적인 명령에 대한 처리...
+    else:
+        print("알 수 없는 명령")
+
 
 
 # def button_execute_callback(channel):
