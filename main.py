@@ -398,6 +398,7 @@ def execute_command(command_index):
         print(f"'{commands[command_index]}'업데이트 성공!")# GPIO.output(LED_SUCCESS, True)
         display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)# display_progress_bar(100)
         time.sleep(0.5)# GPIO.output(LED_SUCCESS, False)
+        need_update = True
         lock_memory_procedure()
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
@@ -405,6 +406,7 @@ def execute_command(command_index):
         GPIO.output(LED_ERROR1, True)
         display_progress_and_message(0,"업데이트 실패", message_position=(7, 10), font_size=15)# display_progress_bar(50)
         time.sleep(1)
+        need_update = True
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
