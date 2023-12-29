@@ -362,6 +362,20 @@ def execute_command(command_index):
     if command_index == 6:
         lock_memory_procedure()
         return
+        
+    if not unlock_memory():
+         GPIO.output(LED_ERROR, True)
+         GPIO.output(LED_ERROR1, True)
+         with canvas(device) as draw:
+             # '메모리 잠금' 메시지를 (0, 10) 위치에 표시
+             draw.text((20, 8), "메모리 잠금", font=font, fill=255)
+             # '해제 실패' 메시지를 (0, 25) 위치에 표시
+             draw.text((28, 27), "해제 실패", font=font, fill=255)
+
+         time.sleep(2)
+         GPIO.output(LED_ERROR, False)
+         GPIO.output(LED_ERROR1, False)
+         return
 
     # GPIO.output(LED_DEBUGGING, True)
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
