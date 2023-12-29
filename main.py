@@ -61,21 +61,39 @@ def button_next_callback(channel):
 def button_execute_callback(channel):
     global current_command_index, need_update
     with display_lock:
-        # NEXT 버튼이 동시에 눌려 있는지 확인하여 모드 전환
         if not GPIO.input(BUTTON_PIN_NEXT):
             toggle_mode()  # 모드 전환
+            need_update = True
         else:
             if is_auto_mode:
-                # 자동 모드에서는 "시스템 업데이트" 화면인 경우 시스템 업데이트 실행
-                if command_names[current_command_index] == "시스템 업데이트":
-                    execute_command(current_command_index)
-                else:
-                    # 자동 모드의 다른 화면에서는 이전 명령으로 이동
+                # 자동 모드에서는 "시스템 업데이트"가 아닌 화면에서 이전 명령으로 이동
+                if command_names[current_command_index] != "시스템 업데이트":
                     current_command_index = (current_command_index - 1) % len(commands)
             else:
                 # 수동 모드에서는 현재 화면의 명령 실행
                 execute_command(current_command_index)
-        need_update = True
+            need_update = True
+
+
+# def button_execute_callback(channel):
+#     global current_command_index, need_update
+#     with display_lock:
+#         # NEXT 버튼이 동시에 눌려 있는지 확인하여 모드 전환
+#         if not GPIO.input(BUTTON_PIN_NEXT):
+#             toggle_mode()  # 모드 전환
+#         else:
+#             if is_auto_mode:
+#                 # 자동 모드에서는 "시스템 업데이트" 화면인 경우 시스템 업데이트 실행
+#                 if command_names[current_command_index] == "시스템 업데이트":
+#                     execute_command(current_command_index)
+#                 else:
+#                     # 자동 모드의 다른 화면에서는 이전 명령으로 이동
+#                     current_command_index = (current_command_index - 1) % len(commands)
+#             else:
+#                 # 수동 모드에서는 현재 화면의 명령 실행
+#                 execute_command(current_command_index)
+#         need_update = True
+
 
 
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
