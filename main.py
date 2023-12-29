@@ -370,15 +370,15 @@ def execute_command(command_index):
     if not unlock_memory():
         display_error("메모리 해제 실패")
         return
-
+        
     try:
         # 각 명령에 대한 특정 작업을 여기에 구현
         if command_names[command_index] == "ORG":
             # ORG 명령 실행 코드
-            subprocess.run(["sudo", "openocd", "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg", "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg", "-c", "program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000"])
+            process = subprocess.Popen(["sudo", "openocd", "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg", "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg", "-c", "program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000"])
         elif command_names[command_index] == "HMDS":
             # HMDS 명령 실행 코드
-            subprocess.run(["sudo", "openocd", "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg", "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg", "-c", "program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000"])
+            process = subprocess.Popen(["sudo", "openocd", "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg", "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg", "-c", "program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000"])
         # 추가 명령에 대한 처리...
         # HMDS 명령 실행 코드
         elif command_names[command_index] == "ARF-T":
