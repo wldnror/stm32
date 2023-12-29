@@ -1,3 +1,10 @@
+아니 내가 전체 코드를 줄께
+수동모드에서 예를들어 IPA화면에서는 IPA에대한 명령
+HMDS화면에서는 HMDS에대한 명령 이 실행되는거
+ORG 는 마찬가지로 ORG
+
+아래는 전체코드
+
 from datetime import datetime
 import RPi.GPIO as GPIO
 import time
@@ -364,10 +371,6 @@ def execute_command(command_index):
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-     # 다른 명령 실행 (예: "IPA", "ORG", "HMDS" 등)
-    process = subprocess.Popen(commands[command_index], shell=True)
-    
-
     if command_index == len(commands) - 1:
         git_pull()
         return
@@ -389,10 +392,6 @@ def execute_command(command_index):
          GPIO.output(LED_ERROR, False)
          GPIO.output(LED_ERROR1, False)
          return
-
-    # GPIO.output(LED_DEBUGGING, True)
-    display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
-    process = subprocess.Popen(commands[command_index], shell=True)
 
     # GPIO.output(LED_DEBUGGING, True)
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
