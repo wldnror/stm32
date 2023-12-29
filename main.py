@@ -67,7 +67,6 @@ def button_execute_callback(channel):
 def toggle_mode():
     global is_auto_mode
     is_auto_mode = not is_auto_mode
-    # need_update = True
     update_oled_display()  # OLED 화면 업데이트
     
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
@@ -286,12 +285,11 @@ def unlock_memory():
     if result.returncode == 0:
         display_progress_and_message(30, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
         time.sleep(1)
-        need_update = True
         return True
     else:
         display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
         time.sleep(1)
-        need_update = True
+        update_oled_display()
         return False
 
 def restart_script():
@@ -326,7 +324,6 @@ def lock_memory_procedure():
             GPIO.output(LED_SUCCESS, True)
             display_progress_and_message(100,"메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
             # display_progress_bar(100)
-            need_update = True
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
@@ -334,9 +331,9 @@ def lock_memory_procedure():
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
             display_progress_and_message(0,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
-            need_update = True
             # display_progress_bar(50)
             time.sleep(1)
+            update_oled_display()
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
     except Exception as e:
@@ -376,7 +373,6 @@ def execute_command(command_index):
              draw.text((28, 27), "해제 실패", font=font, fill=255)
 
          time.sleep(2)
-         need_update = True
          GPIO.output(LED_ERROR, False)
          GPIO.output(LED_ERROR1, False)
          return
@@ -394,22 +390,20 @@ def execute_command(command_index):
         current_progress = 30 + (elapsed * progress_increment)
         current_progress = min(current_progress, 80)  # 70%를 초과하지 않도록 제한
         display_progress_and_message(current_progress, "업데이트 중...", message_position=(12, 10), font_size=15)
-        # time.sleep(0.5)
+        time.sleep(0.5)
         
     result = process.returncode# GPIO.output(LED_DEBUGGING, False)
     if result == 0:
         print(f"'{commands[command_index]}'업데이트 성공!")# GPIO.output(LED_SUCCESS, True)
         display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)# display_progress_bar(100)
-        # time.sleep(0.5)# GPIO.output(LED_SUCCESS, False)
-        need_update = True
+        time.sleep(0.5)# GPIO.output(LED_SUCCESS, False)
         lock_memory_procedure()
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         display_progress_and_message(0,"업데이트 실패", message_position=(7, 10), font_size=15)# display_progress_bar(50)
-        # time.sleep(1)
-        need_update = True
+        time.sleep(1)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
