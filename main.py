@@ -67,7 +67,7 @@ def button_execute_callback(channel):
 def toggle_mode():
     global is_auto_mode
     is_auto_mode = not is_auto_mode
-    need_update = True
+    # need_update = True
     update_oled_display()  # OLED 화면 업데이트
     
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
