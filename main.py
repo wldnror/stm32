@@ -366,28 +366,57 @@ def execute_command(command_index):
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-    if command_names[command_index] == "시스템 업데이트":
-        git_pull()
-    elif command_names[command_index] == "ORG":
-        # ORG 명령 실행 코드
-        pass
-    elif command_names[command_index] == "HMDS":
-        # HMDS 명령 실행 코드
-        pass
-    elif command_names[command_index] == "ARF-T":
-        # ARF-T 명령 실행 코드
-        pass
-    elif command_names[command_index] == "HC100":
-        # HC100 명령 실행 코드
-        pass
-    elif command_names[command_index] == "IPA":
-        # IPA 명령 실행 코드
-        pass
-    elif command_names[command_index] == "ASGD3000-V352PNP":
-        # ASGD3000-V352PNP 명령 실행 코드
-        pass
-    else:
-        print("알 수 없는 명령")
+    # 메모리 잠금 해제
+    if not unlock_memory():
+        display_error("메모리 해제 실패")
+        return
+
+    try:
+        # 각 명령에 대한 특정 작업을 여기에 구현
+        if command_names[command_index] == "ORG":
+            # ORG 명령 실행 코드
+            pass # 실제 명령을 실행하는 코드
+        elif command_names[command_index] == "HMDS":
+            # HMDS 명령 실행 코드
+            pass # 실제 명령을 실행하는 코드
+        elif command_names[command_index] == "ARF-T":
+            # ARF-T 명령 실행 코드
+            pass # 실제 명령을 실행하는 코드
+        elif command_names[command_index] == "HC100":
+            # HC100 명령 실행 코드
+            pass # 실제 명령을 실행하는 코드
+        elif command_names[command_index] == "IPA":
+            # IPA 명령 실행 코드
+            pass # 실제 명령을 실행하는 코드
+        elif command_names[command_index] == "ASGD3000-V352PNP":
+            # ASGD3000-V352PNP 명령 실행 코드
+            pass # 실제 명령을 실행하는 코드
+        else:
+            raise Exception("알 수 없는 명령")
+
+        # 메모리 잠금
+        if not lock_memory_procedure():
+            display_error("메모리 잠금 실패")
+            return
+
+        display_success("명령 실행 성공")
+    except Exception as e:
+        print(f"명령 실행 중 오류: {e}")
+        display_error(f"명령 실행 중 오류: {e}")
+
+def display_error(message):
+    # 에러 메시지 표시 로직
+    GPIO.output(LED_ERROR, True)
+    GPIO.output(LED_ERROR1, True)
+    # 디스플레이에 에러 메시지 출력
+    # 예: display_progress_and_message(0, message, position=(0, 0), font_size=17)
+
+def display_success(message):
+    # 성공 메시지 표시 로직
+    GPIO.output(LED_SUCCESS, True)
+    # 디스플레이에 성공 메시지 출력
+    # 예: display_progress_and_message(100, message, position=(0, 0), font_size=17)
+        
 
     if command_index == 6:
         lock_memory_procedure()
