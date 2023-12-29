@@ -70,13 +70,14 @@ def button_execute_callback(channel):
 
 def execute_command(command_index):
     print(f"Executing command: {command_names[command_index]}")
-    # 여기에 각 명령에 대한 실행 로직을 구현하세요.
-    # 예를 들어, '시스템 업데이트' 명령일 경우 git_pull 함수 호출 등
     if command_names[command_index] == "시스템 업데이트":
         git_pull()
     elif command_names[command_index] == "ORG":
+        # ORG에 대한 명령 실행 코드
+        pass  # 'pass'는 아무 작업도 수행하지 않는 키워드입니다. 여기에 실제 작업을 구현하세요.
     else:
         print("알 수 없는 명령")
+
 
 
 
