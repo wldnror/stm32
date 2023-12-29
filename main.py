@@ -289,6 +289,7 @@ def unlock_memory():
     else:
         display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
         time.sleep(1)
+        update_oled_display()
         return False
 
 def restart_script():
@@ -332,12 +333,14 @@ def lock_memory_procedure():
             display_progress_and_message(0,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
             # display_progress_bar(50)
             time.sleep(1)
+            update_oled_display()
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
     except Exception as e:
         print("명령 실행 중 오류 발생:", str(e))
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
+        update_oled_display()
         display_progress_and_message(0,"오류 발생")
         # display_progress_bar(0)
         time.sleep(1)
