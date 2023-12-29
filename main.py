@@ -37,15 +37,29 @@ GPIO.setmode(GPIO.BCM)
 
 need_update = False
 
+# 모드 전환 함수
+def toggle_mode():
+    global is_auto_mode
+    is_auto_mode = not is_auto_mode
+    update_oled_display()  # OLED 화면 업데이트
+
+def toggle_mode():
+    global is_auto_mode
+    is_auto_mode = not is_auto_mode
+    print(f"모드 변경: {'자동' if is_auto_mode else '수동'}")
+    update_oled_display()  # OLED 화면 업데이트
+
 def button_next_callback(channel):
     with display_lock:
-        global current_command_index, need_update# EXECUTE 버튼도 눌려있는지 확인
+        global current_command_index, need_update
+        # EXECUTE 버튼도 눌려있는지 확인
         if not GPIO.input(BUTTON_PIN_EXECUTE):
             toggle_mode()  # 모드 전환
-            need_update = True
         else:
-            current_command_index = (current_command_index + 1) % len(commands)
-            need_update = True
+            # 수동 모드에서의 다음 명령 선택
+            if not is_auto_mode:
+                current_command_index = (current_command_index + 1) % len(commands)
+        need_update = True
 
 def button_execute_callback(channel):
     with display_lock:
@@ -53,21 +67,10 @@ def button_execute_callback(channel):
         # NEXT 버튼도 눌려있는지 확인
         if not GPIO.input(BUTTON_PIN_NEXT):
             toggle_mode()  # 모드 전환
-            need_update = True
-        if current_command_index == command_names.index("시스템 업데이트"):
-            execute_command(current_command_index)
-        else:
-            if is_auto_mode:
-                current_command_index = (current_command_index - 1) % len(commands)
-            else:
-                execute_command(current_command_index)
+        elif not is_auto_mode:
+            execute_command(current_command_index)  # 수동 모드에서 명령 실행
         need_update = True
-
-# 모드 전환 함수
-def toggle_mode():
-    global is_auto_mode
-    is_auto_mode = not is_auto_mode
-    update_oled_display()  # OLED 화면 업데이트
+        
     
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
 auto_mode_text = 'A'
