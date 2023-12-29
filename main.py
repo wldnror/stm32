@@ -361,16 +361,33 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR1, False)
 
 def execute_command(command_index):
-    print("업데이트 시도...")
-    # display_progress_bar(0)
-    # GPIO.output(LED_DEBUGGING, False)
+    print(f"명령 실행: {command_names[command_index]}")
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-    if command_index == len(commands) - 1:
+    if command_names[command_index] == "시스템 업데이트":
         git_pull()
-        return
+    elif command_names[command_index] == "ORG":
+        # ORG 명령 실행 코드
+        pass
+    elif command_names[command_index] == "HMDS":
+        # HMDS 명령 실행 코드
+        pass
+    elif command_names[command_index] == "ARF-T":
+        # ARF-T 명령 실행 코드
+        pass
+    elif command_names[command_index] == "HC100":
+        # HC100 명령 실행 코드
+        pass
+    elif command_names[command_index] == "IPA":
+        # IPA 명령 실행 코드
+        pass
+    elif command_names[command_index] == "ASGD3000-V352PNP":
+        # ASGD3000-V352PNP 명령 실행 코드
+        pass
+    else:
+        print("알 수 없는 명령")
 
     if command_index == 6:
         lock_memory_procedure()
