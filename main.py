@@ -450,10 +450,10 @@ def execute_command(command_index):
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
     # with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
-    ip_address = get_ip_address()
+    # ip_address = get_ip_address()
     now = datetime.now()
-    current_time = now.strftime('%H시 %M분')
-    voltage_percentage = read_ina219_percentage()
+    # current_time = now.strftime('%H시 %M분')
+    # voltage_percentage = read_ina219_percentage()
 
     with canvas(device) as draw:
         if command_names[current_command_index] != "시스템 업데이트":
@@ -466,11 +466,11 @@ def update_oled_display():
 
         if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "IPA", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
-            draw.bitmap((90, -9), battery_icon, fill=255)
+            # draw.bitmap((90, -9), battery_icon, fill=255)
             draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
             draw.text((27, 1), current_time, font=font_time, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
-            draw.text((0, 51), ip_address, font=font_big, fill=255)
+            # draw.text((0, 51), ip_address, font=font_big, fill=255)
             draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
             draw.text((90, 50), 'ver 3.4', font=font_big, fill=255)
             draw.text((0, -3), current_time, font=font_time, fill=255)
@@ -495,19 +495,29 @@ def update_oled_display():
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
 
-# 실시간 업데이트를 위한 스레드 함수
-def realtime_update_display():
-    while True:
-        # with display_lock:
-        print("디스플레이 업데이트 시도")  # 로그 메시지 추가
-        update_oled_display()
-        print("디스플레이 업데이트 완료")  # 로그 메시지 추가
-    time.sleep(0.5)  # 시간을 0.5초로 줄여 더 자주 업데이트
+def update_time_battery_ip():
+    with display_lock:
+        ip_address = get_ip_address()
+        now = datetime.now()
+        current_time = now.strftime('%H:%M:%S')
+        voltage_percentage = read_ina219_percentage()
 
-# 스레드 생성 및 시작
-realtime_update_thread = threading.Thread(target=realtime_update_display)
-realtime_update_thread.daemon = True
-realtime_update_thread.start()
+        with canvas(device) as draw:
+            # 시간, 배터리, IP 정보 표시
+            draw.text((0, 0), f"Time: {current_time}", font=font, fill=255)
+            draw.text((0, 20), f"Battery: {voltage_percentage}%", font=font, fill=255)
+            draw.text((0, 40), f"IP: {ip_address}", font=font, fill=255)
+
+def realtime_update_info():
+    while True:
+        update_time_battery_ip()
+        time.sleep(1)  # 1초마다 업데이트
+
+# 실시간 정보 업데이트 스레드 생성 및 시작
+info_update_thread = threading.Thread(target=realtime_update_info)
+info_update_thread.daemon = True
+info_update_thread.start()
+
 
 def get_ip_address():
     try:
