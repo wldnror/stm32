@@ -79,6 +79,18 @@ def execute_command(command_index):
     else:
         print("알 수 없는 명령")
 
+def button_next_callback(channel):
+    global current_command_index, need_update
+    with display_lock:
+        # EXECUTE 버튼도 눌려있는지 확인
+        if not GPIO.input(BUTTON_PIN_EXECUTE):
+            toggle_mode()  # 모드 전환
+            need_update = True
+        else:
+            current_command_index = (current_command_index + 1) % len(commands)
+            need_update = True
+
+
 
 
 # def button_execute_callback(channel):
