@@ -286,11 +286,12 @@ def unlock_memory():
     if result.returncode == 0:
         display_progress_and_message(30, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
         time.sleep(1)
+        need_update = True
         return True
     else:
         display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
         time.sleep(1)
-        update_oled_display()
+        need_update = True
         return False
 
 def restart_script():
@@ -325,6 +326,7 @@ def lock_memory_procedure():
             GPIO.output(LED_SUCCESS, True)
             display_progress_and_message(100,"메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
             # display_progress_bar(100)
+            need_update = True
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
@@ -332,9 +334,9 @@ def lock_memory_procedure():
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
             display_progress_and_message(0,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
+            need_update = True
             # display_progress_bar(50)
             time.sleep(1)
-            update_oled_display()
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
     except Exception as e:
