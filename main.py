@@ -75,8 +75,8 @@ def execute_command(command_index):
     if command_names[command_index] == "시스템 업데이트":
         git_pull()
     elif command_names[command_index] == "ORG":
-        else:
-            print("알 수 없는 명령")
+    else:
+        print("알 수 없는 명령")
 
 
 
