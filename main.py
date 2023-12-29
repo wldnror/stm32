@@ -409,7 +409,7 @@ def execute_command(command_index):
          time.sleep(2)
          GPIO.output(LED_ERROR, False)
          GPIO.output(LED_ERROR1, False)
-        is_executing = False
+         is_executing = False
          return
 
     # GPIO.output(LED_DEBUGGING, True)
