@@ -49,68 +49,39 @@ def toggle_mode():
     print(f"모드 변경: {'자동' if is_auto_mode else '수동'}")
     update_oled_display()  # OLED 화면 업데이트
 
-# def button_next_callback(channel):
-#     global current_command_index, need_update
-#     with display_lock:
-#         if not GPIO.input(BUTTON_PIN_EXECUTE):
-#             toggle_mode()  # 모드 전환
-#         else:
-#             current_command_index = (current_command_index + 1) % len(commands)
-#         need_update = True
+def button_next_callback(channel):
+    global current_command_index, need_update
+    with display_lock:
+        if not GPIO.input(BUTTON_PIN_EXECUTE):
+            toggle_mode()  # 모드 전환
+        else:
+            if not is_auto_mode:
+                # 수동 모드에서는 현재 선택된 명령 실행
+                execute_command(current_command_index)
+            else:
+                # 자동 모드에서는 다음 명령으로 이동
+                current_command_index = (current_command_index + 1) % len(commands)
+        need_update = True
+
 
 def button_execute_callback(channel):
     global current_command_index, need_update
     with display_lock:
+        # NEXT 버튼이 동시에 눌려 있는지 확인하여 모드 전환
         if not GPIO.input(BUTTON_PIN_NEXT):
-            toggle_mode()
-        else:
-            # 자동 모드 또는 수동 모드에서 현재 화면의 명령 실행
-            execute_command(current_command_index)
-        need_update = True
-
-def execute_command(command_index):
-    print(f"Executing command: {command_names[command_index]}")
-    if command_names[command_index] == "시스템 업데이트":
-        git_pull()
-    elif command_names[command_index] == "ORG":
-        # ORG에 대한 명령 실행 코드
-        pass  # 'pass'는 아무 작업도 수행하지 않는 키워드입니다. 여기에 실제 작업을 구현하세요.
-    # 여기에 다른 명령들에 대한 elif 블록 추가
-    else:
-        print("알 수 없는 명령")
-
-def button_next_callback(channel):
-    global current_command_index, need_update
-    with display_lock:
-        # EXECUTE 버튼도 눌려있는지 확인
-        if not GPIO.input(BUTTON_PIN_EXECUTE):
             toggle_mode()  # 모드 전환
-            need_update = True
         else:
-            current_command_index = (current_command_index + 1) % len(commands)
-            need_update = True
-
-
-
-
-# def button_execute_callback(channel):
-#     global current_command_index, need_update
-#     with display_lock:
-#         # NEXT 버튼이 동시에 눌려 있는지 확인하여 모드 전환
-#         if not GPIO.input(BUTTON_PIN_NEXT):
-#             toggle_mode()  # 모드 전환
-#         else:
-#             if is_auto_mode:
-#                 # 자동 모드에서는 "시스템 업데이트" 화면인 경우 시스템 업데이트 실행
-#                 if command_names[current_command_index] == "시스템 업데이트":
-#                     execute_command(current_command_index)
-#                 else:
-#                     # 자동 모드의 다른 화면에서는 이전 명령으로 이동
-#                     current_command_index = (current_command_index - 1) % len(commands)
-#             else:
-#                 # 수동 모드에서는 현재 화면의 명령 실행
-#                 execute_command(current_command_index)
-#         need_update = True
+            if is_auto_mode:
+                # 자동 모드에서는 "시스템 업데이트" 화면인 경우 시스템 업데이트 실행
+                if command_names[current_command_index] == "시스템 업데이트":
+                    execute_command(current_command_index)
+                else:
+                    # 자동 모드의 다른 화면에서는 이전 명령으로 이동
+                    current_command_index = (current_command_index - 1) % len(commands)
+            else:
+                # 수동 모드에서는 현재 화면의 명령 실행
+                execute_command(current_command_index)
+        need_update = True
 
 
 
