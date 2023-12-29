@@ -37,14 +37,26 @@ GPIO.setmode(GPIO.BCM)
 
 need_update = False
 
-def button_next_callback(channel):
+def button_execute_callback(channel):
     with display_lock:
-        global current_command_index, need_update# EXECUTE 버튼도 눌려있는지 확인
-        if not GPIO.input(BUTTON_PIN_EXECUTE):
-            toggle_mode()  # 모드 전환
+        global current_command_index, need_update
+        # 수동 모드일 때만 실행
+        if not is_auto_mode:
+            # 선택된 명령 실행
+            execute_command(current_command_index)
             need_update = True
+        # 자동 모드일 경우 기존 로직 유지
         else:
-            current_command_index = (current_command_index + 1) % len(commands)
+            if not GPIO.input(BUTTON_PIN_NEXT):
+                toggle_mode()  # 모드 전환
+                need_update = True
+            if current_command_index == command_names.index("시스템 업데이트"):
+                execute_command(current_command_index)
+            else:
+                if is_auto_mode:
+                    current_command_index = (current_command_index - 1) % len(commands)
+                else:
+                    execute_command(current_command_index)
             need_update = True
 
 def button_execute_callback(channel):
