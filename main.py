@@ -65,10 +65,9 @@ def button_execute_callback(channel):
 
 # 모드 전환 함수
 def toggle_mode():
-    with display_lock:
-        global is_auto_mode
-        is_auto_mode = not is_auto_mode
-    update_oled_display()  # OLED 화면 업데이트
+    global is_auto_mode
+    is_auto_mode = not is_auto_mode
+update_oled_display()  # OLED 화면 업데이트
     
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
 auto_mode_text = 'A'
