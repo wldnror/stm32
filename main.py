@@ -48,7 +48,7 @@ def toggle_mode():
 
 def button_next_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time
-    if is_executing:'
+    if is_executing:
         return
 
     current_time = time.time()
