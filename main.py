@@ -37,51 +37,38 @@ GPIO.setmode(GPIO.BCM)
 
 need_update = False
 
+def button_next_callback(channel):
+    with display_lock:
+        global current_command_index, need_update# EXECUTE 버튼도 눌려있는지 확인
+        if not GPIO.input(BUTTON_PIN_EXECUTE):
+            toggle_mode()  # 모드 전환
+            need_update = True
+        else:
+            current_command_index = (current_command_index + 1) % len(commands)
+            need_update = True
+
+def button_execute_callback(channel):
+    with display_lock:
+        global current_command_index, need_update
+        # NEXT 버튼도 눌려있는지 확인
+        if not GPIO.input(BUTTON_PIN_NEXT):
+            toggle_mode()  # 모드 전환
+            need_update = True
+        if current_command_index == command_names.index("시스템 업데이트"):
+            execute_command(current_command_index)
+        else:
+            if is_auto_mode:
+                current_command_index = (current_command_index - 1) % len(commands)
+            else:
+                execute_command(current_command_index)
+        need_update = True
+
 # 모드 전환 함수
 def toggle_mode():
     global is_auto_mode
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
-
-def toggle_mode():
-    global is_auto_mode
-    is_auto_mode = not is_auto_mode
-    print(f"모드 변경: {'자동' if is_auto_mode else '수동'}")
-    update_oled_display()  # OLED 화면 업데이트
-
-def button_next_callback(channel):
-    global current_command_index, need_update
-    with display_lock:
-        if not GPIO.input(BUTTON_PIN_EXECUTE):
-            toggle_mode()  # 모드 전환
-        else:
-            if not is_auto_mode:
-                # 수동 모드에서는 현재 선택된 명령 실행
-                execute_command(current_command_index)
-            else:
-                # 자동 모드에서는 다음 명령으로 이동
-                current_command_index = (current_command_index + 1) % len(commands)
-        need_update = True
-
-def button_execute_callback(channel):
-    global current_command_index, need_update
-    with display_lock:
-        if not GPIO.input(BUTTON_PIN_NEXT):
-            toggle_mode()  # 모드 전환
-        else:
-            if is_auto_mode:
-                # 자동 모드에서는 "시스템 업데이트" 화면인 경우 시스템 업데이트 실행
-                if command_names[current_command_index] == "시스템 업데이트":
-                    execute_command(current_command_index)
-                else:
-                    # 자동 모드의 다른 화면에서는 이전 명령으로 이동
-                    current_command_index = (current_command_index - 1) % len(commands)
-            else:
-                # 수동 모드에서는 현재 화면의 명령 실행
-                execute_command(current_command_index)
-        need_update = True
-
-
+    
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
 auto_mode_text = 'A'
 manual_mode_text = 'M'
@@ -361,64 +348,16 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR1, False)
 
 def execute_command(command_index):
-    print(f"명령 실행: {command_names[command_index]}")
+    print("업데이트 시도...")
+    # display_progress_bar(0)
+    # GPIO.output(LED_DEBUGGING, False)
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-    # 메모리 잠금 해제
-    if not unlock_memory():
-        display_error("메모리 해제 실패")
+    if command_index == len(commands) - 1:
+        git_pull()
         return
-        
-    try:
-        # 각 명령에 대한 특정 작업을 여기에 구현
-        if command_names[command_index] == "ORG":
-            # ORG 명령 실행 코드
-            process = subprocess.Popen(["sudo", "openocd", "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg", "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg", "-c", "program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000"])
-        elif command_names[command_index] == "HMDS":
-            # HMDS 명령 실행 코드
-            process = subprocess.Popen(["sudo", "openocd", "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg", "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg", "-c", "program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000"])
-        # 추가 명령에 대한 처리...
-        # HMDS 명령 실행 코드
-        elif command_names[command_index] == "ARF-T":
-            # ARF-T 명령 실행 코드
-            pass # 실제 명령을 실행하는 코드
-        elif command_names[command_index] == "HC100":
-            # HC100 명령 실행 코드
-            pass # 실제 명령을 실행하는 코드
-        elif command_names[command_index] == "IPA":
-            # IPA 명령 실행 코드
-            pass # 실제 명령을 실행하는 코드
-        elif command_names[command_index] == "ASGD3000-V352PNP":
-            # ASGD3000-V352PNP 명령 실행 코드
-            pass # 실제 명령을 실행하는 코드
-        else:
-            raise Exception("알 수 없는 명령")
-
-        # 메모리 잠금
-        if not lock_memory_procedure():
-            display_error("메모리 잠금 실패")
-            return
-
-        display_success("명령 실행 성공")
-    except Exception as e:
-        print(f"명령 실행 중 오류: {e}")
-        display_error(f"명령 실행 중 오류: {e}")
-
-def display_error(message):
-    # 에러 메시지 표시 로직
-    GPIO.output(LED_ERROR, True)
-    GPIO.output(LED_ERROR1, True)
-    # 디스플레이에 에러 메시지 출력
-    # 예: display_progress_and_message(0, message, position=(0, 0), font_size=17)
-
-def display_success(message):
-    # 성공 메시지 표시 로직
-    GPIO.output(LED_SUCCESS, True)
-    # 디스플레이에 성공 메시지 출력
-    # 예: display_progress_and_message(100, message, position=(0, 0), font_size=17)
-        
 
     if command_index == 6:
         lock_memory_procedure()
@@ -502,7 +441,7 @@ def update_oled_display():
         elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((0, 51), ip_address, font=font_big, fill=255)
             draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
-            draw.text((90, 50), 'ver 3.6', font=font_big, fill=255)
+            draw.text((90, 50), 'ver 3.4', font=font_big, fill=255)
             draw.text((0, -3), current_time, font=font_time, fill=255)
 
 
