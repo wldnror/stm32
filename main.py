@@ -65,8 +65,7 @@ def button_execute_callback(channel):
             toggle_mode()
         else:
             if is_auto_mode:
-                # 자동 모드 로직
-                ...
+                execute_command(current_command_index)
             else:
                 # 수동 모드에서는 현재 선택된 명령 실행
                 execute_command(current_command_index)
