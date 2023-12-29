@@ -184,7 +184,8 @@ current_command_index = 0
 status_message = ""
 
 def git_pull():
-    shell_script_path = '/home/user/stm32/git-pull.sh'
+    with display_lock:
+        shell_script_path = '/home/user/stm32/git-pull.sh'
     if not os.path.isfile(shell_script_path):
         with open(shell_script_path, 'w') as script_file:
             script_file.write("#!/bin/bash\n")
