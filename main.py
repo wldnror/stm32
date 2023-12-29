@@ -48,6 +48,9 @@ def toggle_mode():
 
 def button_next_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time
+    if is_executing:'
+        return
+
     current_time = time.time()
     if current_time - last_mode_toggle_time < 0.3:  # 모드 전환 후 1초 동안 버튼 입력 무시
         return
@@ -63,6 +66,9 @@ def button_next_callback(channel):
 
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time
+    if is_executing:
+        return
+        
     current_time = time.time()
     if current_time - last_mode_toggle_time < 0.3:  # 모드 전환 후 1초 동안 버튼 입력 무시
         return
@@ -372,6 +378,8 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR1, False)
 
 def execute_command(command_index):
+    global is_executing
+    is_executing = True  # 작업 시작 전에 상태를 실행 중으로 설정
     print("업데이트 시도...")
     # display_progress_bar(0)
     # GPIO.output(LED_DEBUGGING, False)
@@ -381,10 +389,12 @@ def execute_command(command_index):
 
     if command_index == len(commands) - 1:
         git_pull()
+        is_executing = False
         return
 
     if command_index == 6:
         lock_memory_procedure()
+        is_executing = False
         return
         
     if not unlock_memory():
@@ -399,6 +409,7 @@ def execute_command(command_index):
          time.sleep(2)
          GPIO.output(LED_ERROR, False)
          GPIO.output(LED_ERROR1, False)
+        is_executing = False
          return
 
     # GPIO.output(LED_DEBUGGING, True)
@@ -430,6 +441,7 @@ def execute_command(command_index):
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
+        is_executing = False
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
