@@ -184,8 +184,7 @@ current_command_index = 0
 status_message = ""
 
 def git_pull():
-    with display_lock:
-        shell_script_path = '/home/user/stm32/git-pull.sh'
+    shell_script_path = '/home/user/stm32/git-pull.sh'
     if not os.path.isfile(shell_script_path):
         with open(shell_script_path, 'w') as script_file:
             script_file.write("#!/bin/bash\n")
@@ -261,7 +260,8 @@ def display_progress_and_message(percentage, message, message_position=(0, 0), f
 # display_progress_and_message(0, "여기에 상태 메시지 입력", message_position=(20, 20), font_size=17)
 
 def unlock_memory():
-    print("메모리 해제 시도...")
+    with display_lock:
+        print("메모리 해제 시도...")
     # GPIO.output(LED_DEBUGGING, True)
 
     # '메모리 잠금' 및 '해제 중' 메시지와 함께 초기 진행 상태 바 표시
