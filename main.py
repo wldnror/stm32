@@ -49,25 +49,31 @@ def toggle_mode():
     print(f"모드 변경: {'자동' if is_auto_mode else '수동'}")
     update_oled_display()  # OLED 화면 업데이트
 
-def button_next_callback(channel):
-    global current_command_index, need_update
-    with display_lock:
-        if not GPIO.input(BUTTON_PIN_EXECUTE):
-            toggle_mode()  # 모드 전환
-        else:
-            current_command_index = (current_command_index + 1) % len(commands)
-        need_update = True
+# def button_next_callback(channel):
+#     global current_command_index, need_update
+#     with display_lock:
+#         if not GPIO.input(BUTTON_PIN_EXECUTE):
+#             toggle_mode()  # 모드 전환
+#         else:
+#             current_command_index = (current_command_index + 1) % len(commands)
+#         need_update = True
 
 def button_execute_callback(channel):
     global current_command_index, need_update
     with display_lock:
         if not GPIO.input(BUTTON_PIN_NEXT):
-            toggle_mode()  # 모드 전환
-            need_update = True
+            toggle_mode()
         else:
             if is_auto_mode:
-                # 자동 모드에서는 "시스템 업데이트"가 아닌 화면에서 이전 명령으로 이동
-                if command_names[current_command_index] != "시스템 업데이트":
+                # 자동 모드 로직
+                ...
+            else:
+                # 수동 모드에서는 현재 선택된 명령 실행
+                execute_command(current_command_index)
+        need_update = True
+
+def execute_command(command_index):
+    if command_names[command_index] == "시스템 업데이트":
                     current_command_index = (current_command_index - 1) % len(commands)
             else:
                 # 수동 모드에서는 현재 화면의 명령 실행
