@@ -40,6 +40,9 @@ need_update = False
 # 전역 변수로 마지막 모드 전환 시간을 추적
 last_mode_toggle_time = 0
 
+# 스크립트 시작 부분에 전역 변수 정의
+is_executing = False
+
 def toggle_mode():
     global is_auto_mode, last_mode_toggle_time
     is_auto_mode = not is_auto_mode
