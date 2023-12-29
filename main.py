@@ -57,7 +57,7 @@ def button_next_callback(channel):
         else:
             if not is_auto_mode:
                 # 수동 모드에서는 현재 선택된 명령 실행
-                run_command(current_command_index)
+                execute_command(current_command_index)
             else:
                 # 자동 모드에서는 다음 명령으로 이동
                 current_command_index = (current_command_index + 1) % len(commands)
@@ -72,15 +72,14 @@ def button_execute_callback(channel):
             if is_auto_mode:
                 # 자동 모드에서는 "시스템 업데이트" 화면인 경우 시스템 업데이트 실행
                 if command_names[current_command_index] == "시스템 업데이트":
-                    run_command(current_command_index)
+                    execute_command(current_command_index)
                 else:
                     # 자동 모드의 다른 화면에서는 이전 명령으로 이동
                     current_command_index = (current_command_index - 1) % len(commands)
             else:
                 # 수동 모드에서는 현재 화면의 명령 실행
-                run_command(current_command_index)
+                execute_command(current_command_index)
         need_update = True
-
 
 
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
