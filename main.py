@@ -47,7 +47,7 @@ def toggle_mode():
     update_oled_display()
 
 def button_next_callback(channel):
-    global current_command_index, need_update, last_mode_toggle_time
+    global current_command_index, need_update, last_mode_toggle_time, is_executing
     if is_executing:
         return
 
@@ -65,7 +65,7 @@ def button_next_callback(channel):
             need_update = True
 
 def button_execute_callback(channel):
-    global current_command_index, need_update, last_mode_toggle_time
+    global current_command_index, need_update, last_mode_toggle_time, is_executing
     if is_executing:
         return
         
