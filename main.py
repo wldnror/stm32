@@ -498,8 +498,11 @@ def update_oled_display():
 # 실시간 업데이트를 위한 스레드 함수
 def realtime_update_display():
     while True:
-        update_oled_display()
-        time.sleep(1)
+        with display_lock:
+            print("디스플레이 업데이트 시도")  # 로그 메시지 추가
+            update_oled_display()
+            print("디스플레이 업데이트 완료")  # 로그 메시지 추가
+        time.sleep(0.5)  # 시간을 0.5초로 줄여 더 자주 업데이트
 
 # 스레드 생성 및 시작
 realtime_update_thread = threading.Thread(target=realtime_update_display)
