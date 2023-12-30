@@ -450,14 +450,10 @@ def execute_command(command_index):
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
     # with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
-    # ip_address = get_ip_address()
-    # now = datetime.now()
-    # current_time = now.strftime('%H시 %M분')
-    # voltage_percentage = read_ina219_percentage()
+    now = datetime.now()
 
     with canvas(device) as draw:
         if command_names[current_command_index] != "시스템 업데이트":
-                # "시스템 업데이트"가 아닌 다른 메뉴에서는 오전/오후를 표시
             mode_char = 'A' if is_auto_mode else 'M'
             outer_ellipse_box = (2, 0, 22, 20)
             text_position = {'A': (8, -3), 'M': (5, -3)}
