@@ -38,6 +38,7 @@ GPIO.setmode(GPIO.BCM)
 need_update = False
 is_command_executing = False
 is_button_pressed = False
+button_execute_pressed = False
 
 # 전역 변수로 마지막 모드 전환 시간을 추적
 last_mode_toggle_time = 0
@@ -74,37 +75,46 @@ def button_next_callback(channel):
     is_button_pressed = False
 
 def button_execute_callback(channel):
-    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
+    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed, button_execute_pressed
     is_button_pressed = True
+
     if is_executing:
         is_button_pressed = False
         return
-        
+
     current_time = time.time()
     if current_time - last_mode_toggle_time < 0.3:  # 모드 전환 후 1초 동안 버튼 입력 무시
         is_button_pressed = False
         return
 
-    
-    # NEXT 버튼도 동시에 눌려있는지 확인
-    if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
-        toggle_mode()  # 모드 전환
-        need_update = True
-    elif not is_auto_mode:
-        # 수동 모드에서의 실행
-        execute_command(current_command_index)
-        need_update = True
-    else:
-        with display_lock:
-        # 자동 모드의 기존 로직 유지
-           if current_command_index == command_names.index("시스템 업데이트"):
-              execute_command(current_command_index)
-           else:
-               if is_auto_mode:
-                   current_command_index = (current_command_index - 1) % len(commands)
-               else:
-                   execute_command(current_command_index)
-        need_update = True
+    # 버튼이 눌려졌는지 확인
+    if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
+        # 버튼이 눌려진 상태로 설정
+        button_execute_pressed = True
+    elif button_execute_pressed:
+        # 버튼이 떼어졌을 때의 동작
+        button_execute_pressed = False  # 버튼 상태 초기화
+        is_button_pressed = False
+
+        # NEXT 버튼도 동시에 눌려있는지 확인
+        if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
+            toggle_mode()  # 모드 전환
+            need_update = True
+        elif not is_auto_mode:
+            # 수동 모드에서의 실행
+            execute_command(current_command_index)
+            need_update = True
+        else:
+            with display_lock:
+                # 자동 모드의 기존 로직 유지
+                if current_command_index == command_names.index("시스템 업데이트"):
+                    execute_command(current_command_index)
+                else:
+                    if is_auto_mode:
+                        current_command_index = (current_command_index - 1) % len(commands)
+                    else:
+                        execute_command(current_command_index)
+            need_update = True
     is_button_pressed = False
 
 # 모드 전환 함수
