@@ -449,31 +449,27 @@ def execute_command(command_index):
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
-    # with display_lock:
-        if command_names[current_command_index] != "시스템 업데이트":
+    if command_names[current_command_index] != "시스템 업데이트":
             mode_char = 'A' if is_auto_mode else 'M'
             outer_ellipse_box = (2, 0, 22, 20)
             text_position = {'A': (8, -3), 'M': (5, -3)}
             draw.ellipse(outer_ellipse_box, outline="white", fill=None)
             draw.text(text_position[mode_char], mode_char, font=font, fill=255)
-        
-
-        if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "IPA", "ASGD S PNP"]:
+    if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "IPA", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
             draw.bitmap((90, -9), battery_icon, fill=255)
             draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
             draw.text((27, 1), current_time, font=font_time, fill=255)
-        elif command_names[current_command_index] == "시스템 업데이트":
+    elif command_names[current_command_index] == "시스템 업데이트":
             draw.text((0, 51), ip_address, font=font_big, fill=255)
             draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
             draw.text((90, 50), 'ver 3.4', font=font_big, fill=255)
             draw.text((0, -3), current_time, font=font_time, fill=255)
-
-        if status_message:
+    if status_message:
             draw.rectangle(device.bounding_box, outline="white", fill="black")
             font_custom = ImageFont.truetype(font_path, message_font_size)
             draw.text(message_position, status_message, font=font_custom, fill=255)
-        else:
+    else:
             if command_names[current_command_index] == "ORG":
                 draw.text((42, 27), 'ORG', font=font_1, fill=255)
             elif command_names[current_command_index] == "HMDS":
