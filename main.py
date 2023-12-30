@@ -457,7 +457,17 @@ def execute_command(command_index):
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
         is_executing = False
-
+        
+def get_ip_address():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception as e:
+        return "0.0.0.0"
+        
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size, is_button_pressed
     with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
@@ -521,15 +531,7 @@ realtime_update_thread = threading.Thread(target=realtime_update_display)
 realtime_update_thread.daemon = True
 realtime_update_thread.start()
 
-def get_ip_address():
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception as e:
-        return "0.0.0.0"
+
 
 def shutdown_system():
     with canvas(device) as draw:
