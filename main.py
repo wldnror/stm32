@@ -50,12 +50,15 @@ def toggle_mode():
     update_oled_display()
 
 def button_next_callback(channel):
-    global current_command_index, need_update, last_mode_toggle_time, is_executing
+    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
+    is_button_pressed = True
     if is_executing:
+        is_button_pressed = False
         return
 
     current_time = time.time()
     if current_time - last_mode_toggle_time < 0.3:  # 모드 전환 후 1초 동안 버튼 입력 무시
+        is_button_pressed = False
         return
 
     with display_lock:
@@ -66,14 +69,18 @@ def button_next_callback(channel):
         else:
            current_command_index = (current_command_index + 1) % len(commands)
            need_update = True
+    is_button_pressed = False
 
 def button_execute_callback(channel):
-    global current_command_index, need_update, last_mode_toggle_time, is_executing
+    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
+    is_button_pressed = True
     if is_executing:
+        is_button_pressed = False
         return
         
     current_time = time.time()
     if current_time - last_mode_toggle_time < 0.3:  # 모드 전환 후 1초 동안 버튼 입력 무시
+        is_button_pressed = False
         return
 
     
@@ -96,6 +103,7 @@ def button_execute_callback(channel):
                else:
                    execute_command(current_command_index)
         need_update = True
+    is_button_pressed = False
 
 # 모드 전환 함수
 def toggle_mode():
@@ -449,8 +457,11 @@ def execute_command(command_index):
         is_executing = False
 
 def update_oled_display():
-    global current_command_index, status_message, message_position, message_font_size
+    global current_command_index, status_message, message_position, message_font_size, is_button_pressed
     with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
+        if is_button_pressed:
+            return  # 버튼 입력 모드에서는 화면 업데이트 무시
+
         ip_address = get_ip_address()
         now = datetime.now()
         current_time = now.strftime('%H시 %M분')
@@ -458,7 +469,6 @@ def update_oled_display():
 
         with canvas(device) as draw:
             if command_names[current_command_index] != "시스템 업데이트":
-                # "시스템 업데이트"가 아닌 다른 메뉴에서는 오전/오후를 표시
                 mode_char = 'A' if is_auto_mode else 'M'
                 outer_ellipse_box = (2, 0, 22, 20)
                 text_position = {'A': (8, -3), 'M': (5, -3)}
@@ -496,10 +506,12 @@ def update_oled_display():
                 elif command_names[current_command_index] == "시스템 업데이트":
                     draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
 
+
 # 실시간 업데이트를 위한 스레드 함수
 def realtime_update_display():
     while True:
-        update_oled_display()
+        if not is_button_pressed:
+            update_oled_display()
         time.sleep(1)
 
 # 스레드 생성 및 시작
