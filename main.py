@@ -492,22 +492,22 @@ def update_oled_display():
         # if status_message:
         #     draw.rectangle(device.bounding_box, outline="white", fill="black")
         #     font_custom = ImageFont.truetype(font_path, message_font_size)
-        #     draw.text(message_position, status_message, font=font_custom, fill=255)
-        else:
-            if command_names[current_command_index] == "ORG":
-                draw.text((42, 27), 'ORG', font=font_1, fill=255)
-            elif command_names[current_command_index] == "HMDS":
-                draw.text((33, 27), 'HMDS', font=font_1, fill=255)
-            elif command_names[current_command_index] == "ARF-T":
-                draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
-            elif command_names[current_command_index] == "HC100":
-                draw.text((32, 27), 'HC100', font=font_1, fill=255)
-            elif command_names[current_command_index] == "IPA":
-                draw.text((47, 27), 'IPA', font=font_1, fill=255)
-            elif command_names[current_command_index] == "ASGD S PNP":
-                draw.text((1, 27), 'ASGD S PNP', font=font_1, fill=255)
-            elif command_names[current_command_index] == "시스템 업데이트":
-                draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
+        # #     draw.text(message_position, status_message, font=font_custom, fill=255)
+        # else:
+        #     if command_names[current_command_index] == "ORG":
+        #         draw.text((42, 27), 'ORG', font=font_1, fill=255)
+        #     elif command_names[current_command_index] == "HMDS":
+        #         draw.text((33, 27), 'HMDS', font=font_1, fill=255)
+        #     elif command_names[current_command_index] == "ARF-T":
+        #         draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
+        #     elif command_names[current_command_index] == "HC100":
+        #         draw.text((32, 27), 'HC100', font=font_1, fill=255)
+        #     elif command_names[current_command_index] == "IPA":
+        #         draw.text((47, 27), 'IPA', font=font_1, fill=255)
+        #     elif command_names[current_command_index] == "ASGD S PNP":
+        #         draw.text((1, 27), 'ASGD S PNP', font=font_1, fill=255)
+        #     elif command_names[current_command_index] == "시스템 업데이트":
+        #         draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
 
 def update_time_battery_ip():
     with display_lock:
