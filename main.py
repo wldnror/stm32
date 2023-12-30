@@ -451,7 +451,7 @@ def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
     # with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
     # ip_address = get_ip_address()
-    now = datetime.now()
+    # now = datetime.now()
     # current_time = now.strftime('%H시 %M분')
     # voltage_percentage = read_ina219_percentage()
 
