@@ -449,7 +449,7 @@ def execute_command(command_index):
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
-    with display_lock:
+    # with display_lock:
         if command_names[current_command_index] != "시스템 업데이트":
             mode_char = 'A' if is_auto_mode else 'M'
             outer_ellipse_box = (2, 0, 22, 20)
