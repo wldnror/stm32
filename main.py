@@ -37,6 +37,8 @@ GPIO.setmode(GPIO.BCM)
 
 need_update = False
 
+is_button_pressed = False
+
 # 전역 변수로 마지막 모드 전환 시간을 추적
 last_mode_toggle_time = 0
 
