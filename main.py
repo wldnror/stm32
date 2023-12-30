@@ -64,14 +64,14 @@ def button_next_callback(channel):
         is_button_pressed = False
         return
         
-    # 버튼이 눌려졌는지 확인
-    if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
-        # 버튼이 눌려진 상태로 설정
-        button_execute_pressed = True
-    elif button_execute_pressed:
-        # 버튼이 떼어졌을 때의 동작
-        button_execute_pressed = False  # 버튼 상태 초기화
-        is_button_pressed = False
+    # # 버튼이 눌려졌는지 확인
+    # if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
+    #     # 버튼이 눌려진 상태로 설정
+    #     button_execute_pressed = True
+    # elif button_execute_pressed:
+    #     # 버튼이 떼어졌을 때의 동작
+    #     button_execute_pressed = False  # 버튼 상태 초기화
+    #     is_button_pressed = False
 
     with display_lock:
         # EXECUTE 버튼도 동시에 눌려있는지 확인
@@ -140,7 +140,7 @@ manual_mode_text = 'M'
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 # GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=400)
-GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_execute_callback, bouncetime=300)
+# GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_execute_callback, bouncetime=300)
 GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.BOTH, callback=button_execute_callback, bouncetime=300)
 # GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=400)
 # GPIO.setup(LED_DEBUGGING, GPIO.OUT)
