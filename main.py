@@ -457,16 +457,17 @@ def update_oled_display():
                 draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
                 draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
                 draw.text((90, 50), 'ver 3.4', font=font_big, fill=255)
-            else:
+        else:
                 # 다른 명령어에 대한 처리
                 command_name = command_names[current_command_index]
                 draw.text((30, 27), command_name, font=font_1, fill=255)
-
-            # 상태 메시지 표시 (필요한 경우)
-            if status_message:
+        if status_message:
                 draw.rectangle(device.bounding_box, outline="white", fill="black")
                 font_custom = ImageFont.truetype(font_path, message_font_size)
                 draw.text(message_position, status_message, font=font_custom, fill=255)
+
+            
+            
 
         
         # if command_names[current_command_index] != "시스템 업데이트":
