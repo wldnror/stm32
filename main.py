@@ -449,22 +449,33 @@ def execute_command(command_index):
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
-    # with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
     now = datetime.now()
 
-    with canvas(device) as draw:
-        if command_names[current_command_index] == "시스템 업데이트":
-                draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
-                draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
-                draw.text((90, 50), 'ver 3.4', font=font_big, fill=255)
-        else:
-                # 다른 명령어에 대한 처리
-                command_name = command_names[current_command_index]
-                draw.text((30, 27), command_name, font=font_1, fill=255)
-        if status_message:
+    with display_lock:
+        with canvas(device) as draw:
+            # 모드 표시 (A 또는 M)
+            mode_char = 'A' if is_auto_mode else 'M'
+            outer_ellipse_box = (2, 0, 22, 20)  # 위치 및 크기 조정
+            text_position = {'A': (8, -3), 'M': (5, -3)}
+            draw.ellipse(outer_ellipse_box, outline="white", fill=None)
+            draw.text(text_position[mode_char], mode_char, font=font, fill=255)
+
+            # 현재 명령어 이름 표시
+            command_name = command_names[current_command_index]
+            draw.text((30, 27), command_name, font=font_1, fill=255)  # 위치 및 폰트 조정
+
+            # 배터리 아이콘 및 백분율 표시
+            voltage_percentage = read_ina219_percentage()
+            battery_icon = select_battery_icon(voltage_percentage)
+            draw.bitmap((90, -9), battery_icon, fill=255)
+            draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
+
+            # 상태 메시지 표시 (필요한 경우)
+            if status_message:
                 draw.rectangle(device.bounding_box, outline="white", fill="black")
                 font_custom = ImageFont.truetype(font_path, message_font_size)
                 draw.text(message_position, status_message, font=font_custom, fill=255)
+
 
             
             
