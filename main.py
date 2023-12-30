@@ -460,8 +460,8 @@ def update_oled_display():
             draw.ellipse(outer_ellipse_box, outline="white", fill=None)
             draw.text(text_position[mode_char], mode_char, font=font, fill=255)
 
-        if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "IPA", "ASGD S PNP"]:
-            battery_icon = select_battery_icon(voltage_percentage)
+        # if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "IPA", "ASGD S PNP"]:
+            # battery_icon = select_battery_icon(voltage_percentage)
             # draw.bitmap((90, -9), battery_icon, fill=255)
             # draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
             # draw.text((27, 1), current_time, font=font_time, fill=255)
