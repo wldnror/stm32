@@ -75,13 +75,13 @@ def button_next_callback(channel):
 
     # with display_lock:
         # EXECUTE 버튼도 동시에 눌려있는지 확인
-    if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
-        toggle_mode()  # 모드 전환
-        need_update = True
-    else:
-        current_command_index = (current_command_index + 1) % len(commands)
-        need_update = True
-is_button_pressed = False
+        if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
+            toggle_mode()  # 모드 전환
+            need_update = True
+        else:
+            current_command_index = (current_command_index + 1) % len(commands)
+            need_update = True
+    is_button_pressed = False
 
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed, button_execute_pressed
