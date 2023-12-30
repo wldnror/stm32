@@ -64,24 +64,24 @@ def button_next_callback(channel):
         is_button_pressed = False
         return
         
-    # # 버튼이 눌려졌는지 확인
-    # if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
-    #     # 버튼이 눌려진 상태로 설정
-    #     button_execute_pressed = True
-    # elif button_execute_pressed:
-    #     # 버튼이 떼어졌을 때의 동작
-    #     button_execute_pressed = False  # 버튼 상태 초기화
-    #     is_button_pressed = False
+    # 버튼이 눌려졌는지 확인
+    if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
+        # 버튼이 눌려진 상태로 설정
+        button_execute_pressed = True
+    elif button_execute_pressed:
+        # 버튼이 떼어졌을 때의 동작
+        button_execute_pressed = False  # 버튼 상태 초기화
+        is_button_pressed = False
 
-    with display_lock:
+    # with display_lock:
         # EXECUTE 버튼도 동시에 눌려있는지 확인
-        if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
-            toggle_mode()  # 모드 전환
-            need_update = True
-        else:
-            current_command_index = (current_command_index + 1) % len(commands)
-            need_update = True
-    is_button_pressed = False
+    if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
+        toggle_mode()  # 모드 전환
+        need_update = True
+    else:
+        current_command_index = (current_command_index + 1) % len(commands)
+        need_update = True
+is_button_pressed = False
 
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed, button_execute_pressed
