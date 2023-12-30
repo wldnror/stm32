@@ -53,7 +53,7 @@ def toggle_mode():
     update_oled_display()
 
 def button_next_callback(channel):
-    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
+    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed, button_execute_pressed
     is_button_pressed = True
     if is_executing:
         is_button_pressed = False
@@ -63,6 +63,15 @@ def button_next_callback(channel):
     if current_time - last_mode_toggle_time < 0.3:  # 모드 전환 후 1초 동안 버튼 입력 무시
         is_button_pressed = False
         return
+        
+    # 버튼이 눌려졌는지 확인
+    if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
+        # 버튼이 눌려진 상태로 설정
+        button_execute_pressed = True
+    elif button_execute_pressed:
+        # 버튼이 떼어졌을 때의 동작
+        button_execute_pressed = False  # 버튼 상태 초기화
+        is_button_pressed = False
 
     with display_lock:
         # EXECUTE 버튼도 동시에 눌려있는지 확인
