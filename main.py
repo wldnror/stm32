@@ -36,7 +36,7 @@ is_auto_mode = True
 GPIO.setmode(GPIO.BCM)
 
 need_update = False
-
+is_command_executing = False
 is_button_pressed = False
 
 # 전역 변수로 마지막 모드 전환 시간을 추적
@@ -63,15 +63,15 @@ def button_next_callback(channel):
         is_button_pressed = False
         return
 
-    # with display_lock:
+    with display_lock:
         # EXECUTE 버튼도 동시에 눌려있는지 확인
-    if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
-        toggle_mode()  # 모드 전환
-        need_update = True
-    else:
-        current_command_index = (current_command_index + 1) % len(commands)
-        need_update = True
-is_button_pressed = False
+        if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
+            toggle_mode()  # 모드 전환
+            need_update = True
+        else:
+            current_command_index = (current_command_index + 1) % len(commands)
+            need_update = True
+    is_button_pressed = False
 
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
@@ -133,35 +133,39 @@ connection_failed_since_last_success = False
 
 def check_stm32_connection():
     with display_lock:
-        global connection_success, connection_failed_since_last_success
-    try:
-        command = [
-            "sudo", "openocd",
-            "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-            "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-            "-c", "init",
-            "-c", "exit"
-        ]
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-        if result.returncode == 0:
-            if connection_failed_since_last_success:
-                print("STM32 재연결 성공")
-                connection_success = True
-                connection_failed_since_last_success = False  # 성공 후 실패 플래그 초기화
-                
-            else:
-                print("STM32 연결 성공")
-                connection_success = False  # 연속적인 성공을 방지
-            return True
-        else:
-            print("STM32 연결 실패:", result.stderr)
-            connection_failed_since_last_success = True  # 실패 플래그 
+        global connection_success, connection_failed_since_last_success, is_command_executing
+        if is_command_executing:  # 명령 실행 중에는 STM32 연결 확인을 하지 않음
             return False
-    except Exception as e:
-        print(f"오류 발생: {e}")
-        connection_failed_since_last_success = True  # 실패 플래그 설정
-        return False
+
+        try:
+            command = [
+                "sudo", "openocd",
+                "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+                "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+                "-c", "init",
+                "-c", "exit"
+            ]
+            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+            if result.returncode == 0:
+                if connection_failed_since_last_success:
+                    print("STM32 재연결 성공")
+                    connection_success = True
+                    connection_failed_since_last_success = False  # 성공 후 실패 플래그 초기화
+                    
+                else:
+                    print("STM32 연결 성공")
+                    connection_success = False  # 연속적인 성공을 방지
+                return True
+            else:
+                print("STM32 연결 실패:", result.stderr)
+                connection_failed_since_last_success = True  # 실패 플래그 
+                return False
+        except Exception as e:
+            print(f"오류 발생: {e}")
+            connection_failed_since_last_success = True  # 실패 플래그 설정
+            return False
+
 
 # 배터리 상태 확인 함수
 def read_ina219_percentage():
@@ -392,10 +396,11 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR1, False)
 
 def execute_command(command_index):
-    global is_executing
+    global is_executing, is_command_executing
     is_executing = True  # 작업 시작 전에 상태를 실행 중으로 설정
+    is_command_executing = True  # 명령 실행 중 상태 활성화
+
     print("업데이트 시도...")
-    # display_progress_bar(0)
     # GPIO.output(LED_DEBUGGING, False)
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
@@ -404,59 +409,60 @@ def execute_command(command_index):
     if command_index == len(commands) - 1:
         git_pull()
         is_executing = False
+        is_command_executing = False
         return
 
     if command_index == 6:
         lock_memory_procedure()
         is_executing = False
+        is_command_executing = False
         return
         
     if not unlock_memory():
-         GPIO.output(LED_ERROR, True)
-         GPIO.output(LED_ERROR1, True)
-         with canvas(device) as draw:
-             # '메모리 잠금' 메시지를 (0, 10) 위치에 표시
-             draw.text((20, 8), "메모리 잠금", font=font, fill=255)
-             # '해제 실패' 메시지를 (0, 25) 위치에 표시
-             draw.text((28, 27), "해제 실패", font=font, fill=255)
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        with canvas(device) as draw:
+            draw.text((20, 8), "메모리 잠금", font=font, fill=255)
+            draw.text((28, 27), "해제 실패", font=font, fill=255)
+        time.sleep(2)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        is_executing = False
+        is_command_executing = False
+        return
 
-         time.sleep(2)
-         GPIO.output(LED_ERROR, False)
-         GPIO.output(LED_ERROR1, False)
-         is_executing = False
-         return
-
-    # GPIO.output(LED_DEBUGGING, True)
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
     
     start_time = time.time()
-    max_duration = 6  # 최대 지속 시간을 초 단위로 설정 (이 값은 조정 가능)
-    progress_increment = 20 / max_duration  # 50%에서 70%까지 증가
+    max_duration = 6
+    progress_increment = 20 / max_duration
     
     while process.poll() is None:
         elapsed = time.time() - start_time
         current_progress = 30 + (elapsed * progress_increment)
-        current_progress = min(current_progress, 80)  # 70%를 초과하지 않도록 제한
+        current_progress = min(current_progress, 80)
         display_progress_and_message(current_progress, "업데이트 중...", message_position=(12, 10), font_size=15)
         time.sleep(0.5)
-        
-    result = process.returncode# GPIO.output(LED_DEBUGGING, False)
+
+    result = process.returncode
     if result == 0:
-        print(f"'{commands[command_index]}'업데이트 성공!")# GPIO.output(LED_SUCCESS, True)
-        display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)# display_progress_bar(100)
-        time.sleep(0.5)# GPIO.output(LED_SUCCESS, False)
+        print(f"'{commands[command_index]}' 업데이트 성공!")
+        display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
+        time.sleep(0.5)
         lock_memory_procedure()
-        is_executing = False
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        display_progress_and_message(0,"업데이트 실패", message_position=(7, 10), font_size=15)# display_progress_bar(50)
+        display_progress_and_message(0, "업데이트 실패", message_position=(7, 10), font_size=15)
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
-        is_executing = False
+
+    is_executing = False
+    is_command_executing = False
+
         
 def get_ip_address():
     try:
@@ -521,8 +527,9 @@ def update_oled_display():
 
 # 실시간 업데이트를 위한 스레드 함수
 def realtime_update_display():
+    global is_command_executing
     while True:
-        if not is_button_pressed:
+        if not is_button_pressed and not is_command_executing:
             update_oled_display()
         time.sleep(1)
 
