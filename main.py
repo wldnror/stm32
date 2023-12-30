@@ -463,13 +463,13 @@ def update_oled_display():
         if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "IPA", "ASGD S PNP"]:
             battery_icon = select_battery_icon(voltage_percentage)
             # draw.bitmap((90, -9), battery_icon, fill=255)
-            draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
-            draw.text((27, 1), current_time, font=font_time, fill=255)
+            # draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
+            # draw.text((27, 1), current_time, font=font_time, fill=255)
         elif command_names[current_command_index] == "시스템 업데이트":
             # draw.text((0, 51), ip_address, font=font_big, fill=255)
             draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
             draw.text((90, 50), 'ver 3.4', font=font_big, fill=255)
-            draw.text((0, -3), current_time, font=font_time, fill=255)
+            # draw.text((0, -3), current_time, font=font_time, fill=255)
 
         if status_message:
             draw.rectangle(device.bounding_box, outline="white", fill="black")
