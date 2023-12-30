@@ -471,10 +471,10 @@ def update_oled_display():
             draw.text((90, 50), 'ver 3.4', font=font_big, fill=255)
             # draw.text((0, -3), current_time, font=font_time, fill=255)
 
-        if status_message:
-            draw.rectangle(device.bounding_box, outline="white", fill="black")
-            font_custom = ImageFont.truetype(font_path, message_font_size)
-            draw.text(message_position, status_message, font=font_custom, fill=255)
+        # if status_message:
+        #     draw.rectangle(device.bounding_box, outline="white", fill="black")
+        #     font_custom = ImageFont.truetype(font_path, message_font_size)
+        #     draw.text(message_position, status_message, font=font_custom, fill=255)
         else:
             if command_names[current_command_index] == "ORG":
                 draw.text((42, 27), 'ORG', font=font_1, fill=255)
