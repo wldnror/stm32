@@ -20,6 +20,9 @@ SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.1
 MAX_VOLTAGE = 4.2
 
+# 화면 업데이트 제어를 위한 전역 변수
+updating_display = True
+
 # OLED 디스플레이 설정
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
@@ -69,9 +72,12 @@ def display_message(message):
         draw.text((10, 20), message, font=font_big, fill=255)
 
 def display_menu():
+    global updating_display
+    if updating_display:  # 화면 업데이트가 활성화된 경우에만 메뉴 표시
     battery_percentage = read_ina219_percentage()
     ip_address = get_ip_address()
     current_time = get_current_time()
+    
 
     with canvas(device) as draw:
         draw.text((10, 0), menu_options[current_menu_index], font=font_big, fill=255)
@@ -80,15 +86,20 @@ def display_menu():
         draw.text((10, 50), f"Time: {current_time}", font=font_small, fill=255)
 
 def button_next_callback(channel):
-    global current_menu_index
+    global current_menu_index, updating_display
+    updating_display = False  # 버튼 입력 시 화면 업데이트 중지
     current_menu_index = (current_menu_index + 1) % len(menu_options)
     display_menu()
+    updating_display = True  # 화면 업데이트 재개
 
 def button_execute_callback(channel):
+    global updating_display
+    updating_display = False  # 버튼 입력 시 화면 업데이트 중지
     if menu_options[current_menu_index] == "업데이트 재시도":
         git_pull()
     elif menu_options[current_menu_index] == "기존 상태로 복구":
         recover_previous_state()
+    updating_display = True  # 화면 업데이트 재개
 
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
