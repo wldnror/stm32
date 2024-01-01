@@ -1,16 +1,16 @@
-# from datetime import datetime
-# import RPi.GPIO as GPIO
-# import time
-# import os
-# import sys
-# import socket
-# from PIL import Image, ImageDraw, ImageFont
-# from luma.core.interface.serial import i2c
-# from luma.core.render import canvas
-# from luma.oled.device import sh1107
-# import subprocess
-# from ina219 import INA219, DeviceRangeError
-# import threading
+from datetime import datetime
+import RPi.GPIO as GPIO
+import time
+import os
+import sys
+import socket
+from PIL import Image, ImageDraw, ImageFont
+from luma.core.interface.serial import i2c
+from luma.core.render import canvas
+from luma.oled.device import sh1107
+import subprocess
+from ina219 import INA219, DeviceRangeError
+import threading
 
 display_lock = threading.Lock()
 # GPIO 핀 설정
