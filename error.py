@@ -61,14 +61,13 @@ def get_current_time():
 
 def display_menu():
     # 배터리 정보, IP 주소, 현재 시간을 읽어옵니다.
-    battery_percentage = read_ina219_percentage()
+    battery_percentage = read_battery_percentage()  # 함수 이름 수정
     ip_address = get_ip_address()
     current_time = datetime.now().strftime('%H:%M:%S')
 
     with canvas(device) as draw:
-        # 메뉴 옵션 표시
+        # 메뉴 옵션 및 배터리 상태, IP 주소, 현재 시간 표시
         draw.text((10, 0), menu_options[current_menu_index], font=font, fill=255)
-        # 배터리 상태, IP 주소, 현재 시간 표시
         draw.text((10, 30), f"Battery: {battery_percentage}%", font=font, fill=255)
         draw.text((10, 40), f"IP: {ip_address}", font=font, fill=255)
         draw.text((10, 50), f"Time: {current_time}", font=font, fill=255)
