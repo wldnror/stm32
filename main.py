@@ -26,8 +26,6 @@ LED_ERROR1 = 23
 SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.1  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
-previous_voltage = None
-# voltage_drop_threshold = 0.1  # 전압이 이 값 이상 떨어질 때 반응
 
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
@@ -128,7 +126,6 @@ GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=400)
 GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=400)
-# GPIO.setup(LED_DEBUGGING, GPIO.OUT)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
@@ -228,7 +225,6 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/HC100.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
-    # "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/extracted_file.bin verify reset exit 0x08000000\"",
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
@@ -250,9 +246,7 @@ def git_pull():
             os.fsync(script_file.fileno())
 
     os.chmod(shell_script_path, 0o755)
-
-    # GPIO.output(LED_DEBUGGING, True)
-
+    
     with canvas(device) as draw:
         # '시스템' 메시지를 (0, 23) 위치에 표시
         draw.text((36, 8), "시스템", font=font, fill=255)
@@ -261,7 +255,6 @@ def git_pull():
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        # GPIO.output(LED_DEBUGGING, False)
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
@@ -289,7 +282,6 @@ def git_pull():
         display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(0, 10), font_size=15)
         time.sleep(1)
     finally:
-        # GPIO.output(LED_DEBUGGING, False)
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
@@ -310,13 +302,10 @@ def display_progress_and_message(percentage, message, message_position=(0, 0), f
         # 진행 상태 바 표시
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")  # 상태 바의 외곽선
         draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")  # 상태 바의 내용
-# 함수 사용 예시
-# display_progress_and_message(0, "여기에 상태 메시지 입력", message_position=(20, 20), font_size=17)
-
+        
 def unlock_memory():
     with display_lock:
         print("메모리 해제 시도...")
-    # GPIO.output(LED_DEBUGGING, True)
 
     # '메모리 잠금' 및 '해제 중' 메시지와 함께 초기 진행 상태 바 표시
     display_progress_and_message(0, "메모리 잠금\n   해제 중", message_position=(18, 0), font_size=15)
@@ -333,8 +322,6 @@ def unlock_memory():
         "-c", "shutdown"
     ]
     result = subprocess.run(openocd_command)
-
-    # GPIO.output(LED_DEBUGGING, False)
 
     if result.returncode == 0:
         display_progress_and_message(30, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
@@ -356,8 +343,7 @@ def restart_script():
 
 
 def lock_memory_procedure():
-    # display_progress_bar(0)
-    # GPIO.output(LED_DEBUGGING, True)
+    
     display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
     openocd_command = [
         "sudo",
@@ -372,12 +358,10 @@ def lock_memory_procedure():
     ]
     try:
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        # GPIO.output(LED_DEBUGGING, False)
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
             display_progress_and_message(100,"메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
-            # display_progress_bar(100)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
@@ -385,7 +369,6 @@ def lock_memory_procedure():
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
             display_progress_and_message(0,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
-            # display_progress_bar(50)
             time.sleep(1)
             update_oled_display()
             GPIO.output(LED_ERROR, False)
@@ -396,7 +379,6 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR1, True)
         update_oled_display()
         display_progress_and_message(0,"오류 발생")
-        # display_progress_bar(0)
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
@@ -407,7 +389,6 @@ def execute_command(command_index):
     is_command_executing = True  # 명령 실행 중 상태 활성화
 
     print("업데이트 시도...")
-    # GPIO.output(LED_DEBUGGING, False)
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
