@@ -94,14 +94,14 @@ def button_execute_callback(channel):
         execute_command(current_command_index)
         need_update = True
     else:
-        # with display_lock:
-        if current_command_index == command_names.index("시스템 업데이트"):
-            execute_command(current_command_index)
-        else:
-            if is_auto_mode:
-                current_command_index = (current_command_index - 1) % len(commands)
-            else:
+        with display_lock:
+            if current_command_index == command_names.index("시스템 업데이트"):
                 execute_command(current_command_index)
+            else:
+                if is_auto_mode:\
+                    current_command_index = (current_command_index - 1) % len(commands)
+                else:
+                    execute_command(current_command_index)
         need_update = True
     is_button_pressed = False
 
