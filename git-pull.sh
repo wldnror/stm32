@@ -10,6 +10,6 @@ if [ $local = $remote ]; then
     exit 0
 fi
 
-git stash
+# git stash
 git pull
-git stash pop
+# git stash pop
