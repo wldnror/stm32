@@ -12,7 +12,9 @@ from luma.oled.device import sh1107
 from ina219 import INA219, DeviceRangeError
 import logging
 
-logging.basicConfig(filename='error.log', level=logging.DEBUG)
+log_file = os.path.join(os.path.expanduser("~"), "stm32/error.log")
+
+logging.basicConfig(filename=log_file, level=logging.DEBUG)
 
 # LED 핀 번호 정의
 LED_SUCCESS = 24
