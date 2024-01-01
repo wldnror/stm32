@@ -89,9 +89,9 @@ def display_menu():
 
         with canvas(device) as draw:
             draw.text((10, 0), menu_options[current_menu_index], font=font_big, fill=255)
-            draw.text((10, 25), f"Battery: {battery_percentage}%", font=font_small, fill=255)
+            draw.text((10, 28), f"Battery: {battery_percentage}%", font=font_small, fill=255)
             draw.text((10, 40), f"IP: {ip_address}", font=font_small, fill=255)
-            draw.text((10, 55), f"Time: {current_time}", font=font_small, fill=255)
+            draw.text((10, 52), f"Time: {current_time}", font=font_small, fill=255)
 
 def button_next_callback(channel):
     global current_menu_index, updating_display
