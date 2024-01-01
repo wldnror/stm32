@@ -23,7 +23,7 @@ def find_and_kill_process(name):
     return False
 
 # 'main.py'가 실행 중인지 확인하고 종료
-find_and_kill_process('main.py')
+find_and_kill_process('serve.py')
 
 display_lock = threading.Lock()
 # GPIO 핀 설정
