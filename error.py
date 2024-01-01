@@ -119,22 +119,38 @@ def git_pull():
 
     os.chmod(shell_script_path, 0o755)
     
-    result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    with canvas(device) as draw:
+        draw.text((36, 8), "시스템", font=font, fill=255)
+        draw.text((17, 27), "업데이트 중", font=font, fill=255)
 
-    if result.returncode == 0:
-        if "이미 최신 상태" in result.stdout:
-            display_message("이미 최신 상태")
+    try:
+        result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        GPIO.output(LED_SUCCESS, False)
+        GPIO.output(LED_ERROR, False)
+        
+        if result.returncode == 0:
+            if "이미 최신 상태" in result.stdout:
+                display_message("이미 최신 상태")
+                GPIO.output(LED_SUCCESS, True)
+                time.sleep(1)
+                GPIO.output(LED_SUCCESS, False)
+            else:
+                display_message("업데이트 성공!")
+                GPIO.output(LED_SUCCESS, True)
+                time.sleep(1)
+                GPIO.output(LED_SUCCESS, False)
+                # 스크립트 재시작 또는 다른 조치를 취할 수 있습니다.
         else:
-            display_message("업데이트 성공!")
-            # 여기에 스크립트 실행 코드를 추가합니다.
-            try:
-                subprocess.run(["/home/user/stm32/serve.py"], check=True)
-                display_message("스크립트 실행 완료")
-            except subprocess.CalledProcessError:
-                display_message("스크립트 실행 실패")
-    else:
-        display_message("업데이트 실패")
-    time.sleep(2)
+            display_message("업데이트 실패")
+            GPIO.output(LED_ERROR, True)
+            time.sleep(1)
+            GPIO.output(LED_ERROR, False)
+    except Exception as e:
+        display_message("오류 발생: " + str(e))
+        GPIO.output(LED_ERROR, True)
+        time.sleep(1)
+        GPIO.output(LED_ERROR, False)
+
 
 def update_retry():
     display_message("업데이트 재시도...")
