@@ -10,11 +10,11 @@ from luma.core.interface.serial import i2c
 from luma.core.render import canvas
 from luma.oled.device import sh1107
 from ina219 import INA219, DeviceRangeError
-import logging
+# import logging
 
-log_file = os.path.join(os.path.expanduser("~"), "stm32/error.log")
+# log_file = os.path.join(os.path.expanduser("~"), "stm32/error.log")
 
-logging.basicConfig(filename=log_file, level=logging.DEBUG)
+# logging.basicConfig(filename=log_file, level=logging.DEBUG)
 
 
 # LED 핀 번호 정의
