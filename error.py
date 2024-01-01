@@ -3,7 +3,7 @@ import subprocess
 import time
 from PIL import Image, ImageDraw, ImageFont
 from luma.core.interface.serial import i2c
-from luma.core.render import canvas  # 여기에 canvas 클래스를 임포트
+from luma.core.render import canvas
 from luma.oled.device import sh1107
 
 # GPIO 핀 설정
@@ -19,10 +19,40 @@ def display_message(message):
     with canvas(device) as draw:
         draw.text((10, 20), message, font=font, fill=255)
 
+def git_pull():
+    shell_script_path = '/home/user/stm32/git-pull.sh'
+    if not os.path.isfile(shell_script_path):
+        with open(shell_script_path, 'w') as script_file:
+            script_file.write("#!/bin/bash\n")
+            script_file.write("cd /home/user/stm32\n")
+            script_file.write("git remote update\n")
+            script_file.write("if git status -uno | grep -q 'Your branch is up to date'; then\n")
+            script_file.write("   echo '이미 최신 상태입니다.'\n")
+            script_file.write("   exit 0\n")
+            script_file.write("fi\n")
+            script_file.write("git stash\n")
+            script_file.write("git pull\n")
+            script_file.write("git stash pop\n")
+            script_file.flush()
+            os.fsync(script_file.fileno())
+
+    os.chmod(shell_script_path, 0o755)
+    
+    result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    
+    if result.returncode == 0:
+        if "이미 최신 상태" in result.stdout:
+            display_message("이미 최신 상태")
+        else:
+            display_message("업데이트 성공!")
+    else:
+        display_message("업데이트 실패")
+    time.sleep(2)
+
 def update_retry():
     display_message("업데이트 재시도...")
     time.sleep(2)
-    subprocess.run(["python3", "main.py"])
+    git_pull()
 
 def recover_previous_state():
     display_message("기존 상태로 복구...")
