@@ -5,16 +5,16 @@ import time
 # main.py 파일의 경로를 정확하게 지정하세요.
 path_to_main_py = "/home/user/stm32/main.py"
 
-# # main.py 파일 실행 및 재시도 로직
-# def execute_main_py():
-#     while True:
-#         result = subprocess.run(["python3", path_to_main_py], capture_output=True, text=True)
-#         if result.returncode == 0:
-#             print("main.py 실행 성공")
-#             break
-#         else:
-#             print(f"main.py 실행 실패: {result.stderr}, 재시도 중...")
-#             time.sleep(10)  # 재시도 전에 10초간 대기
+# main.py 파일 실행 및 재시도 로직
+def execute_main_py():
+    while True:
+        result = subprocess.run(["python3", path_to_main_py], capture_output=True, text=True)
+        if result.returncode == 0:
+            print("main.py 실행 성공")
+            break
+        else:
+            print(f"main.py 실행 실패: {result.stderr}, 재시도 중...")
+            time.sleep(10)  # 재시도 전에 10초간 대기
 
 # Wi-Fi 네트워크를 스캔하는 함수
 def scan_wifi_networks(interface="wlan0"):
@@ -52,7 +52,7 @@ def is_connected(interface="wlan0"):
 
 # 메인 로직
 if __name__ == "__main__":
-    # execute_main_py()  # main.py 실행 및 재시도
+    execute_main_py()  # main.py 실행 및 재시도
     while True:
         if not is_connected():
             print("Network disconnected. Scanning for open networks...")
