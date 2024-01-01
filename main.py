@@ -3,7 +3,8 @@ import logging
 
 log_file = os.path.join(os.path.expanduser("~"), "stm32/main.log")
 
-logging.basicConfig(filename='main.log', level=logging.DEBUG)
+logging.basicConfig(filename=log_file, level=logging.DEBUG)
+
 
 max_retries = 3  # 최대 재시도 횟수 설정
 serve_script = "/home/user/stm32/serve.py"
