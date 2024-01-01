@@ -11,6 +11,9 @@ from luma.oled.device import sh1107
 import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
+import logging
+
+logging.basicConfig(filename='my_log.log', level=logging.DEBUG)
 
 display_lock = threading.Lock()
 # GPIO 핀 설정
