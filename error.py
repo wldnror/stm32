@@ -1,15 +1,23 @@
 import os
 import RPi.GPIO as GPIO
-import subprocess
 import time
+import subprocess
+import socket
+from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 from luma.core.interface.serial import i2c
 from luma.core.render import canvas
 from luma.oled.device import sh1107
+from ina219 import INA219, DeviceRangeError
 
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
+
+# INA219 설정
+SHUNT_OHMS = 0.1
+MIN_VOLTAGE = 3.1
+MAX_VOLTAGE = 4.2
 
 # OLED 디스플레이 설정
 serial = i2c(port=1, address=0x3C)
@@ -20,7 +28,48 @@ font = ImageFont.truetype('/usr/share/fonts/truetype/malgun/malgunbd.ttf', 17)
 menu_options = ["업데이트 재시도", "기존 상태로 복구"]
 current_menu_index = 0
 
+# 배터리 상태 읽기 함수
+def read_battery_percentage():
+    try:
+        ina = INA219(SHUNT_OHMS)
+        ina.configure()
+        voltage = ina.voltage()
+        if voltage <= MIN_VOLTAGE:
+            return 0
+        elif voltage >= MAX_VOLTAGE:
+            return 100
+        else:
+            return int(((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100)
+    except DeviceRangeError:
+        return 0
+
+# IP 주소 얻기 함수
+def get_ip_address():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return "0.0.0.0"
+
+# 현재 시간 얻기 함수
+def get_current_time():
+    return datetime.now().strftime('%H:%M:%S')
+
+
 def display_menu():
+    battery_percentage = read_battery_percentage()
+    ip_address = get_ip_address()
+    current_time = get_current_time()
+
+    with canvas(device) as draw:
+        draw.text((10, 0), menu_options[current_menu_index], font=font, fill=255)
+        draw.text((10, 30), f"Battery: {battery_percentage}%", font=font, fill=255)
+        draw.text((10, 40), f"IP: {ip_address}", font=font, fill=255)
+        draw.text((10, 50), f"Time: {current_time}", font=font, fill=255)
+
     with canvas(device) as draw:
         draw.text((10, 20), menu_options[current_menu_index], font=font, fill=255)
 
