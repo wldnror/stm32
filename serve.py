@@ -13,7 +13,9 @@ from ina219 import INA219, DeviceRangeError
 import threading
 import logging
 
-logging.basicConfig(filename='my_log.log', level=logging.DEBUG)
+log_file = os.path.join(os.path.expanduser("~"), "stm32/serve.log")
+
+logging.basicConfig(filename=log_file, level=logging.DEBUG)
 
 display_lock = threading.Lock()
 # GPIO 핀 설정
