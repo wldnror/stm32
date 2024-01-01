@@ -22,7 +22,7 @@ MAX_VOLTAGE = 4.2
 # OLED 디스플레이 설정
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
-font = ImageFont.truetype('/usr/share/fonts/truetype/malgun/malgunbd.ttf', 12)
+font = ImageFont.truetype('/usr/share/fonts/truetype/malgun/malgunbd.ttf')
 
 # 메뉴 옵션 설정
 menu_options = ["업데이트 재시도", "기존 상태로 복구"]
@@ -71,10 +71,10 @@ def display_menu():
 
     with canvas(device) as draw:
         # 메뉴 옵션 및 배터리 상태, IP 주소, 현재 시간 표시
-        draw.text((10, 0), menu_options[current_menu_index], font=font, fill=255)
-        draw.text((10, 30), f"Battery: {battery_percentage}%", font=font, fill=255)
-        draw.text((10, 40), f"IP: {ip_address}", font=font, fill=255)
-        draw.text((10, 50), f"Time: {current_time}", font=font, fill=255)
+        draw.text((10, 0), menu_options[current_menu_index], font=font, font_size=15, fill=255)
+        draw.text((10, 30), f"Battery: {battery_percentage}%", font=font,font_size=12, fill=255)
+        draw.text((10, 40), f"IP: {ip_address}", font=font, font_size=12, fill=255)
+        draw.text((10, 50), f"Time: {current_time}", font=font, font_size=12, fill=255)
 
 def button_next_callback(channel):
     global current_menu_index
