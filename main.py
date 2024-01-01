@@ -61,7 +61,7 @@ def button_next_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 0.3):  # 모드 전환 후 0.3초 동안은 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 1):  # 모드 전환 후 0.3초 동안은 입력 무시
         is_button_pressed = False
         return
 
@@ -84,7 +84,7 @@ def button_execute_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 0.3):  # 모드 전환 후 0.3초 동안은 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 1):  # 모드 전환 후 0.3초 동안은 입력 무시
         is_button_pressed = False
         return
 
