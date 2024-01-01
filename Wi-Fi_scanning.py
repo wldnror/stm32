@@ -3,6 +3,9 @@ import re
 import time
 import sys
 
+# main.py 파일의 경로를 정확하게 지정하세요.
+path_to_main_py = "/home/user/stm32/main.py"
+
 def is_system_ready():
     # 'cron' 서비스가 활성화되었는지 확인합니다.
     status = subprocess.run(['systemctl', 'is-active', 'cron'], capture_output=True, text=True)
