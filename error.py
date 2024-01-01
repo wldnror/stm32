@@ -25,8 +25,8 @@ device = sh1107(serial, rotate=1)
 
 # 폰트 경로 및 폰트 객체 생성
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
-font_big = ImageFont.truetype(font_path, 17)
-font_small = ImageFont.truetype(font_path, 12)
+font_big = ImageFont.truetype(font_path, 15)
+font_small = ImageFont.truetype(font_path, 10)
 
 # 메뉴 옵션 설정
 menu_options = ["업데이트 재시도", "기존 상태로 복구"]
