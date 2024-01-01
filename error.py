@@ -3,6 +3,7 @@ import RPi.GPIO as GPIO
 import time
 import subprocess
 import socket
+import threading
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 from luma.core.interface.serial import i2c
@@ -65,16 +66,14 @@ def get_current_time():
 # 메시지 표시 함수
 def display_message(message):
     with canvas(device) as draw:
-        draw.text((10, 20), message, font=font, fill=255)
+        draw.text((10, 20), message, font=font_big, fill=255)
 
 def display_menu():
-    # 배터리 정보, IP 주소, 현재 시간을 읽어옵니다.
     battery_percentage = read_ina219_percentage()
     ip_address = get_ip_address()
     current_time = get_current_time()
 
     with canvas(device) as draw:
-        # 메뉴 옵션 및 배터리 상태, IP 주소, 현재 시간 표시
         draw.text((10, 0), menu_options[current_menu_index], font=font_big, fill=255)
         draw.text((10, 30), f"Battery: {battery_percentage}%", font=font_small, fill=255)
         draw.text((10, 40), f"IP: {ip_address}", font=font_small, fill=255)
@@ -131,6 +130,11 @@ def recover_previous_state():
     time.sleep(2)
     # 복구 로직 구현
 
+def update_display_every_second():
+    while True:
+        display_menu()  # 메뉴 화면을 업데이트합니다.
+        time.sleep(1)  # 1초 간격으로 업데이트합니다.
+
 def main():
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -138,6 +142,10 @@ def main():
     GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=300)
     GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=300)
 
+     # 별도 스레드에서 디스플레이 업데이트 함수를 실행합니다.
+    update_thread = threading.Thread(target=update_display_every_second)
+    update_thread.start()
+    
     display_menu()
 
     try:
