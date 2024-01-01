@@ -1,6 +1,7 @@
 import subprocess
 import re
 import time
+import sys
 
 # main.py 파일의 경로를 정확하게 지정하세요.
 path_to_main_py = "/home/user/stm32/main.py"
@@ -52,19 +53,23 @@ def is_connected(interface="wlan0"):
 
 # 메인 로직
 if __name__ == "__main__":
-    execute_main_py()  # main.py 실행 및 재시도
-    while True:
-        if not is_connected():
-            print("Network disconnected. Scanning for open networks...")
-            open_networks = scan_wifi_networks()
-            if open_networks:
-                print("Open networks found:", open_networks)
-                for ssid in open_networks:
-                    connect_to_open_network(ssid)
+    try:
+        execute_main_py()  # main.py 실행 및 재시도
+        while True:
+            if not is_connected():
+                print("네트워크 연결이 끊어졌습니다. 열린 네트워크를 스캔 중...")
+                open_networks = scan_wifi_networks()
+                if open_networks:
+                    print("열린 네트워크를 찾았습니다:", open_networks)
+                    for ssid in open_networks:
+                        connect_to_open_network(ssid)
+                else:
+                    print("열린 네트워크를 찾지 못했습니다.")
             else:
-                print("No open networks found.")
-        else:
-            print("Already connected to a network.")
-        
-        # 3분 동안 대기
-        time.sleep(180)
+                print("이미 네트워크에 연결되어 있습니다.")
+            
+            # 3분 동안 대기
+            time.sleep(180)
+    except KeyboardInterrupt:
+        print("사용자에 의해 스크립트가 종료되었습니다.")
+        sys.exit(1)
