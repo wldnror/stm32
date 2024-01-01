@@ -8,17 +8,32 @@ from luma.core.render import canvas
 from luma.oled.device import sh1107
 
 # GPIO 핀 설정
-BUTTON_PIN_RETRY = 17
-BUTTON_PIN_RECOVER = 27
+BUTTON_PIN_NEXT = 27
+BUTTON_PIN_EXECUTE = 17
 
 # OLED 디스플레이 설정
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
 font = ImageFont.truetype('/usr/share/fonts/truetype/malgun/malgunbd.ttf', 17)
 
-def display_message(message):
+# 메뉴 옵션 설정
+menu_options = ["업데이트 재시도", "기존 상태로 복구"]
+current_menu_index = 0
+
+def display_menu():
     with canvas(device) as draw:
-        draw.text((10, 20), message, font=font, fill=255)
+        draw.text((10, 20), menu_options[current_menu_index], font=font, fill=255)
+
+def button_next_callback(channel):
+    global current_menu_index
+    current_menu_index = (current_menu_index + 1) % len(menu_options)
+    display_menu()
+
+def button_execute_callback(channel):
+    if menu_options[current_menu_index] == "업데이트 재시도":
+        git_pull()
+    elif menu_options[current_menu_index] == "기존 상태로 복구":
+        recover_previous_state()
 
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
@@ -62,19 +77,18 @@ def recover_previous_state():
 
 def main():
     GPIO.setmode(GPIO.BCM)
-    GPIO.setup(BUTTON_PIN_RETRY, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    GPIO.setup(BUTTON_PIN_RECOVER, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=300)
+    GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=300)
 
-    display_message("1. 업데이트 재시도\n2. 기존 상태 복구")
+    display_menu()
 
-    while True:
-        if GPIO.input(BUTTON_PIN_RETRY) == GPIO.LOW:
-            update_retry()
-            break
-        elif GPIO.input(BUTTON_PIN_RECOVER) == GPIO.LOW:
-            recover_previous_state()
-            break
-        time.sleep(0.1)
+    try:
+        while True:
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        GPIO.cleanup()
 
 if __name__ == "__main__":
     main()
