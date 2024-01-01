@@ -150,7 +150,7 @@ def git_pull():
                 GPIO.output(LED_SUCCESS, False)
                 # 업데이트 성공 시 main.py 스크립트 실행
                 subprocess.run(["python3", "/home/user/stm32/main.py"])
-        else
+        else:
             display_message("업데이트 실패")
             GPIO.output(LED_ERROR, True)
             time.sleep(1)
