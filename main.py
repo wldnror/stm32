@@ -264,13 +264,9 @@ def git_pull():
             os.fsync(script_file.fileno())
 
     os.chmod(shell_script_path, 0o755)
-
-    os.chmod(shell_script_path, 0o755)
     
     with canvas(device) as draw:
-        # '시스템' 메시지를 (0, 23) 위치에 표시
         draw.text((36, 8), "시스템", font=font, fill=255)
-        # '업데이트 중' 메시지를 (0, 38) 위치에 표시
         draw.text((17, 27), "업데이트 중", font=font, fill=255)
 
     try:
@@ -280,13 +276,16 @@ def git_pull():
         GPIO.output(LED_ERROR1, False)
         
         if result.returncode == 0:
-            print("업데이트 성공!")
-            GPIO.output(LED_SUCCESS, True)
-            display_progress_and_message(100, "업데이트 성공!", message_position=(10, 10), font_size=15)
-            
-            time.sleep(1)
-            GPIO.output(LED_SUCCESS, False)
-            restart_script()
+            if "이미 최신 상태입니다." in result.stdout:
+                display_progress_and_message(100, "이미 최신 상태입니다.", message_position=(10, 10), font_size=15)
+                time.sleep(1)
+            else:
+                print("업데이트 성공!")
+                GPIO.output(LED_SUCCESS, True)
+                display_progress_and_message(100, "업데이트 성공!", message_position=(10, 10), font_size=15)
+                time.sleep(1)
+                GPIO.output(LED_SUCCESS, False)
+                restart_script()
         else:
             print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
             print("오류 메시지:", result.stderr)
@@ -294,7 +293,6 @@ def git_pull():
             GPIO.output(LED_ERROR1, True)
             display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(0, 10), font_size=15)
             time.sleep(1)
-
     except Exception as e:
         print("명령 실행 중 오류 발생:", str(e))
         GPIO.output(LED_ERROR, True)
