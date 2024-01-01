@@ -1,0 +1,81 @@
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 41 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 62 122
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 41 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 62 122
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 41 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 62 122
+DEBUG:PIL.PngImagePlugin:STREAM b'IHDR' 16 13
+DEBUG:PIL.PngImagePlugin:STREAM b'pHYs' 41 9
+DEBUG:PIL.PngImagePlugin:STREAM b'IDAT' 62 122
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xAA1F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xB21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xBA1F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0x9A1F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xA21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xA21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xAA1F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xA21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xA21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xA21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xA21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xA21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xAA1F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xA21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xB21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xAA1F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xA21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xA21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xA21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xAA1F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xB21F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0x9A1F from register pair 0x02, 0x03
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x05: [131, 51]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Wrote to register 0x00: [33, 159]
+DEBUG:Adafruit_I2C.Device.Bus.1.Address.0X40:Read 0xAA1F from register pair 0x02, 0x03
