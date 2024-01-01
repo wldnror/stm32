@@ -73,7 +73,7 @@ def display_message(message):
 
 def display_menu():
     global updating_display
-    if updating_display:  # 화면 업데이트가 활성화된 경우에만 메뉴 표시
+    if updating_display:
         battery_percentage = read_ina219_percentage()
         ip_address = get_ip_address()
         current_time = get_current_time()
@@ -84,22 +84,21 @@ def display_menu():
             draw.text((10, 40), f"IP: {ip_address}", font=font_small, fill=255)
             draw.text((10, 50), f"Time: {current_time}", font=font_small, fill=255)
 
-
 def button_next_callback(channel):
     global current_menu_index, updating_display
-    updating_display = False  # 버튼 입력 시 화면 업데이트 중지
+    updating_display = False
     current_menu_index = (current_menu_index + 1) % len(menu_options)
     display_menu()
-    updating_display = True  # 화면 업데이트 재개
+    updating_display = True
 
 def button_execute_callback(channel):
     global updating_display
-    updating_display = False  # 버튼 입력 시 화면 업데이트 중지
+    updating_display = False
     if menu_options[current_menu_index] == "업데이트 재시도":
         git_pull()
     elif menu_options[current_menu_index] == "기존 상태로 복구":
         recover_previous_state()
-    updating_display = True  # 화면 업데이트 재개
+    updating_display = True
 
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
@@ -121,12 +120,18 @@ def git_pull():
     os.chmod(shell_script_path, 0o755)
     
     result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    
+
     if result.returncode == 0:
         if "이미 최신 상태" in result.stdout:
             display_message("이미 최신 상태")
         else:
             display_message("업데이트 성공!")
+            # 여기에 스크립트 실행 코드를 추가합니다.
+            try:
+                subprocess.run(["/home/user/stm32/serve.py"], check=True)
+                display_message("스크립트 실행 완료")
+            except subprocess.CalledProcessError:
+                display_message("스크립트 실행 실패")
     else:
         display_message("업데이트 실패")
     time.sleep(2)
@@ -143,8 +148,8 @@ def recover_previous_state():
 
 def update_display_every_second():
     while True:
-        display_menu()  # 메뉴 화면을 업데이트합니다.
-        time.sleep(1)  # 1초 간격으로 업데이트합니다.
+        display_menu()
+        time.sleep(1)
 
 def main():
     GPIO.setmode(GPIO.BCM)
@@ -153,10 +158,9 @@ def main():
     GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=300)
     GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=300)
 
-     # 별도 스레드에서 디스플레이 업데이트 함수를 실행합니다.
     update_thread = threading.Thread(target=update_display_every_second)
     update_thread.start()
-    
+
     display_menu()
 
     try:
