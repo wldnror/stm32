@@ -3,6 +3,7 @@ import subprocess
 import time
 from PIL import Image, ImageDraw, ImageFont
 from luma.core.interface.serial import i2c
+from luma.core.render import canvas  # 여기에 canvas 클래스를 임포트
 from luma.oled.device import sh1107
 
 # GPIO 핀 설정
