@@ -118,10 +118,10 @@ def git_pull():
             os.fsync(script_file.fileno())
 
     os.chmod(shell_script_path, 0o755)
-    
-   with canvas(device) as draw:
-        draw.text((36, 8), "시스템", font=font_big, fill=255)  # 폰트 변경
-        draw.text((17, 27), "업데이트 중", font=font_big, fill=255)  # 폰트 변경
+
+    with canvas(device) as draw:  # Corrected indentation
+        draw.text((36, 8), "시스템", font=font_big, fill=255)
+        draw.text((17, 27), "업데이트 중", font=font_big, fill=255)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
