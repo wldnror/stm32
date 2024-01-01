@@ -3,11 +3,18 @@ import re
 import time
 import sys
 
-# main.py 파일의 경로를 정확하게 지정하세요.
-path_to_main_py = "/home/user/stm32/main.py"
+def is_system_ready():
+    # 'cron' 서비스가 활성화되었는지 확인합니다.
+    status = subprocess.run(['systemctl', 'is-active', 'cron'], capture_output=True, text=True)
+    return status.returncode == 0
 
-# main.py 파일 실행 및 재시도 로직
 def execute_main_py():
+    # 시스템이 완전히 준비될 때까지 대기합니다.
+    while not is_system_ready():
+        print("시스템 준비 대기 중...")
+        time.sleep(5)
+
+    # 시스템이 준비되면 main.py를 실행합니다.
     while True:
         result = subprocess.run(["python3", path_to_main_py], capture_output=True, text=True)
         if result.returncode == 0:
@@ -15,7 +22,7 @@ def execute_main_py():
             break
         else:
             print(f"main.py 실행 실패: {result.stderr}, 재시도 중...")
-            time.sleep(5)  # 재시도 전에 10초간 대기
+            time.sleep(5)  # 재시도 전에 5초간 대기
 
 # Wi-Fi 네트워크를 스캔하는 함수
 def scan_wifi_networks(interface="wlan0"):
