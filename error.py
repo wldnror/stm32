@@ -130,7 +130,7 @@ def git_pull():
 
     with canvas(device) as draw:  # Corrected indentation
         draw.text((36, 8), "  시스템", font=font_big, fill=255)
-        draw.text((17, 27), " 업데이트 중", font=font_big, fill=255)
+        draw.text((17, 27), "   업데이트 중", font=font_big, fill=255)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -139,7 +139,7 @@ def git_pull():
         
         if result.returncode == 0:
             if "이미 최신 상태" in result.stdout:
-                display_message("이미 최신 상태")
+                display_message("  이미 최신 상태")
                 GPIO.output(LED_SUCCESS, True)
                 time.sleep(1)
                 GPIO.output(LED_SUCCESS, False)
