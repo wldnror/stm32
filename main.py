@@ -252,11 +252,18 @@ def git_pull():
         with open(shell_script_path, 'w') as script_file:
             script_file.write("#!/bin/bash\n")
             script_file.write("cd /home/user/stm32\n")
-            script_file.write("git stash\n")   # 임시로 변경사항을 저장
-            script_file.write("git pull\n")    # 원격 저장소의 변경사항을 가져옴
+            script_file.write("git remote update\n")  # 원격 저장소 정보 업데이트
+            script_file.write("if git status -uno | grep -q 'Your branch is up to date'; then\n")
+            script_file.write("   echo '이미 최신 상태입니다.'\n")
+            script_file.write("   exit 0\n")
+            script_file.write("fi\n")
+            script_file.write("git stash\n")  # 임시로 변경사항을 저장
+            script_file.write("git pull\n")  # 원격 저장소의 변경사항을 가져옴
             script_file.write("git stash pop\n")  # 저장했던 변경사항을 다시 적용
             script_file.flush()
             os.fsync(script_file.fileno())
+
+    os.chmod(shell_script_path, 0o755)
 
     os.chmod(shell_script_path, 0o755)
     
