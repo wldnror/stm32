@@ -48,22 +48,22 @@ last_mode_toggle_time = 0
 # 스크립트 시작 부분에 전역 변수 정의
 is_executing = False
 
-# def toggle_mode():
-#     global is_auto_mode, last_mode_toggle_time
-#     is_auto_mode = not is_auto_mode
-#     last_mode_toggle_time = time.time()
-#     update_oled_display()
+def toggle_mode():
+    global is_auto_mode, last_mode_toggle_time
+    is_auto_mode = not is_auto_mode
+    last_mode_toggle_time = time.time()
+    update_oled_display()
 
 def button_next_callback(channel):
-    global current_command_index, need_update, is_executing, is_button_pressed
+    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
     global last_time_button_next_pressed, last_time_button_execute_pressed
 
-    # current_time = time.time()
+    current_time = time.time()
     is_button_pressed = True
 
-    # if current_time - last_mode_toggle_time < 3:  # 모드 전환 후 3초 동안은 입력 무시
-    #     is_button_pressed = False
-    #     return
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
+        is_button_pressed = False
+        return
 
     # EXECUTE 버튼이 최근에 눌렸는지 확인
     if current_time - last_time_button_execute_pressed < button_press_interval:
@@ -78,15 +78,15 @@ def button_next_callback(channel):
 
 
 def button_execute_callback(channel):
-    global current_command_index, need_update, is_executing, is_button_pressed
+    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
     global last_time_button_next_pressed, last_time_button_execute_pressed
 
-    # current_time = time.time()
+    current_time = time.time()
     is_button_pressed = True
 
-    # if current_time - last_mode_toggle_time < 3:  # 모드 전환 후 3초 동안은 입력 무시
-    #     is_button_pressed = False
-    #     return
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
+        is_button_pressed = False
+        return
 
     # NEXT 버튼이 최근에 눌렸는지 확인
     if current_time - last_time_button_next_pressed < button_press_interval:
