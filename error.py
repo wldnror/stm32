@@ -89,9 +89,9 @@ def display_menu():
 
         with canvas(device) as draw:
             draw.text((10, 0), menu_options[current_menu_index], font=font_big, fill=255)
-            draw.text((10, 30), f"Battery: {battery_percentage}%", font=font_small, fill=255)
+            draw.text((10, 25), f"Battery: {battery_percentage}%", font=font_small, fill=255)
             draw.text((10, 40), f"IP: {ip_address}", font=font_small, fill=255)
-            draw.text((10, 50), f"Time: {current_time}", font=font_small, fill=255)
+            draw.text((10, 55), f"Time: {current_time}", font=font_small, fill=255)
 
 def button_next_callback(channel):
     global current_menu_index, updating_display
@@ -148,8 +148,9 @@ def git_pull():
                 GPIO.output(LED_SUCCESS, True)
                 time.sleep(1)
                 GPIO.output(LED_SUCCESS, False)
-                # 스크립트 재시작 또는 다른 조치를 취할 수 있습니다.
-        else:
+                # 업데이트 성공 시 main.py 스크립트 실행
+                subprocess.run(["python3", "/home/user/stm32/main.py"])
+        else
             display_message("업데이트 실패")
             GPIO.output(LED_ERROR, True)
             time.sleep(1)
