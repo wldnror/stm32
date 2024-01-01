@@ -16,6 +16,7 @@ log_file = os.path.join(os.path.expanduser("~"), "stm32/error.log")
 
 logging.basicConfig(filename=log_file, level=logging.DEBUG)
 
+
 # LED 핀 번호 정의
 LED_SUCCESS = 24
 LED_ERROR = 25
