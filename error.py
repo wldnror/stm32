@@ -29,7 +29,7 @@ menu_options = ["업데이트 재시도", "기존 상태로 복구"]
 current_menu_index = 0
 
 # 배터리 상태 읽기 함수
-def read_battery_percentage():
+def read_ina219_percentage():
     try:
         ina = INA219(SHUNT_OHMS)
         ina.configure()
@@ -58,12 +58,16 @@ def get_ip_address():
 def get_current_time():
     return datetime.now().strftime('%H:%M:%S')
 
+# 메시지 표시 함수
+def display_message(message):
+    with canvas(device) as draw:
+        draw.text((10, 20), message, font=font, fill=255)
 
 def display_menu():
     # 배터리 정보, IP 주소, 현재 시간을 읽어옵니다.
-    battery_percentage = read_battery_percentage()  # 함수 이름 수정
+    battery_percentage = read_ina219_percentage()
     ip_address = get_ip_address()
-    current_time = datetime.now().strftime('%H:%M:%S')
+    current_time = get_current_time()
 
     with canvas(device) as draw:
         # 메뉴 옵션 및 배터리 상태, IP 주소, 현재 시간 표시
@@ -71,10 +75,6 @@ def display_menu():
         draw.text((10, 30), f"Battery: {battery_percentage}%", font=font, fill=255)
         draw.text((10, 40), f"IP: {ip_address}", font=font, fill=255)
         draw.text((10, 50), f"Time: {current_time}", font=font, fill=255)
-
-
-    with canvas(device) as draw:
-        draw.text((10, 20), menu_options[current_menu_index], font=font, fill=255)
 
 def button_next_callback(channel):
     global current_menu_index
