@@ -1,15 +1,15 @@
 import os
 import RPi.GPIO as GPIO
-# import time
-# import subprocess
-# import socket
-# import threading
-# from datetime import datetime
-# from PIL import Image, ImageDraw, ImageFont
-# from luma.core.interface.serial import i2c
-# from luma.core.render import canvas
-# from luma.oled.device import sh1107
-# from ina219 import INA219, DeviceRangeError
+import time
+import subprocess
+import socket
+import threading
+from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
+from luma.core.interface.serial import i2c
+from luma.core.render import canvas
+from luma.oled.device import sh1107
+from ina219 import INA219, DeviceRangeError
 
 # LED 핀 번호 정의
 LED_SUCCESS = 24
