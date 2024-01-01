@@ -7,7 +7,7 @@ error_script = "/home/user/stm32/error.py"
 for attempt in range(max_retries):
     try:
         # serve.py 실행
-        result = subprocess.Popen(["python3", serve_script], check=True)
+        result = subprocess.run(["python3", serve_script], check=True)
         break  # 성공 시 루프 종료
     except subprocess.CalledProcessError:
         # serve.py 실행 실패
