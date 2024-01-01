@@ -276,8 +276,8 @@ def git_pull():
         GPIO.output(LED_ERROR1, False)
         
         if result.returncode == 0:
-            if "이미 최신 상태입니다." in result.stdout:
-                display_progress_and_message(100, "이미 최신 상태입니다.", message_position=(10, 10), font_size=15)
+            if "이미 최신 상태" in result.stdout:
+                display_progress_and_message(100, "이미 최신 상태", message_position=(10, 10), font_size=15)
                 time.sleep(1)
             else:
                 print("업데이트 성공!")
