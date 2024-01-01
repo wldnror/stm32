@@ -52,7 +52,7 @@ def is_connected(interface="wlan0"):
 
 # 메인 로직
 if __name__ == "__main__":
-    execute_main_py()  # main.py 실행 및 재시도
+    # execute_main_py()  # main.py 실행 및 재시도
     while True:
         if not is_connected():
             print("Network disconnected. Scanning for open networks...")
