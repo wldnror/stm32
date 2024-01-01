@@ -1,8 +1,14 @@
 import subprocess
 
-try:
-    # serve.py 실행
-    result = subprocess.run(["python3", "serve.py"], check=True)
-except subprocess.CalledProcessError:
-    # serve.py 실행 중 오류 발생 시 error.py 실행
-    subprocess.run(["python3", "error.py"])
+max_retries = 3  # 최대 재시도 횟수 설정
+for attempt in range(max_retries):
+    try:
+        # serve.py 실행
+        result = subprocess.run(["python3", "serve.py"], check=True)
+        break  # 성공 시 루프 종료
+    except subprocess.CalledProcessError:
+        # serve.py 실행 실패
+        if attempt == max_retries - 1:  # 마지막 시도에서도 실패한 경우
+            # error.py 실행
+            subprocess.run(["python3", "error.py"])
+        # 그 외 경우는 다시 시도
