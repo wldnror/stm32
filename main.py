@@ -63,15 +63,15 @@ def button_next_callback(channel):
         is_button_pressed = False
         return
 
-    with display_lock:
+    # with display_lock:
         # EXECUTE 버튼도 동시에 눌려있는지 확인
-        if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
-            toggle_mode()  # 모드 전환
-            need_update = True
-        else:
-            current_command_index = (current_command_index + 1) % len(commands)
-            need_update = True
-    is_button_pressed = False
+    if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
+        toggle_mode()  # 모드 전환
+        need_update = True
+    else:
+        current_command_index = (current_command_index + 1) % len(commands)
+        need_update = True
+is_button_pressed = False
 
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
@@ -95,14 +95,14 @@ def button_execute_callback(channel):
         execute_command(current_command_index)
         need_update = True
     else:
-        with display_lock:
+        # with display_lock:
         # 자동 모드의 기존 로직 유지
-           if current_command_index == command_names.index("시스템 업데이트"):
-              execute_command(current_command_index)
-           else:
-               if is_auto_mode:
-                   current_command_index = (current_command_index - 1) % len(commands)
-               else:
+        if current_command_index == command_names.index("시스템 업데이트"):
+            execute_command(current_command_index)
+        else:
+            if is_auto_mode:
+                current_command_index = (current_command_index - 1) % len(commands)
+            else:
                    execute_command(current_command_index)
         need_update = True
     is_button_pressed = False
