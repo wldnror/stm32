@@ -170,6 +170,7 @@ def update_retry():
 def recover_previous_state():
     display_message("기존 상태로 복구...")
     time.sleep(2)
+    subprocess.run(["python3", "/home/user/stm32/main.py"])
     # 복구 로직 구현
 
 def update_display_every_second():
