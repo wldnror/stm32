@@ -35,6 +35,11 @@ is_auto_mode = True
 # GPIO 핀 번호 모드 설정 및 초기 상태 설정
 GPIO.setmode(GPIO.BCM)
 
+# 전역 변수로 마지막으로 눌린 시간을 추적
+last_time_button_next_pressed = 0
+last_time_button_execute_pressed = 0
+button_press_interval = 0.5  # 두 버튼이 동시에 눌린 것으로 간주되는 최대 시간 차이
+
 need_update = False
 is_command_executing = False
 is_button_pressed = False
@@ -53,58 +58,59 @@ def toggle_mode():
 
 def button_next_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
+    global last_time_button_next_pressed, last_time_button_execute_pressed
+
+    current_time = time.time()
     is_button_pressed = True
-    if is_executing:
+
+    if is_executing or (current_time - last_mode_toggle_time < 0.3):  # 모드 전환 후 0.3초 동안은 입력 무시
         is_button_pressed = False
         return
 
-    # current_time = time.time()
-    # # if current_time - last_mode_toggle_time < 30:  # 모드 전환 후 1초 동안 버튼 입력 무시
-    #   is_button_pressed = False
-    #   return
+    # EXECUTE 버튼이 최근에 눌렸는지 확인
+    if current_time - last_time_button_execute_pressed < button_press_interval:
+        toggle_mode()  # 모드 전환
+        need_update = True
+    else:
+        current_command_index = (current_command_index + 1) % len(commands)
+        need_update = True
 
-    with display_lock:
-        # EXECUTE 버튼도 동시에 눌려있는지 확인
-        if GPIO.input(BUTTON_PIN_EXECUTE): #== GPIO.LOW:
-            toggle_mode()  # 모드 전환
-            need_update = True
-        else:
-            current_command_index = (current_command_index + 1) % len(commands)
-            need_update = True
+    last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
     is_button_pressed = False
+
 
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
+    global last_time_button_next_pressed, last_time_button_execute_pressed
+
+    current_time = time.time()
     is_button_pressed = True
-    if is_executing:
+
+    if is_executing or (current_time - last_mode_toggle_time < 0.3):  # 모드 전환 후 0.3초 동안은 입력 무시
         is_button_pressed = False
         return
-        
-    # current_time = time.time()
-    # # if current_time - last_mode_toggle_time < 30:  # 모드 전환 후 1초 동안 버튼 입력 무시
-    #    is_button_pressed = False
-    #    return
 
-    
-    # NEXT 버튼도 동시에 눌려있는지 확인
-    if GPIO.input(BUTTON_PIN_NEXT):# == GPIO.LOW:
+    # NEXT 버튼이 최근에 눌렸는지 확인
+    if current_time - last_time_button_next_pressed < button_press_interval:
         toggle_mode()  # 모드 전환
         need_update = True
-    elif not is_auto_mode:
-        # 수동 모드에서의 실행
-        execute_command(current_command_index)
-        need_update = True
     else:
-        with display_lock:
-        # 자동 모드의 기존 로직 유지
-           if current_command_index == command_names.index("시스템 업데이트"):
-              execute_command(current_command_index)
-           else:
-               if is_auto_mode:
-                   current_command_index = (current_command_index - 1) % len(commands)
-               else:
-                   execute_command(current_command_index)
-        need_update = True
+        # EXECUTE 버튼만 눌렸을 때의 로직
+        if not is_auto_mode:
+            execute_command(current_command_index)
+            need_update = True
+        else:
+            with display_lock:
+                if current_command_index == command_names.index("시스템 업데이트"):
+                    execute_command(current_command_index)
+                else:
+                    if is_auto_mode:
+                        current_command_index = (current_command_index - 1) % len(commands)
+                    else:
+                        execute_command(current_command_index)
+            need_update = True
+
+    last_time_button_execute_pressed = current_time  # EXECUTE 버튼 눌린 시간 갱신
     is_button_pressed = False
 
 # 모드 전환 함수
