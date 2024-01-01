@@ -70,7 +70,7 @@ def button_next_callback(channel):
         else:
             current_command_index = (current_command_index + 1) % len(commands)
             need_update = True
-   is_button_pressed = False
+        is_button_pressed = False
 
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
