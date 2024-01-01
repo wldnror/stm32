@@ -66,10 +66,12 @@ def button_next_callback(channel):
     with display_lock:
         # EXECUTE 버튼도 동시에 눌려있는지 확인
         if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
+            handle_both_buttons_pressed()
             toggle_mode()  # 모드 전환
             need_update = True
         else:
             current_command_index = (current_command_index + 1) % len(commands)
+            handle_next_button_only()
             need_update = True
     is_button_pressed = False
 
@@ -88,6 +90,7 @@ def button_execute_callback(channel):
     
     # NEXT 버튼도 동시에 눌려있는지 확인
     if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
+        handle_both_buttons_pressed()
         toggle_mode()  # 모드 전환
         need_update = True
     elif not is_auto_mode:
@@ -100,6 +103,7 @@ def button_execute_callback(channel):
            if current_command_index == command_names.index("시스템 업데이트"):
               execute_command(current_command_index)
            else:
+               handle_execute_button_only()
                if is_auto_mode:
                    current_command_index = (current_command_index - 1) % len(commands)
                else:
