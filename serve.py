@@ -13,17 +13,17 @@ from ina219 import INA219, DeviceRangeError
 import threading
 import psutil
 
-def find_and_kill_process(name):
-    """주어진 이름의 프로세스를 찾아 종료합니다."""
-    for process in psutil.process_iter(['pid', 'name']):
-        if process.info['name'] == name:
-            print(f"기존에 실행 중인 '{name}' 프로세스를 종료합니다 (PID: {process.pid}).")
-            process.terminate()
-            return True
-    return False
+# def find_and_kill_process(name):
+#     """주어진 이름의 프로세스를 찾아 종료합니다."""
+#     for process in psutil.process_iter(['pid', 'name']):
+#         if process.info['name'] == name:
+#             print(f"기존에 실행 중인 '{name}' 프로세스를 종료합니다 (PID: {process.pid}).")
+#             process.terminate()
+#             return True
+#     return False
 
-# 'main.py'가 실행 중인지 확인하고 종료
-find_and_kill_process('main.py')
+# # 'main.py'가 실행 중인지 확인하고 종료
+# find_and_kill_process('main.py')
 
 display_lock = threading.Lock()
 # GPIO 핀 설정
