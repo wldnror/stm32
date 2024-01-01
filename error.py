@@ -22,7 +22,9 @@ MAX_VOLTAGE = 4.2
 # OLED 디스플레이 설정
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
-font = ImageFont.truetype('/usr/share/fonts/truetype/malgun/malgunbd.ttf')
+
+# 폰트 경로 및 폰트 객체 생성
+font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
 font_big = ImageFont.truetype(font_path, 17)
 font_small = ImageFont.truetype(font_path, 12)
 
