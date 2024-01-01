@@ -11,6 +11,11 @@ from luma.core.render import canvas
 from luma.oled.device import sh1107
 from ina219 import INA219, DeviceRangeError
 
+#LED
+LED_SUCCESS = 24  # 성공 시에 켜질 LED의 GPIO 핀 번호
+LED_ERROR = 25    # 오류 시에 켜질 LED의 GPIO 핀 번호
+
+
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
