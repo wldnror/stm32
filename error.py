@@ -11,10 +11,14 @@ from luma.core.render import canvas
 from luma.oled.device import sh1107
 from ina219 import INA219, DeviceRangeError
 
-#LED
-LED_SUCCESS = 24  # 성공 시에 켜질 LED의 GPIO 핀 번호
-LED_ERROR = 25    # 오류 시에 켜질 LED의 GPIO 핀 번호
+# LED 핀 번호 정의
+LED_SUCCESS = 24
+LED_ERROR = 25
 
+# GPIO 설정
+GPIO.setmode(GPIO.BCM)  # GPIO 번호 지정 방식을 BCM으로 설정
+GPIO.setup(LED_SUCCESS, GPIO.OUT)  # LED_SUCCESS 핀을 출력으로 설정
+GPIO.setup(LED_ERROR, GPIO.OUT)    # LED_ERROR 핀을 출력으로 설정
 
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
