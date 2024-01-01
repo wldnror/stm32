@@ -129,8 +129,8 @@ def git_pull():
     os.chmod(shell_script_path, 0o755)
 
     with canvas(device) as draw:  # Corrected indentation
-        draw.text((36, 8), "시스템", font=font_big, fill=255)
-        draw.text((17, 27), "업데이트 중", font=font_big, fill=255)
+        draw.text((36, 8), "  시스템", font=font_big, fill=255)
+        draw.text((17, 27), " 업데이트 중", font=font_big, fill=255)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -144,14 +144,14 @@ def git_pull():
                 time.sleep(1)
                 GPIO.output(LED_SUCCESS, False)
             else:
-                display_message("업데이트 성공!")
+                display_message(" 업데이트 성공!")
                 GPIO.output(LED_SUCCESS, True)
                 time.sleep(1)
                 GPIO.output(LED_SUCCESS, False)
                 # 업데이트 성공 시 main.py 스크립트 실행
                 subprocess.run(["python3", "/home/user/stm32/main.py"])
         else:
-            display_message("업데이트 실패")
+            display_message(" 업데이트 실패")
             GPIO.output(LED_ERROR, True)
             time.sleep(1)
             GPIO.output(LED_ERROR, False)
