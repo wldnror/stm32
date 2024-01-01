@@ -1,5 +1,6 @@
 import subprocess
 import logging
+import os
 
 log_file = os.path.join(os.path.expanduser("~"), "stm32/main.log")
 
