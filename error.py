@@ -1,3 +1,4 @@
+import os
 import RPi.GPIO as GPIO
 import subprocess
 import time
