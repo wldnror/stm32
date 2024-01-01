@@ -60,8 +60,8 @@ def button_next_callback(channel):
 
     current_time = time.time()
     # if current_time - last_mode_toggle_time < 30:  # 모드 전환 후 1초 동안 버튼 입력 무시
-    is_button_pressed = False
-    return
+      is_button_pressed = False
+      return
 
     with display_lock:
         # EXECUTE 버튼도 동시에 눌려있는지 확인
@@ -82,8 +82,8 @@ def button_execute_callback(channel):
         
     current_time = time.time()
     # if current_time - last_mode_toggle_time < 30:  # 모드 전환 후 1초 동안 버튼 입력 무시
-    is_button_pressed = False
-    return
+       is_button_pressed = False
+       return
 
     
     # NEXT 버튼도 동시에 눌려있는지 확인
