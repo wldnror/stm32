@@ -22,7 +22,7 @@ MAX_VOLTAGE = 4.2
 # OLED 디스플레이 설정
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
-font = ImageFont.truetype('/usr/share/fonts/truetype/malgun/malgunbd.ttf', 17)
+font = ImageFont.truetype('/usr/share/fonts/truetype/malgun/malgunbd.ttf', 12)
 
 # 메뉴 옵션 설정
 menu_options = ["업데이트 재시도", "기존 상태로 복구"]
