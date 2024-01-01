@@ -74,16 +74,16 @@ def display_message(message):
 def display_menu():
     global updating_display
     if updating_display:  # 화면 업데이트가 활성화된 경우에만 메뉴 표시
-    battery_percentage = read_ina219_percentage()
-    ip_address = get_ip_address()
-    current_time = get_current_time()
-    
+        battery_percentage = read_ina219_percentage()
+        ip_address = get_ip_address()
+        current_time = get_current_time()
 
-    with canvas(device) as draw:
-        draw.text((10, 0), menu_options[current_menu_index], font=font_big, fill=255)
-        draw.text((10, 30), f"Battery: {battery_percentage}%", font=font_small, fill=255)
-        draw.text((10, 40), f"IP: {ip_address}", font=font_small, fill=255)
-        draw.text((10, 50), f"Time: {current_time}", font=font_small, fill=255)
+        with canvas(device) as draw:
+            draw.text((10, 0), menu_options[current_menu_index], font=font_big, fill=255)
+            draw.text((10, 30), f"Battery: {battery_percentage}%", font=font_small, fill=255)
+            draw.text((10, 40), f"IP: {ip_address}", font=font_small, fill=255)
+            draw.text((10, 50), f"Time: {current_time}", font=font_small, fill=255)
+
 
 def button_next_callback(channel):
     global current_menu_index, updating_display
