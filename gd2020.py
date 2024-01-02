@@ -16,6 +16,9 @@ PGC_PIN = 10
 PGD_PIN = 11
 # MCLR_PIN = 5V  # 이 핀은 실제 GPIO 핀이 아니므로, 라즈베리 파이에서 제어할 수 없습니다.
 
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM)
+
 GPIO.setup(PGC_PIN, GPIO.OUT)
 GPIO.setup(PGD_PIN, GPIO.OUT)
 # MCLR 핀은 별도의 전원 공급 장치를 통해 제어되어야 합니다.
