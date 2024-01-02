@@ -1,27 +1,15 @@
-
 import RPi.GPIO as GPIO
 import time
-
-# 기존 설정 정리
-GPIO.cleanup()
-
-# GPIO 설정
-PGD_PIN = 11
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(PGD_PIN, GPIO.OUT)
-
 
 # GPIO 핀 설정
 PGC_PIN = 10
 PGD_PIN = 11
-# MCLR_PIN = 5V  # 이 핀은 실제 GPIO 핀이 아니므로, 라즈베리 파이에서 제어할 수 없습니다.
 
-GPIO.setwarnings(False)
+# GPIO 설정
 GPIO.setmode(GPIO.BCM)
-
+GPIO.setwarnings(False)  # 경고 메시지 비활성화
 GPIO.setup(PGC_PIN, GPIO.OUT)
 GPIO.setup(PGD_PIN, GPIO.OUT)
-# MCLR 핀은 별도의 전원 공급 장치를 통해 제어되어야 합니다.
 
 def enter_programming_mode():
     pass
@@ -46,6 +34,7 @@ enter_programming_mode()
 program_hex_file("/path/to/your_hex_file.hex")
 exit_programming_mode()
 
+# GPIO 설정 정리
 GPIO.cleanup()
 
 # import subprocess
