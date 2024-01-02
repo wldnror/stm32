@@ -20,7 +20,7 @@ import time
 # GPIO 핀 설정
 PGC_PIN = 10
 PGD_PIN = 11
-MCLR_PIN = 5V  # 이 핀은 실제 GPIO 핀이 아니므로, 라즈베리 파이에서 제어할 수 없습니다.
+# MCLR_PIN = 5V  # 이 핀은 실제 GPIO 핀이 아니므로, 라즈베리 파이에서 제어할 수 없습니다.
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(PGC_PIN, GPIO.OUT)
