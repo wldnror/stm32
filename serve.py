@@ -11,9 +11,9 @@ from luma.oled.device import sh1107
 import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
-import logging
+# import logging
 
-log_file = os.path.join(os.path.expanduser("~"), "stm32/serve.log")
+# log_file = os.path.join(os.path.expanduser("~"), "stm32/serve.log")
 
 logging.basicConfig(filename=log_file, level=logging.WARNING)
 
