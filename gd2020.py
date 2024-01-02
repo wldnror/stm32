@@ -1,37 +1,13 @@
-import RPi.GPIO as GPIO
-import time
+import subprocess
 
-# GPIO 핀 설정
-MCLR_PIN = 18  # MCLR/VPP 핀에 연결된 Raspberry Pi의 GPIO 핀 (12V-13V 전원 제어용)
-PGD_PIN = 10   # ICSPDAT에 연결된 Raspberry Pi의 GPIO 핀
-PGC_PIN = 11   # ICSPCLK에 연결된 Raspberry Pi의 GPIO 핀
+# 프로그래밍할 HEX 파일의 경로
+hex_file_path = '/Program/nh3-gn8020-e.hex'
 
-# GPIO 초기화
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(MCLR_PIN, GPIO.OUT)
-GPIO.setup(PGD_PIN, GPIO.OUT)
-GPIO.setup(PGC_PIN, GPIO.OUT)
-
-# MCLR/VPP 핀을 통해 프로그래밍 모드 진입
-def enter_programming_mode():
-    GPIO.output(MCLR_PIN, GPIO.HIGH)
-    time.sleep(0.1)
-
-# 프로그래밍 모드 종료
-def exit_programming_mode():
-    GPIO.output(MCLR_PIN, GPIO.LOW)
-
-# 가상의 프로그래밍 시퀀스
-def program_device():
-    enter_programming_mode()
-    # 프로그래밍 과정을 구현 (예: 데이터 전송, 클록 신호 전송 등)
-    print("프로그래밍 진행 중...")
-    time.sleep(1)  # 가상의 지연 시간
-    exit_programming_mode()
-
-# 프로그래밍 실행
+# Pickle 명령어를 사용하여 PIC 프로그래밍
+# 여기서는 14-bit PIC 마이크로컨트롤러를 예로 들었습니다.
+# 실제 PIC 유형에 따라 명령어를 조정해야 할 수 있습니다 (예: p16, n16 등).
 try:
-    program_device()
-    print("프로그래밍 완료")
-finally:
-    GPIO.cleanup()
+    subprocess.run(['pickle', 'p14', 'lvp', 'program', hex_file_path], check=True)
+    print("프로그래밍 성공")
+except subprocess.CalledProcessError as e:
+    print(f"프로그래밍 실패: {e}")
