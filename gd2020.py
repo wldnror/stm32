@@ -1,7 +1,7 @@
 import subprocess
 
 # 프로그래밍할 HEX 파일의 경로
-hex_file_path = '/Program/nh3-gn8020-e.hex'
+hex_file_path = '/home/user/stm32/Program/nh3-gn8020-e.hex'
 
 # Pickle 명령어를 사용하여 PIC 프로그래밍
 # 여기서는 14-bit PIC 마이크로컨트롤러를 예로 들었습니다.
