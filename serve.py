@@ -15,7 +15,7 @@ import threading
 
 # log_file = os.path.join(os.path.expanduser("~"), "stm32/serve.log")
 
-logging.basicConfig(filename=log_file, level=logging.WARNING)
+# logging.basicConfig(filename=log_file, level=logging.WARNING)
 
 display_lock = threading.Lock()
 # GPIO 핀 설정
