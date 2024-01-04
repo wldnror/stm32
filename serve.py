@@ -434,7 +434,7 @@ def execute_command(command_index):
     process = subprocess.Popen(commands[command_index], shell=True)
     
     start_time = time.time()
-    max_duration = 6
+    max_duration = 7
     progress_increment = 20 / max_duration
     
     while process.poll() is None:
