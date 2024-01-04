@@ -517,7 +517,7 @@ def update_oled_display():
                 elif command_names[current_command_index] == "HC100":
                     draw.text((32, 27), 'HC100', font=font_1, fill=255)
                 elif command_names[current_command_index] == "SAT4010":
-                    draw.text((20, 27), 'SAT4010', font=font_1, fill=255)
+                    draw.text((22, 27), 'SAT4010', font=font_1, fill=255)
                 elif command_names[current_command_index] == "IPA":
                     draw.text((47, 27), 'IPA', font=font_1, fill=255)
                 elif command_names[current_command_index] == "ASGD S PNP":
