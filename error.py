@@ -63,8 +63,9 @@ def read_ina219_percentage():
             return 100
         else:
             return int(((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100)
-    except DeviceRangeError:
-        return 0
+    except (OSError, DeviceRangeError):
+        # INA219 모듈이 인식되지 않을 때 처리
+        return -1  # 예를 들어 -1을 반환하여 모듈 미인식 상태 표시
 
 # IP 주소 얻기 함수
 def get_ip_address():
@@ -79,7 +80,11 @@ def get_ip_address():
 
 # 현재 시간 얻기 함수
 def get_current_time():
-    return datetime.now().strftime('%H:%M:%S')
+    try:
+        return datetime.now().strftime('%H:%M:%S')
+    except OSError:
+        # DS3231 모듈이 인식되지 않을 때 처리
+        return '시계 모듈 없음'
 
 # 메시지 표시 함수
 def display_message(message):
