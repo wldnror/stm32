@@ -186,10 +186,11 @@ def read_ina219_percentage():
         elif voltage >= MAX_VOLTAGE:
             return 100
         else:
-            percentage = ((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100
-            return min(max(percentage, 0), 100)
-    except DeviceRangeError as e:
-        return 0
+            return int(((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100)
+    except Exception as e:
+        # 예외 발생 시 로그 남기기
+        print("INA219 모듈 읽기 실패:", str(e))
+        return -1
 
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
@@ -535,21 +536,17 @@ realtime_update_thread = threading.Thread(target=realtime_update_display)
 realtime_update_thread.daemon = True
 realtime_update_thread.start()
 
-
-
 def shutdown_system():
-    with canvas(device) as draw:
-        # 첫 번째 메시지를 (0, 0) 위치에 표시
-        draw.text((20, 25), "배터리 부족", font=font, fill=255)
-        # 두 번째 메시지를 (0, 25) 위치에 표시
-        draw.text((25, 50), "시스템 종료 중...", font=font_st, fill=255)
-
-    time.sleep(5)  # 메시지를 5초 동안 표시
-
-    # 디스플레이 전원을 끄는 코드 추가
-    GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
-
-    os.system('sudo shutdown -h now')  # 시스템을 안전하게 종료합니다.
+    try:
+        with canvas(device) as draw:
+            draw.text((20, 25), "배터리 부족", font=font, fill=255)
+            draw.text((25, 50), "시스템 종료 중...", font=font_st, fill=255)
+        time.sleep(5)
+        GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
+        os.system('sudo shutdown -h now')
+    except Exception as e:
+        # 예외 발생 시 로그 남기기
+        print("시스템 종료 중 오류 발생:", str(e))
 
 # 초기 디스플레이 업데이트
 update_oled_display()
