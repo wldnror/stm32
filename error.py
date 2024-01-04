@@ -80,11 +80,7 @@ def get_ip_address():
 
 # 현재 시간 얻기 함수
 def get_current_time():
-    try:
-        return datetime.now().strftime('%H:%M:%S')
-    except OSError:
-        # DS3231 모듈이 인식되지 않을 때 처리
-        return '시계 모듈 없음'
+    return datetime.now().strftime('%H:%M:%S')
 
 # 메시지 표시 함수
 def display_message(message):
