@@ -63,9 +63,8 @@ def read_ina219_percentage():
             return 100
         else:
             return int(((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100)
-    except (OSError, DeviceRangeError):
-        # INA219 모듈이 인식되지 않을 때 처리
-        return -1  # 예를 들어 -1을 반환하여 모듈 미인식 상태 표시
+    except DeviceRangeError:
+        return 0
 
 # IP 주소 얻기 함수
 def get_ip_address():
