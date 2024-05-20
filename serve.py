@@ -16,6 +16,7 @@ display_lock = threading.Lock()
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
+BUTTON_PIN_PREV = 22
 LED_SUCCESS = 24
 LED_ERROR = 25
 LED_ERROR1 = 23
@@ -34,6 +35,7 @@ GPIO.setmode(GPIO.BCM)
 # 전역 변수로 마지막으로 눌린 시간을 추적
 last_time_button_next_pressed = 0
 last_time_button_execute_pressed = 0
+last_time_button_prev_pressed = 0
 button_press_interval = 0.5  # 두 버튼이 동시에 눌린 것으로 간주되는 최대 시간 차이
 
 need_update = False
@@ -63,20 +65,36 @@ def button_next_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 0.3):  # 모드 전환 후 0.3초 동안은 입력 무시
         is_button_pressed = False
         return
 
     current_command_list = test_commands if in_test_menu else main_commands
 
-    if current_time - last_time_button_execute_pressed < button_press_interval:
-        toggle_mode()  # 모드 전환
-        need_update = True
-    else:
-        current_command_index = (current_command_index + 1) % len(current_command_list)
-        need_update = True
+    current_command_index = (current_command_index + 1) % len(current_command_list)
+    need_update = True
 
     last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
+    is_button_pressed = False
+
+def button_prev_callback(channel):
+    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
+    global last_time_button_prev_pressed
+    global in_test_menu
+
+    current_time = time.time()
+    is_button_pressed = True
+
+    if is_executing or (current_time - last_mode_toggle_time < 0.3):  # 모드 전환 후 0.3초 동안은 입력 무시
+        is_button_pressed = False
+        return
+
+    current_command_list = test_commands if in_test_menu else main_commands
+
+    current_command_index = (current_command_index - 1) % len(current_command_list)
+    need_update = True
+
+    last_time_button_prev_pressed = current_time  # PREV 버튼 눌린 시간 갱신
     is_button_pressed = False
 
 def button_execute_callback(channel):
@@ -87,29 +105,24 @@ def button_execute_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 0.3):  # 모드 전환 후 0.3초 동안은 입력 무시
         is_button_pressed = False
         return
 
-    # NEXT 버튼이 최근에 눌렸는지 확인
-    if current_time - last_time_button_next_pressed < button_press_interval:
-        toggle_mode()  # 모드 전환
-        need_update = True
-    else:
-        # EXECUTE 버튼만 눌렸을 때의 로직
-        if in_test_menu:
-            if test_command_names[current_command_index] == "뒤로 가기":
-                in_test_menu = False
-                current_command_index = 0  # 메인 메뉴로 돌아가기
-            else:
-                execute_command(current_command_index, in_test_menu=True)
+    # EXECUTE 버튼만 눌렸을 때의 로직
+    if in_test_menu:
+        if test_command_names[current_command_index] == "뒤로 가기":
+            in_test_menu = False
+            current_command_index = 0  # 메인 메뉴로 돌아가기
         else:
-            if main_command_names[current_command_index] in ["테스트", "시스템 업데이트"]:
-                if main_command_names[current_command_index] == "테스트":
-                    in_test_menu = True
-                    current_command_index = 0
-                execute_command(current_command_index, in_test_menu=False)
-        need_update = True
+            execute_command(current_command_index, in_test_menu=True)
+    else:
+        if main_command_names[current_command_index] == "테스트":
+            in_test_menu = True
+            current_command_index = 0
+        elif main_command_names[current_command_index] == "시스템 업데이트":
+            execute_command(current_command_index, in_test_menu=False)
+    need_update = True
 
     last_time_button_execute_pressed = current_time  # EXECUTE 버튼 눌린 시간 갱신
     is_button_pressed = False
@@ -127,8 +140,10 @@ manual_mode_text = 'M'
 # GPIO 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(BUTTON_PIN_PREV, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=800)
 GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=800)
+GPIO.add_event_detect(BUTTON_PIN_PREV, GPIO.FALLING, callback=button_prev_callback, bouncetime=800)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
