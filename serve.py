@@ -487,7 +487,7 @@ def get_ip_address():
         return "0.0.0.0"
         
 def update_oled_display():
-    global current_command_index, status_message, message_position, message_font_size, is_button_pressed
+    global current_command_index, status_message, message_position, message_font_size, is_button_pressed, current_menu
     with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
         if is_button_pressed:
             return  # 버튼 입력 모드에서는 화면 업데이트 무시
@@ -498,48 +498,50 @@ def update_oled_display():
         voltage_percentage = read_ina219_percentage()
 
         with canvas(device) as draw:
-            if command_names[current_command_index] != "시스템 업데이트":
-                mode_char = 'A' if is_auto_mode else 'M'
-                outer_ellipse_box = (2, 0, 22, 20)
-                text_position = {'A': (8, -3), 'M': (5, -3)}
-                draw.ellipse(outer_ellipse_box, outline="white", fill=None)
-                draw.text(text_position[mode_char], mode_char, font=font, fill=255)
+            if current_menu == "main":
+                if command_names[current_command_index] != "시스템 업데이트":
+                    mode_char = 'A' if is_auto_mode else 'M'
+                    outer_ellipse_box = (2, 0, 22, 20)
+                    text_position = {'A': (8, -3), 'M': (5, -3)}
+                    draw.ellipse(outer_ellipse_box, outline="white", fill=None)
+                    draw.text(text_position[mode_char], mode_char, font=font, fill=255)
 
-            if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "SAT4010", "IPA", "ASGD S PNP", "TEST"]:
-                battery_icon = select_battery_icon(voltage_percentage)
-                draw.bitmap((90, -9), battery_icon, fill=255)
-                draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
-                draw.text((27, 1), current_time, font=font_time, fill=255)
-            elif command_names[current_command_index] == "시스템 업데이트":
-                draw.text((0, 51), ip_address, font=font_big, fill=255)
-                draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
-                draw.text((90, 50), 'ver 3.4', font=font_big, fill=255)
-                draw.text((0, -3), current_time, font=font_time, fill=255)
-
-            if status_message:
-                draw.rectangle(device.bounding_box, outline="white", fill="black")
-                font_custom = ImageFont.truetype(font_path, message_font_size)
-                draw.text(message_position, status_message, font=font_custom, fill=255)
-            else:
-                if command_names[current_command_index] == "ORG":
-                    draw.text((42, 27), 'ORG', font=font_1, fill=255)
-                elif command_names[current_command_index] == "HMDS":
-                    draw.text((33, 27), 'HMDS', font=font_1, fill=255)
-                elif command_names[current_command_index] == "ARF-T":
-                    draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
-                elif command_names[current_command_index] == "HC100":
-                    draw.text((32, 27), 'HC100', font=font_1, fill=255)
-                elif command_names[current_command_index] == "SAT4010":
-                    draw.text((22, 27), 'SAT4010', font=font_1, fill=255)
-                elif command_names[current_command_index] == "IPA":
-                    draw.text((47, 27), 'IPA', font=font_1, fill=255)
-                elif command_names[current_command_index] == "ASGD S PNP":
-                    draw.text((2, 27), 'ASGD S PNP', font=font_1, fill=255)
-                elif command_names[current_command_index] == "TEST":
-                    draw.text((33, 27), 'TEST', font=font_1, fill=255)
+                if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "SAT4010", "IPA", "ASGD S PNP", "테스트"]:
+                    battery_icon = select_battery_icon(voltage_percentage)
+                    draw.bitmap((90, -9), battery_icon, fill=255)
+                    draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
+                    draw.text((27, 1), current_time, font=font_time, fill=255)
                 elif command_names[current_command_index] == "시스템 업데이트":
-                    draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
+                    draw.text((0, 51), ip_address, font=font_big, fill=255)
+                    draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
+                    draw.text((90, 50), 'ver 3.4', font=font_big, fill=255)
+                    draw.text((0, -3), current_time, font=font_time, fill=255)
 
+                if status_message:
+                    draw.rectangle(device.bounding_box, outline="white", fill="black")
+                    font_custom = ImageFont.truetype(font_path, message_font_size)
+                    draw.text(message_position, status_message, font=font_custom, fill=255)
+                else:
+                    if command_names[current_command_index] == "ORG":
+                        draw.text((42, 27), 'ORG', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "HMDS":
+                        draw.text((33, 27), 'HMDS', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "ARF-T":
+                        draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "HC100":
+                        draw.text((32, 27), 'HC100', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "SAT4010":
+                        draw.text((22, 27), 'SAT4010', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "IPA":
+                        draw.text((47, 27), 'IPA', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "ASGD S PNP":
+                        draw.text((2, 27), 'ASGD S PNP', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "테스트":
+                        draw.text((33, 27), '테스트', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "시스템 업데이트":
+                        draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
+            elif current_menu == "test":
+                draw.text((20, 20), test_command_names[current_command_index], font=font_1, fill=255)
 
 # 실시간 업데이트를 위한 스레드 함수
 def realtime_update_display():
