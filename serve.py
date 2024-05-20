@@ -83,13 +83,14 @@ def button_next_callback(channel):
         current_command_index = (current_command_index + 1) % len(commands)
         need_update = True
 
-    last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
+    last_time_button_prev_pressed = current_time  # PREV 버튼 눌린 시간 갱신
     is_button_pressed = False
 
 
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
     global last_time_button_next_pressed, last_time_button_execute_pressed
+    global in_test_menu
 
     current_time = time.time()
     is_button_pressed = True
