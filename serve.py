@@ -27,7 +27,7 @@ MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
-is_test_mode = False
+is_in_test_menu = False
 
 # GPIO 핀 번호 모드 설정 및 초기 상태 설정
 GPIO.setmode(GPIO.BCM)
@@ -53,20 +53,9 @@ def toggle_mode():
     last_mode_toggle_time = time.time()
     update_oled_display()
 
-def enter_test_mode():
-    global is_test_mode
-    is_test_mode = True
-    update_oled_display()
-
-def exit_test_mode():
-    global is_test_mode, current_command_index
-    is_test_mode = False
-    current_command_index = command_names.index("TEST")
-    update_oled_display()
-
 def button_next_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
-    global last_time_button_next_pressed, last_time_button_execute_pressed
+    global last_time_button_next_pressed, last_time_button_execute_pressed, is_in_test_menu
 
     current_time = time.time()
     is_button_pressed = True
@@ -80,8 +69,8 @@ def button_next_callback(channel):
         toggle_mode()  # 모드 전환
         need_update = True
     else:
-        if is_test_mode and is_auto_mode:
-            execute_command(current_command_index)
+        if is_in_test_menu:
+            current_command_index = (current_command_index + 1) % len(test_commands)
         else:
             current_command_index = (current_command_index + 1) % len(commands)
         need_update = True
@@ -89,8 +78,9 @@ def button_next_callback(channel):
     last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
     is_button_pressed = False
 
+
 def button_execute_callback(channel):
-    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
+    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed, is_in_test_menu
     global last_time_button_next_pressed, last_time_button_execute_pressed
 
     current_time = time.time()
@@ -105,19 +95,14 @@ def button_execute_callback(channel):
         toggle_mode()  # 모드 전환
         need_update = True
     else:
-        # EXECUTE 버튼만 눌렸을 때의 로직
-        if not is_auto_mode or is_test_mode:
-            execute_command(current_command_index)
-            need_update = True
+        if is_in_test_menu:
+            execute_command(test_commands[current_command_index])
         else:
-            with display_lock:
-                if current_command_index == command_names.index("시스템 업데이트"):
-                    execute_command(current_command_index)
-                else:
-                    if is_auto_mode:
-                        current_command_index = (current_command_index - 1) % len(commands)
-                    else:
-                        execute_command(current_command_index)
+            if command_names[current_command_index] == "TEST":
+                is_in_test_menu = True
+                current_command_index = 0
+            else:
+                execute_command(current_command_index)
             need_update = True
 
     last_time_button_execute_pressed = current_time  # EXECUTE 버튼 눌린 시간 갱신
@@ -128,7 +113,7 @@ def toggle_mode():
     global is_auto_mode
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
-    
+
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
 auto_mode_text = 'A'
 manual_mode_text = 'M'
@@ -239,13 +224,17 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
-    "enter_test_mode",
-    "upload_test_file",
-    "download_test_file",
+    "TEST",
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
-command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP","TEST", "업로드 테스트", "다운로드 테스트", "시스템 업데이트"]
+test_commands = [
+    "upload_test_file",
+    "download_test_file"
+]
+
+command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP","TEST", "시스템 업데이트"]
+test_command_names = ["업로드 테스트", "다운로드 테스트"]
 
 current_command_index = 0
 status_message = ""
@@ -432,8 +421,8 @@ def extract_file_from_stm32():
         print("명령 실행 중 오류 발생:", str(e))
         display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(10, 10), font_size=15)
 
-def execute_command(command_index):
-    global is_executing, is_command_executing
+def execute_command(command):
+    global is_executing, is_command_executing, is_in_test_menu
     is_executing = True  # 작업 시작 전에 상태를 실행 중으로 설정
     is_command_executing = True  # 명령 실행 중 상태 활성화
 
@@ -442,31 +431,33 @@ def execute_command(command_index):
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-    if command_index == len(commands) - 1:
+    if command == "git_pull":
         git_pull()
         is_executing = False
         is_command_executing = False
         return
 
-    if command_index == 7:   # TEST 메뉴 진입
-        enter_test_mode()
+    if command == "TEST":
+        is_in_test_menu = True
+        current_command_index = 0
+        update_oled_display()
         is_executing = False
         is_command_executing = False
         return
 
-    if is_test_mode:
-        if command_index == 8:  # 업로드 테스트
+    if is_in_test_menu:
+        if command == "upload_test_file":
             lock_memory_procedure()
             is_executing = False
             is_command_executing = False
             return
 
-        if command_index == 9:  # 다운로드 테스트
+        if command == "download_test_file":
             extract_file_from_stm32()
             is_executing = False
             is_command_executing = False
             return
-        
+
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -481,7 +472,7 @@ def execute_command(command_index):
         return
 
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
-    process = subprocess.Popen(commands[command_index], shell=True)
+    process = subprocess.Popen(command, shell=True)
     
     start_time = time.time()
     max_duration = 6
@@ -496,12 +487,12 @@ def execute_command(command_index):
 
     result = process.returncode
     if result == 0:
-        print(f"'{commands[command_index]}' 업데이트 성공!")
+        print(f"'{command}' 업데이트 성공!")
         display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
         time.sleep(0.5)
         lock_memory_procedure()
     else:
-        print(f"'{commands[command_index]}' 업데이트 실패!")
+        print(f"'{command}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         display_progress_and_message(0, "업데이트 실패", message_position=(7, 10), font_size=15)
@@ -524,7 +515,7 @@ def get_ip_address():
         return "0.0.0.0"
         
 def update_oled_display():
-    global current_command_index, status_message, message_position, message_font_size, is_button_pressed
+    global current_command_index, status_message, message_position, message_font_size, is_button_pressed, is_in_test_menu
     with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
         if is_button_pressed:
             return  # 버튼 입력 모드에서는 화면 업데이트 무시
@@ -542,7 +533,7 @@ def update_oled_display():
                 draw.ellipse(outer_ellipse_box, outline="white", fill=None)
                 draw.text(text_position[mode_char], mode_char, font=font, fill=255)
 
-            if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "SAT4010", "IPA", "ASGD S PNP", "업로드 테스트", "다운로드 테스트"]:
+            if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "SAT4010", "IPA", "ASGD S PNP"]:
                 battery_icon = select_battery_icon(voltage_percentage)
                 draw.bitmap((90, -9), battery_icon, fill=255)
                 draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
@@ -558,26 +549,30 @@ def update_oled_display():
                 font_custom = ImageFont.truetype(font_path, message_font_size)
                 draw.text(message_position, status_message, font=font_custom, fill=255)
             else:
-                if command_names[current_command_index] == "ORG":
-                    draw.text((42, 27), 'ORG', font=font_1, fill=255)
-                elif command_names[current_command_index] == "HMDS":
-                    draw.text((33, 27), 'HMDS', font=font_1, fill=255)
-                elif command_names[current_command_index] == "ARF-T":
-                    draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
-                elif command_names[current_command_index] == "HC100":
-                    draw.text((32, 27), 'HC100', font=font_1, fill=255)
-                elif command_names[current_command_index] == "SAT4010":
-                    draw.text((22, 27), 'SAT4010', font=font_1, fill=255)
-                elif command_names[current_command_index] == "IPA":
-                    draw.text((47, 27), 'IPA', font=font_1, fill=255)
-                elif command_names[current_command_index] == "ASGD S PNP":
-                    draw.text((2, 27), 'ASGD S PNP', font=font_1, fill=255)
-                elif command_names[current_command_index] == "업로드 테스트":
-                    draw.text((10, 27), '업로드 테스트', font=font_1, fill=255)
-                elif command_names[current_command_index] == "다운로드 테스트":
-                    draw.text((10, 27), '다운로드 테스트', font=font_1, fill=255)
-                elif command_names[current_command_index] == "시스템 업데이트":
-                    draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
+                if is_in_test_menu:
+                    if test_command_names[current_command_index] == "업로드 테스트":
+                        draw.text((10, 27), '업로드 테스트', font=font_1, fill=255)
+                    elif test_command_names[current_command_index] == "다운로드 테스트":
+                        draw.text((10, 27), '다운로드 테스트', font=font_1, fill=255)
+                else:
+                    if command_names[current_command_index] == "ORG":
+                        draw.text((42, 27), 'ORG', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "HMDS":
+                        draw.text((33, 27), 'HMDS', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "ARF-T":
+                        draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "HC100":
+                        draw.text((32, 27), 'HC100', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "SAT4010":
+                        draw.text((22, 27), 'SAT4010', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "IPA":
+                        draw.text((47, 27), 'IPA', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "ASGD S PNP":
+                        draw.text((2, 27), 'ASGD S PNP', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "TEST":
+                        draw.text((33, 27), 'TEST', font=font_1, fill=255)
+                    elif command_names[current_command_index] == "시스템 업데이트":
+                        draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
 
 
 # 실시간 업데이트를 위한 스레드 함수
