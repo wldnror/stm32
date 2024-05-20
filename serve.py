@@ -97,7 +97,11 @@ def button_execute_callback(channel):
         need_update = True
     else:
         if is_in_test_menu:
-            execute_command(test_commands[current_command_index])
+            if test_commands[current_command_index] == "back":
+                is_in_test_menu = False
+                current_command_index = command_names.index("TEST")
+            else:
+                execute_command(test_commands[current_command_index])
         else:
             if command_names[current_command_index] == "TEST":
                 is_in_test_menu = True
@@ -231,11 +235,12 @@ commands = [
 
 test_commands = [
     "upload_test_file",
-    "download_test_file"
+    "download_test_file",
+    "back"
 ]
 
 command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP","TEST", "시스템 업데이트"]
-test_command_names = ["업로드 테스트", "다운로드 테스트"]
+test_command_names = ["추출", "디버깅", "뒤로 가기"]
 
 current_command_index = 0
 status_message = ""
@@ -483,6 +488,14 @@ def execute_command(command):
             is_command_executing = False
             return
 
+        if command == "back":
+            is_in_test_menu = False
+            current_command_index = command_names.index("TEST")
+            update_oled_display()
+            is_executing = False
+            is_command_executing = False
+            return
+
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -497,7 +510,7 @@ def execute_command(command):
         return
 
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
-    process = subprocess.Popen(command, shell=True)
+    process = subprocess.Popen(commands[command], shell=True)
     
     start_time = time.time()
     max_duration = 6
@@ -575,10 +588,12 @@ def update_oled_display():
                 draw.text(message_position, status_message, font=font_custom, fill=255)
             else:
                 if is_in_test_menu:
-                    if test_command_names[current_command_index] == "업로드 테스트":
-                        draw.text((10, 27), '업로드 테스트', font=font_1, fill=255)
-                    elif test_command_names[current_command_index] == "다운로드 테스트":
-                        draw.text((10, 27), '다운로드 테스트', font=font_1, fill=255)
+                    if test_command_names[current_command_index] == "추출":
+                        draw.text((10, 27), '추출', font=font_1, fill=255)
+                    elif test_command_names[current_command_index] == "디버깅":
+                        draw.text((10, 27), '디버깅', font=font_1, fill=255)
+                    elif test_command_names[current_command_index] == "뒤로 가기":
+                        draw.text((10, 27), '뒤로 가기', font=font_1, fill=255)
                 else:
                     if command_names[current_command_index] == "ORG":
                         draw.text((42, 27), 'ORG', font=font_1, fill=255)
