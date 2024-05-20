@@ -232,11 +232,12 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/TEST.bin verify reset exit 0x08000000\"",
+    "upload_test_file",
+    "download_test_file",
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
-command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP","TEST", "시스템 업데이트"]
+command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP","업로드 테스트", "다운로드 테스트", "시스템 업데이트"]
 
 current_command_index = 0
 status_message = ""
@@ -396,6 +397,33 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
+def extract_file_from_stm32():
+    memory_address = "0x08000000"  # 예시 주소
+    memory_size = "256K"
+    save_path = "/home/user/stm32/Download/SAT4010.bin"
+    openocd_command = [
+        "sudo", "openocd",
+        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "init",
+        "-c", "reset halt",
+        "-c", f"flash read_bank 0 {save_path} 0",
+        "-c", "reset run",
+        "-c", "shutdown",
+    ]
+    try:
+        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            print("파일 추출 성공!")
+            display_progress_and_message(100, "파일 추출 성공", message_position=(10, 10), font_size=15)
+        else:
+            print("파일 추출 실패. 오류 코드:", result.returncode)
+            print("오류 메시지:", result.stderr)
+            display_progress_and_message(0, "파일 추출 실패", message_position=(10, 10), font_size=15)
+    except Exception as e:
+        print("명령 실행 중 오류 발생:", str(e))
+        display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(10, 10), font_size=15)
+
 def execute_command(command_index):
     global is_executing, is_command_executing
     is_executing = True  # 작업 시작 전에 상태를 실행 중으로 설정
@@ -412,8 +440,14 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    if command_index == 7:   # 메뉴 목록이 늘어나거나 줄어들때 사용!
+    if command_index == 7:   # 업로드 테스트
         lock_memory_procedure()
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if command_index == 8:  # 다운로드 테스트
+        extract_file_from_stm32()
         is_executing = False
         is_command_executing = False
         return
@@ -493,7 +527,7 @@ def update_oled_display():
                 draw.ellipse(outer_ellipse_box, outline="white", fill=None)
                 draw.text(text_position[mode_char], mode_char, font=font, fill=255)
 
-            if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "SAT4010", "IPA", "ASGD S PNP", "TEST"]:
+            if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "SAT4010", "IPA", "ASGD S PNP", "업로드 테스트", "다운로드 테스트"]:
                 battery_icon = select_battery_icon(voltage_percentage)
                 draw.bitmap((90, -9), battery_icon, fill=255)
                 draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
@@ -523,8 +557,10 @@ def update_oled_display():
                     draw.text((47, 27), 'IPA', font=font_1, fill=255)
                 elif command_names[current_command_index] == "ASGD S PNP":
                     draw.text((2, 27), 'ASGD S PNP', font=font_1, fill=255)
-                elif command_names[current_command_index] == "TEST":
-                    draw.text((33, 27), 'TEST', font=font_1, fill=255)
+                elif command_names[current_command_index] == "업로드 테스트":
+                    draw.text((10, 27), '업로드 테스트', font=font_1, fill=255)
+                elif command_names[current_command_index] == "다운로드 테스트":
+                    draw.text((10, 27), '다운로드 테스트', font=font_1, fill=255)
                 elif command_names[current_command_index] == "시스템 업데이트":
                     draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
 
