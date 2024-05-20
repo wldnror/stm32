@@ -67,15 +67,13 @@ def button_next_callback(channel):
         is_button_pressed = False
         return
 
-    # EXECUTE 버튼이 최근에 눌렸는지 확인
+    current_command_list = test_commands if in_test_menu else main_commands
+
     if current_time - last_time_button_execute_pressed < button_press_interval:
         toggle_mode()  # 모드 전환
         need_update = True
     else:
-        if in_test_menu:
-            current_command_index = (current_command_index + 1) % len(test_commands)
-        else:
-            current_command_index = (current_command_index + 1) % len(main_commands)
+        current_command_index = (current_command_index + 1) % len(current_command_list)
         need_update = True
 
     last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
@@ -106,10 +104,10 @@ def button_execute_callback(channel):
             else:
                 execute_command(current_command_index, in_test_menu=True)
         else:
-            if main_command_names[current_command_index] == "테스트":
-                in_test_menu = True
-                current_command_index = 0
-            else:
+            if main_command_names[current_command_index] in ["테스트", "시스템 업데이트"]:
+                if main_command_names[current_command_index] == "테스트":
+                    in_test_menu = True
+                    current_command_index = 0
                 execute_command(current_command_index, in_test_menu=False)
         need_update = True
 
