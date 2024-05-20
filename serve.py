@@ -190,6 +190,8 @@ command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP", "�
 
 current_command_index = 0
 status_message = ""
+message_position = (0, 0)
+message_font_size = 17
 
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
@@ -251,15 +253,17 @@ def git_pull():
 
 def restart_script():
     print("스크립트를 재시작합니다.")
-    display_status_message("재시작 중", position=(20, 20), font_size=15)
+    display_progress_and_message(25, "재시작 중", message_position=(20, 10), font_size=15)
     def restart():
         time.sleep(3)
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart).start()
 
 def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
+    global status_message
+    status_message = message
     with canvas(device) as draw:
-        draw.text(message_position, message, font=font, fill=255)
+        draw.text(message_position, message, font=ImageFont.truetype(font_path, font_size), fill=255)
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
         draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")
 
@@ -331,7 +335,7 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR1, False)
 
 def execute_command(command_index):
-    global is_executing, is_command_executing
+    global is_executing, is_command_executing, status_message
     is_executing = True
     is_command_executing = True
 
@@ -355,14 +359,13 @@ def execute_command(command_index):
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        with canvas(device) as draw:
-            draw.text((20, 8), "메모리 잠금", font=font, fill=255)
-            draw.text((28, 27), "해제 실패", font=font, fill=255)
+        display_progress_and_message(0, "메모리 잠금\n 해제 실패", message_position=(20, 0), font_size=15)
         time.sleep(2)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
         is_executing = False
         is_command_executing = False
+        update_oled_display()  # 화면을 다시 업데이트하여 상태 메시지가 사라지도록 함
         return
 
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
@@ -396,6 +399,8 @@ def execute_command(command_index):
 
     is_executing = False
     is_command_executing = False
+    status_message = ""
+    update_oled_display()  # 명령이 완료된 후 화면을 다시 업데이트하여 상태 메시지가 사라지도록 함
 
 def get_ip_address():
     try:
