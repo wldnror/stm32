@@ -91,7 +91,7 @@ def button_prev_callback(channel):
 
     current_command_list = test_commands if in_test_menu else main_commands
 
-    current_command_index = (current_command_index - 1) % len(current_command_list)
+    current_command_index = (current_command_index - 1 + len(current_command_list)) % len(current_command_list)
     need_update = True
 
     last_time_button_prev_pressed = current_time  # PREV 버튼 눌린 시간 갱신
