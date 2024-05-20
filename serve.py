@@ -138,7 +138,16 @@ GPIO.setup(LED_ERROR1, GPIO.OUT)
 # 연결 상태를 추적하기 위한 변수
 connection_success = False
 connection_failed_since_last_success = False
-
+def execute_test_command(command_index):
+    if test_command_names[command_index] == "추출":
+        extract_file_from_stm32()
+    elif test_command_names[command_index] == "디버깅":
+        debug_program()
+    elif test_command_names[command_index] == "뒤로 가기":
+        global current_menu
+        current_menu = "main"
+        update_oled_display()
+	
 def check_stm32_connection():
     with display_lock:
         global connection_success, connection_failed_since_last_success, is_command_executing
