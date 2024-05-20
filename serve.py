@@ -217,36 +217,21 @@ def debug_program():
     except Exception as e:
         print("명령 실행 중 오류 발생:", str(e))
 
-# OLED 설정
-serial = i2c(port=1, address=0x3C)
-device = sh1107(serial, rotate=1)
-
-# 폰트 및 이미지 설정
-font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
-font_big = ImageFont.truetype(font_path, 12)
-font_s = ImageFont.truetype(font_path, 13)
-font_st = ImageFont.truetype(font_path, 11)
-font = ImageFont.truetype(font_path, 17)
-font_status = ImageFont.truetype(font_path, 13)
-font_1 = ImageFont.truetype(font_path, 21)
-font_time = ImageFont.truetype(font_path, 12)
-
-# 배터리 아이콘 로드
-low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-
-# 배터리 아이콘 선택 함수
-def select_battery_icon(percentage):
-    if percentage < 20:
-        return low_battery_icon
-    elif percentage < 60:
-        return medium_battery_icon
-    elif percentage < 100:
-        return high_battery_icon
-    else:
-        return full_battery_icon
+def read_ina219_percentage():
+    try:
+        ina = INA219(SHUNT_OHMS)
+        ina.configure()
+        voltage = ina.voltage()
+        if voltage <= MIN_VOLTAGE:
+            return 0
+        elif voltage >= MAX_VOLTAGE:
+            return 100
+        else:
+            return int(((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100)
+    except Exception as e:
+        # 예외 발생 시 로그 남기기
+        print("INA219 모듈 읽기 실패:", str(e))
+        return -1
 
 # 명령어 설정
 main_commands = [
@@ -420,74 +405,6 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
-def execute_command(command_index):
-    global is_executing, is_command_executing
-    is_executing = True  # 작업 시작 전에 상태를 실행 중으로 설정
-    is_command_executing = True  # 명령 실행 중 상태 활성화
-
-    print("업데이트 시도...")
-    GPIO.output(LED_SUCCESS, False)
-    GPIO.output(LED_ERROR, False)
-    GPIO.output(LED_ERROR1, False)
-
-    if command_index == len(commands) - 1:
-        git_pull()
-        is_executing = False
-        is_command_executing = False
-        return
-
-    if command_index == 7:   # 메뉴 목록이 늘어나거나 줄어들때 사용!
-        lock_memory_procedure()
-        is_executing = False
-        is_command_executing = False
-        return
-        
-    if not unlock_memory():
-        GPIO.output(LED_ERROR, True)
-        GPIO.output(LED_ERROR1, True)
-        with canvas(device) as draw:
-            draw.text((20, 8), "메모리 잠금", font=font, fill=255)
-            draw.text((28, 27), "해제 실패", font=font, fill=255)
-        time.sleep(2)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
-        is_executing = False
-        is_command_executing = False
-        return
-
-    display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
-    process = subprocess.Popen(commands[command_index], shell=True)
-    
-    start_time = time.time()
-    max_duration = 6
-    progress_increment = 20 / max_duration
-    
-    while process.poll() is None:
-        elapsed = time.time() - start_time
-        current_progress = 30 + (elapsed * progress_increment)
-        current_progress = min(current_progress, 80)
-        display_progress_and_message(current_progress, "업데이트 중...", message_position=(12, 10), font_size=15)
-        time.sleep(0.5)
-
-    result = process.returncode
-    if result == 0:
-        print(f"'{commands[command_index]}' 업데이트 성공!")
-        display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
-        time.sleep(0.5)
-        lock_memory_procedure()
-    else:
-        print(f"'{commands[command_index]}' 업데이트 실패!")
-        GPIO.output(LED_ERROR, True)
-        GPIO.output(LED_ERROR1, True)
-        display_progress_and_message(0, "업데이트 실패", message_position=(7, 10), font_size=15)
-        time.sleep(1)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
-
-    is_executing = False
-    is_command_executing = False
-
-        
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
