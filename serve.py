@@ -11,12 +11,18 @@ from luma.oled.device import sh1107
 import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
-from ftplib import FTP
+
+# import logging
+
+# log_file = os.path.join(os.path.expanduser("~"), "stm32/serve.log")
+
+# logging.basicConfig(filename=log_file, level=logging.WARNING)
 
 display_lock = threading.Lock()
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
+# LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
 LED_ERROR1 = 23
@@ -28,7 +34,6 @@ MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
-is_in_test_menu = False
 
 # GPIO 핀 번호 모드 설정 및 초기 상태 설정
 GPIO.setmode(GPIO.BCM)
@@ -56,7 +61,7 @@ def toggle_mode():
 
 def button_next_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
-    global last_time_button_next_pressed, last_time_button_execute_pressed, is_in_test_menu
+    global last_time_button_next_pressed, last_time_button_execute_pressed
 
     current_time = time.time()
     is_button_pressed = True
@@ -70,10 +75,7 @@ def button_next_callback(channel):
         toggle_mode()  # 모드 전환
         need_update = True
     else:
-        if is_in_test_menu:
-            current_command_index = (current_command_index + 1) % len(test_commands)
-        else:
-            current_command_index = (current_command_index + 1) % len(commands)
+        current_command_index = (current_command_index + 1) % len(commands)
         need_update = True
 
     last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
@@ -81,7 +83,7 @@ def button_next_callback(channel):
 
 
 def button_execute_callback(channel):
-    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed, is_in_test_menu
+    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
     global last_time_button_next_pressed, last_time_button_execute_pressed
 
     current_time = time.time()
@@ -96,18 +98,19 @@ def button_execute_callback(channel):
         toggle_mode()  # 모드 전환
         need_update = True
     else:
-        if is_in_test_menu:
-            if test_commands[current_command_index] == "back":
-                is_in_test_menu = False
-                current_command_index = command_names.index("TEST")
-            else:
-                execute_command(test_commands[current_command_index])
+        # EXECUTE 버튼만 눌렸을 때의 로직
+        if not is_auto_mode:
+            execute_command(current_command_index)
+            need_update = True
         else:
-            if command_names[current_command_index] == "TEST":
-                is_in_test_menu = True
-                current_command_index = 0
-            else:
-                execute_command(current_command_index)
+            with display_lock:
+                if current_command_index == command_names.index("시스템 업데이트"):
+                    execute_command(current_command_index)
+                else:
+                    if is_auto_mode:
+                        current_command_index = (current_command_index - 1) % len(commands)
+                    else:
+                        execute_command(current_command_index)
             need_update = True
 
     last_time_button_execute_pressed = current_time  # EXECUTE 버튼 눌린 시간 갱신
@@ -118,7 +121,7 @@ def toggle_mode():
     global is_auto_mode
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
-
+    
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
 auto_mode_text = 'A'
 manual_mode_text = 'M'
@@ -229,18 +232,11 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
-    "TEST",
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/TEST.bin verify reset exit 0x08000000\"",
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
-test_commands = [
-    "upload_test_file",
-    "download_test_file",
-    "back"
-]
-
 command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP","TEST", "시스템 업데이트"]
-test_command_names = ["추출", "디버깅", "뒤로 가기"]
 
 current_command_index = 0
 status_message = ""
@@ -400,59 +396,8 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
-def upload_file_to_ftp(file_path, file_name):
-    ftp_server = "79webhard.com"
-    ftp_user = "stm32"
-    ftp_password = "Gds00700@"
-    ftp_directory = "/home"
-    
-    try:
-        ftp = FTP(ftp_server)
-        ftp.login(ftp_user, ftp_password)
-        ftp.cwd(ftp_directory)
-        
-        with open(file_path, 'rb') as file:
-            ftp.storbinary(f'STOR {file_name}', file)
-        
-        ftp.quit()
-        print("FTP 업로드 성공!")
-        display_progress_and_message(100, "FTP 업로드 성공", message_position=(10, 10), font_size=15)
-    except Exception as e:
-        print("FTP 업로드 실패:", str(e))
-        display_progress_and_message(0, "FTP 업로드 실패", message_position=(10, 10), font_size=15)
-
-def extract_file_from_stm32():
-    memory_address = "0x08000000"  # 예시 주소
-    memory_size = "256K"
-    now = datetime.now()
-    file_name = now.strftime("SAT4010_%Y%m%d_%H%M%S.bin")
-    save_path = f"/home/user/stm32/Download/{file_name}"
-    openocd_command = [
-        "sudo", "openocd",
-        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", "init",
-        "-c", "reset halt",
-        "-c", f"flash read_bank 0 {save_path} 0",
-        "-c", "reset run",
-        "-c", "shutdown",
-    ]
-    try:
-        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode == 0:
-            print("파일 추출 성공!")
-            display_progress_and_message(100, "파일 추출 성공", message_position=(10, 10), font_size=15)
-            upload_file_to_ftp(save_path, file_name)
-        else:
-            print("파일 추출 실패. 오류 코드:", result.returncode)
-            print("오류 메시지:", result.stderr)
-            display_progress_and_message(0, "파일 추출 실패", message_position=(10, 10), font_size=15)
-    except Exception as e:
-        print("명령 실행 중 오류 발생:", str(e))
-        display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(10, 10), font_size=15)
-
-def execute_command(command):
-    global is_executing, is_command_executing, is_in_test_menu
+def execute_command(command_index):
+    global is_executing, is_command_executing
     is_executing = True  # 작업 시작 전에 상태를 실행 중으로 설정
     is_command_executing = True  # 명령 실행 중 상태 활성화
 
@@ -461,41 +406,18 @@ def execute_command(command):
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-    if command == "git_pull":
+    if command_index == len(commands) - 1:
         git_pull()
         is_executing = False
         is_command_executing = False
         return
 
-    if command == "TEST":
-        is_in_test_menu = True
-        current_command_index = 0
-        update_oled_display()
+    if command_index == 7:   # 메뉴 목록이 늘어나거나 줄어들때 사용!
+        lock_memory_procedure()
         is_executing = False
         is_command_executing = False
         return
-
-    if is_in_test_menu:
-        if command == "upload_test_file":
-            lock_memory_procedure()
-            is_executing = False
-            is_command_executing = False
-            return
-
-        if command == "download_test_file":
-            extract_file_from_stm32()
-            is_executing = False
-            is_command_executing = False
-            return
-
-        if command == "back":
-            is_in_test_menu = False
-            current_command_index = command_names.index("TEST")
-            update_oled_display()
-            is_executing = False
-            is_command_executing = False
-            return
-
+        
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -510,7 +432,7 @@ def execute_command(command):
         return
 
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
-    process = subprocess.Popen(commands[command], shell=True)
+    process = subprocess.Popen(commands[command_index], shell=True)
     
     start_time = time.time()
     max_duration = 6
@@ -525,12 +447,12 @@ def execute_command(command):
 
     result = process.returncode
     if result == 0:
-        print(f"'{command}' 업데이트 성공!")
+        print(f"'{commands[command_index]}' 업데이트 성공!")
         display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
         time.sleep(0.5)
         lock_memory_procedure()
     else:
-        print(f"'{command}' 업데이트 실패!")
+        print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         display_progress_and_message(0, "업데이트 실패", message_position=(7, 10), font_size=15)
@@ -553,7 +475,7 @@ def get_ip_address():
         return "0.0.0.0"
         
 def update_oled_display():
-    global current_command_index, status_message, message_position, message_font_size, is_button_pressed, is_in_test_menu
+    global current_command_index, status_message, message_position, message_font_size, is_button_pressed
     with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
         if is_button_pressed:
             return  # 버튼 입력 모드에서는 화면 업데이트 무시
@@ -571,7 +493,7 @@ def update_oled_display():
                 draw.ellipse(outer_ellipse_box, outline="white", fill=None)
                 draw.text(text_position[mode_char], mode_char, font=font, fill=255)
 
-            if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "SAT4010", "IPA", "ASGD S PNP"]:
+            if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "SAT4010", "IPA", "ASGD S PNP", "TEST"]:
                 battery_icon = select_battery_icon(voltage_percentage)
                 draw.bitmap((90, -9), battery_icon, fill=255)
                 draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
@@ -587,32 +509,24 @@ def update_oled_display():
                 font_custom = ImageFont.truetype(font_path, message_font_size)
                 draw.text(message_position, status_message, font=font_custom, fill=255)
             else:
-                if is_in_test_menu:
-                    if test_command_names[current_command_index] == "추출":
-                        draw.text((10, 27), '추출', font=font_1, fill=255)
-                    elif test_command_names[current_command_index] == "디버깅":
-                        draw.text((10, 27), '디버깅', font=font_1, fill=255)
-                    elif test_command_names[current_command_index] == "뒤로 가기":
-                        draw.text((10, 27), '뒤로 가기', font=font_1, fill=255)
-                else:
-                    if command_names[current_command_index] == "ORG":
-                        draw.text((42, 27), 'ORG', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "HMDS":
-                        draw.text((33, 27), 'HMDS', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "ARF-T":
-                        draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "HC100":
-                        draw.text((32, 27), 'HC100', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "SAT4010":
-                        draw.text((22, 27), 'SAT4010', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "IPA":
-                        draw.text((47, 27), 'IPA', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "ASGD S PNP":
-                        draw.text((2, 27), 'ASGD S PNP', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "TEST":
-                        draw.text((33, 27), 'TEST', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "시스템 업데이트":
-                        draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
+                if command_names[current_command_index] == "ORG":
+                    draw.text((42, 27), 'ORG', font=font_1, fill=255)
+                elif command_names[current_command_index] == "HMDS":
+                    draw.text((33, 27), 'HMDS', font=font_1, fill=255)
+                elif command_names[current_command_index] == "ARF-T":
+                    draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
+                elif command_names[current_command_index] == "HC100":
+                    draw.text((32, 27), 'HC100', font=font_1, fill=255)
+                elif command_names[current_command_index] == "SAT4010":
+                    draw.text((22, 27), 'SAT4010', font=font_1, fill=255)
+                elif command_names[current_command_index] == "IPA":
+                    draw.text((47, 27), 'IPA', font=font_1, fill=255)
+                elif command_names[current_command_index] == "ASGD S PNP":
+                    draw.text((2, 27), 'ASGD S PNP', font=font_1, fill=255)
+                elif command_names[current_command_index] == "TEST":
+                    draw.text((33, 27), 'TEST', font=font_1, fill=255)
+                elif command_names[current_command_index] == "시스템 업데이트":
+                    draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
 
 
 # 실시간 업데이트를 위한 스레드 함수
@@ -664,3 +578,43 @@ try:
         time.sleep(0.03)
 except KeyboardInterrupt:
     GPIO.cleanup()
+
+하나는 다운로드  기존 test기능 그대로
+
+하나는 업로드 아래 기능을 수행 가능하도록
+
+import subprocess
+
+def extract_file_from_stm32():
+    # 추출할 파일의 STM32 메모리 주소 및 크기 설정
+    memory_address = "0x08000000"  # 예시 주소
+    memory_size = "256K"
+
+    # 추출된 데이터를 저장할 파일 경로
+    save_path = "/home/user/stm32/Download/SAT4010.bin"
+
+    # OpenOCD 명령을 사용하여 STM32의 메모리 덤프
+    openocd_command = [
+        "sudo", "openocd",
+        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "init",
+        "-c", "reset halt",
+        "-c", f"flash read_bank 0 {save_path} 0",
+        "-c", "reset run",
+        "-c", "shutdown",
+    ]
+
+    # 명령 실행 및 결과 확인
+    try:
+        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            print("파일 추출 성공!")
+        else:
+            print("파일 추출 실패. 오류 코드:", result.returncode)
+            print("오류 메시지:", result.stderr)
+    except Exception as e:
+        print("명령 실행 중 오류 발생:", str(e))
+
+# 함수 호출
+extract_file_from_stm32()
