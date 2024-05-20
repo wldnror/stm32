@@ -12,17 +12,10 @@ import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
 
-# import logging
-
-# log_file = os.path.join(os.path.expanduser("~"), "stm32/serve.log")
-
-# logging.basicConfig(filename=log_file, level=logging.WARNING)
-
 display_lock = threading.Lock()
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
-# LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
 LED_ERROR1 = 23
@@ -80,7 +73,6 @@ def button_next_callback(channel):
 
     last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
     is_button_pressed = False
-
 
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
@@ -174,7 +166,6 @@ def check_stm32_connection():
             connection_failed_since_last_success = True  # 실패 플래그 설정
             return False
 
-
 # 배터리 상태 확인 함수
 def read_ina219_percentage():
     try:
@@ -232,11 +223,13 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/TEST.bin verify reset exit 0x08000000\"",
+    "추출",  # 추출 메뉴
+    "디버깅",  # 디버깅 메뉴
+    "뒤로 가기",  # 뒤로 가기 메뉴
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
-command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP","TEST", "시스템 업데이트"]
+command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP","추출", "디버깅", "뒤로 가기", "시스템 업데이트"]
 
 current_command_index = 0
 status_message = ""
@@ -354,7 +347,6 @@ def restart_script():
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart).start()   
 
-
 def lock_memory_procedure():
     
     display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
@@ -412,8 +404,18 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    if command_index == 7:   # 메뉴 목록이 늘어나거나 줄어들때 사용!
-        lock_memory_procedure()
+    if command_index in [7, 8]:  # 추출, 디버깅 메뉴
+        print(f"{command_names[command_index]} 메뉴를 선택하셨습니다.")
+        display_progress_and_message(30, f"{command_names[command_index]} 선택됨", message_position=(10, 10), font_size=15)
+        time.sleep(1)
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if command_index == 9:  # 뒤로 가기 메뉴
+        print("뒤로 가기 메뉴를 선택하셨습니다.")
+        current_command_index = 0  # 메인 메뉴로 돌아가기
+        need_update = True
         is_executing = False
         is_command_executing = False
         return
@@ -463,7 +465,6 @@ def execute_command(command_index):
     is_executing = False
     is_command_executing = False
 
-        
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -493,7 +494,7 @@ def update_oled_display():
                 draw.ellipse(outer_ellipse_box, outline="white", fill=None)
                 draw.text(text_position[mode_char], mode_char, font=font, fill=255)
 
-            if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "SAT4010", "IPA", "ASGD S PNP", "TEST"]:
+            if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "SAT4010", "IPA", "ASGD S PNP"]:
                 battery_icon = select_battery_icon(voltage_percentage)
                 draw.bitmap((90, -9), battery_icon, fill=255)
                 draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
@@ -523,11 +524,14 @@ def update_oled_display():
                     draw.text((47, 27), 'IPA', font=font_1, fill=255)
                 elif command_names[current_command_index] == "ASGD S PNP":
                     draw.text((2, 27), 'ASGD S PNP', font=font_1, fill=255)
-                elif command_names[current_command_index] == "TEST":
-                    draw.text((33, 27), 'TEST', font=font_1, fill=255)
+                elif command_names[current_command_index] == "추출":
+                    draw.text((33, 27), '추출', font=font_1, fill=255)
+                elif command_names[current_command_index] == "디버깅":
+                    draw.text((33, 27), '디버깅', font=font_1, fill=255)
+                elif command_names[current_command_index] == "뒤로 가기":
+                    draw.text((33, 27), '뒤로 가기', font=font_1, fill=255)
                 elif command_names[current_command_index] == "시스템 업데이트":
                     draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
-
 
 # 실시간 업데이트를 위한 스레드 함수
 def realtime_update_display():
