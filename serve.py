@@ -12,12 +12,6 @@ import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
 
-# import logging
-
-# log_file = os.path.join(os.path.expanduser("~"), "stm32/serve.log")
-
-# logging.basicConfig(filename=log_file, level=logging.WARNING)
-
 display_lock = threading.Lock()
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
@@ -234,9 +228,11 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/TEST.bin verify reset exit 0x08000000\"",
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
+    "extract_file_from_stm32", # 추출 기능 추가
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/TEST.bin verify reset exit 0x08000000\"", # 디버깅 기능 추가
 ]
 
-command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP","TEST", "시스템 업데이트"]
+command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP","TEST", "시스템 업데이트", "추출", "디버깅"]
 
 current_command_index = 0
 status_message = ""
@@ -417,7 +413,19 @@ def execute_command(command_index):
         is_executing = False
         is_command_executing = False
         return
-        
+    
+    if command_index == command_names.index("추출"):
+        extract_file_from_stm32()
+        is_executing = False
+        is_command_executing = False
+        return
+    
+    if command_index == command_names.index("디버깅"):
+        execute_debugging_command()
+        is_executing = False
+        is_command_executing = False
+        return
+
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -462,6 +470,49 @@ def execute_command(command_index):
 
     is_executing = False
     is_command_executing = False
+
+def extract_file_from_stm32():
+    # 추출할 파일의 STM32 메모리 주소 및 크기 설정
+    memory_address = "0x08000000"  # 예시 주소
+    memory_size = "256K"
+
+    # 추출된 데이터를 저장할 파일 경로
+    save_path = "/home/user/stm32/Download/SAT4010.bin"
+
+    # OpenOCD 명령을 사용하여 STM32의 메모리 덤프
+    openocd_command = [
+        "sudo", "openocd",
+        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "init",
+        "-c", "reset halt",
+        "-c", f"flash read_bank 0 {save_path} 0",
+        "-c", "reset run",
+        "-c", "shutdown",
+    ]
+
+    # 명령 실행 및 결과 확인
+    try:
+        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            print("파일 추출 성공!")
+        else:
+            print("파일 추출 실패. 오류 코드:", result.returncode)
+            print("오류 메시지:", result.stderr)
+    except Exception as e:
+        print("명령 실행 중 오류 발생:", str(e))
+
+def execute_debugging_command():
+    debugging_command = "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/TEST.bin verify reset exit 0x08000000\""
+    try:
+        result = subprocess.run(debugging_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            print("디버깅 명령 실행 성공!")
+        else:
+            print("디버깅 명령 실행 실패. 오류 코드:", result.returncode)
+            print("오류 메시지:", result.stderr)
+    except Exception as e:
+        print("디버깅 명령 실행 중 오류 발생:", str(e))
 
         
 def get_ip_address():
@@ -527,6 +578,10 @@ def update_oled_display():
                     draw.text((33, 27), 'TEST', font=font_1, fill=255)
                 elif command_names[current_command_index] == "시스템 업데이트":
                     draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
+                elif command_names[current_command_index] == "추출":
+                    draw.text((33, 27), '추출', font=font_1, fill=255)
+                elif command_names[current_command_index] == "디버깅":
+                    draw.text((33, 27), '디버깅', font=font_1, fill=255)
 
 
 # 실시간 업데이트를 위한 스레드 함수
