@@ -12,11 +12,17 @@ import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
 
+# import logging
+
+# log_file = os.path.join(os.path.expanduser("~"), "stm32/serve.log")
+
+# logging.basicConfig(filename=log_file, level=logging.WARNING)
+
 display_lock = threading.Lock()
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
-BUTTON_PIN_PREV = 22
+# LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
 LED_ERROR1 = 23
@@ -65,64 +71,52 @@ def button_next_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 0.3):  # 모드 전환 후 0.3초 동안은 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
         is_button_pressed = False
         return
 
-    current_command_list = test_commands if in_test_menu else main_commands
-
-    current_command_index = (current_command_index + 1) % len(current_command_list)
-    need_update = True
+    # EXECUTE 버튼이 최근에 눌렸는지 확인
+    if current_time - last_time_button_execute_pressed < button_press_interval:
+        toggle_mode()  # 모드 전환
+        need_update = True
+    else:
+        current_command_index = (current_command_index + 1) % len(commands)
+        need_update = True
 
     last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
     is_button_pressed = False
 
-def button_prev_callback(channel):
-    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
-    global last_time_button_prev_pressed
-    global in_test_menu
-
-    current_time = time.time()
-    is_button_pressed = True
-
-    if is_executing or (current_time - last_mode_toggle_time < 0.3):  # 모드 전환 후 0.3초 동안은 입력 무시
-        is_button_pressed = False
-        return
-
-    current_command_list = test_commands if in_test_menu else main_commands
-
-    current_command_index = (current_command_index - 1 + len(current_command_list)) % len(current_command_list)
-    need_update = True
-
-    last_time_button_prev_pressed = current_time  # PREV 버튼 눌린 시간 갱신
-    is_button_pressed = False
 
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
     global last_time_button_next_pressed, last_time_button_execute_pressed
-    global in_test_menu
 
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 0.3):  # 모드 전환 후 0.3초 동안은 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
         is_button_pressed = False
         return
 
-    # EXECUTE 버튼만 눌렸을 때의 로직
-    if in_test_menu:
-        if test_command_names[current_command_index] == "뒤로 가기":
-            in_test_menu = False
-            current_command_index = 0  # 메인 메뉴로 돌아가기
-        else:
-            execute_command(current_command_index, in_test_menu=True)
+    # NEXT 버튼이 최근에 눌렸는지 확인
+    if current_time - last_time_button_next_pressed < button_press_interval:
+        toggle_mode()  # 모드 전환
+        need_update = True
     else:
-        if main_command_names[current_command_index] == "테스트":
-            in_test_menu = True
-            current_command_index = 0
-        elif main_command_names[current_command_index] == "시스템 업데이트":
-            execute_command(current_command_index, in_test_menu=False)
-    need_update = True
+        # EXECUTE 버튼만 눌렸을 때의 로직
+        if not is_auto_mode:
+            execute_command(current_command_index)
+            need_update = True
+        else:
+            with display_lock:
+                if current_command_index == command_names.index("시스템 업데이트"):
+                    execute_command(current_command_index)
+                else:
+                    if is_auto_mode:
+                        current_command_index = (current_command_index - 1) % len(commands)
+                    else:
+                        execute_command(current_command_index)
+            need_update = True
 
     last_time_button_execute_pressed = current_time  # EXECUTE 버튼 눌린 시간 갱신
     is_button_pressed = False
@@ -140,10 +134,8 @@ manual_mode_text = 'M'
 # GPIO 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(BUTTON_PIN_PREV, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=800)
 GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=800)
-GPIO.add_event_detect(BUTTON_PIN_PREV, GPIO.FALLING, callback=button_prev_callback, bouncetime=800)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
@@ -186,6 +178,7 @@ def check_stm32_connection():
             print(f"오류 발생: {e}")
             connection_failed_since_last_success = True  # 실패 플래그 설정
             return False
+
 
 # 배터리 상태 확인 함수
 def read_ina219_percentage():
@@ -369,6 +362,7 @@ def restart_script():
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart).start()   
 
+
 def lock_memory_procedure():
     
     display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
@@ -494,6 +488,7 @@ def execute_command(command_index, in_test_menu=False):
     is_executing = False
     is_command_executing = False
 
+        
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -569,6 +564,7 @@ def update_oled_display():
                     draw.text((33, 27), '뒤로 가기', font=font_1, fill=255)
                 elif command_names[current_command_index] == "시스템 업데이트":
                     draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
+
 
 # 실시간 업데이트를 위한 스레드 함수
 def realtime_update_display():
