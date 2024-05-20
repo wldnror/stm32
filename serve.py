@@ -46,6 +46,9 @@ last_mode_toggle_time = 0
 # 스크립트 시작 부분에 전역 변수 정의
 is_executing = False
 
+# 메뉴 상태를 저장하는 변수
+in_test_menu = False
+
 def toggle_mode():
     global is_auto_mode, last_mode_toggle_time
     is_auto_mode = not is_auto_mode
@@ -55,6 +58,7 @@ def toggle_mode():
 def button_next_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
     global last_time_button_next_pressed, last_time_button_execute_pressed
+    global in_test_menu
 
     current_time = time.time()
     is_button_pressed = True
@@ -68,7 +72,10 @@ def button_next_callback(channel):
         toggle_mode()  # 모드 전환
         need_update = True
     else:
-        current_command_index = (current_command_index + 1) % len(commands)
+        if in_test_menu:
+            current_command_index = (current_command_index + 1) % len(test_commands)
+        else:
+            current_command_index = (current_command_index + 1) % len(main_commands)
         need_update = True
 
     last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
@@ -77,6 +84,7 @@ def button_next_callback(channel):
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
     global last_time_button_next_pressed, last_time_button_execute_pressed
+    global in_test_menu
 
     current_time = time.time()
     is_button_pressed = True
@@ -91,19 +99,19 @@ def button_execute_callback(channel):
         need_update = True
     else:
         # EXECUTE 버튼만 눌렸을 때의 로직
-        if not is_auto_mode:
-            execute_command(current_command_index)
-            need_update = True
+        if in_test_menu:
+            if test_command_names[current_command_index] == "뒤로 가기":
+                in_test_menu = False
+                current_command_index = 0  # 메인 메뉴로 돌아가기
+            else:
+                execute_command(current_command_index, in_test_menu=True)
         else:
-            with display_lock:
-                if current_command_index == command_names.index("시스템 업데이트"):
-                    execute_command(current_command_index)
-                else:
-                    if is_auto_mode:
-                        current_command_index = (current_command_index - 1) % len(commands)
-                    else:
-                        execute_command(current_command_index)
-            need_update = True
+            if main_command_names[current_command_index] == "테스트":
+                in_test_menu = True
+                current_command_index = 0
+            else:
+                execute_command(current_command_index, in_test_menu=False)
+        need_update = True
 
     last_time_button_execute_pressed = current_time  # EXECUTE 버튼 눌린 시간 갱신
     is_button_pressed = False
@@ -215,7 +223,7 @@ def select_battery_icon(percentage):
         return full_battery_icon
 
 # 명령어 설정
-commands = [
+main_commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ARF-T.bin verify reset exit 0x08000000\"",
@@ -223,13 +231,14 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
-    "추출",  # 추출 메뉴
-    "디버깅",  # 디버깅 메뉴
-    "뒤로 가기",  # 뒤로 가기 메뉴
+    "테스트",  # 테스트 대분류 메뉴
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
-command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP","추출", "디버깅", "뒤로 가기", "시스템 업데이트"]
+main_command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP", "테스트", "시스템 업데이트"]
+
+test_commands = ["추출", "디버깅", "뒤로 가기"]
+test_command_names = ["추출", "디버깅", "뒤로 가기"]
 
 current_command_index = 0
 status_message = ""
@@ -388,7 +397,7 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
-def execute_command(command_index):
+def execute_command(command_index, in_test_menu=False):
     global is_executing, is_command_executing
     is_executing = True  # 작업 시작 전에 상태를 실행 중으로 설정
     is_command_executing = True  # 명령 실행 중 상태 활성화
@@ -398,24 +407,31 @@ def execute_command(command_index):
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-    if command_index == len(commands) - 1:
+    if in_test_menu:
+        if test_command_names[command_index] == "추출":
+            print("추출 명령을 선택하셨습니다.")
+            display_progress_and_message(30, "추출 선택됨", message_position=(10, 10), font_size=15)
+            time.sleep(1)
+            is_executing = False
+            is_command_executing = False
+            return
+
+        if test_command_names[command_index] == "디버깅":
+            print("디버깅 명령을 선택하셨습니다.")
+            display_progress_and_message(30, "디버깅 선택됨", message_position=(10, 10), font_size=15)
+            time.sleep(1)
+            is_executing = False
+            is_command_executing = False
+            return
+
+    if command_index == len(main_commands) - 1:
         git_pull()
         is_executing = False
         is_command_executing = False
         return
 
-    if command_index in [7, 8]:  # 추출, 디버깅 메뉴
-        print(f"{command_names[command_index]} 메뉴를 선택하셨습니다.")
-        display_progress_and_message(30, f"{command_names[command_index]} 선택됨", message_position=(10, 10), font_size=15)
-        time.sleep(1)
-        is_executing = False
-        is_command_executing = False
-        return
-
-    if command_index == 9:  # 뒤로 가기 메뉴
-        print("뒤로 가기 메뉴를 선택하셨습니다.")
-        current_command_index = 0  # 메인 메뉴로 돌아가기
-        need_update = True
+    if command_index == 7:   # 메뉴 목록이 늘어나거나 줄어들때 사용!
+        lock_memory_procedure()
         is_executing = False
         is_command_executing = False
         return
@@ -434,7 +450,7 @@ def execute_command(command_index):
         return
 
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
-    process = subprocess.Popen(commands[command_index], shell=True)
+    process = subprocess.Popen(main_commands[command_index], shell=True)
     
     start_time = time.time()
     max_duration = 6
@@ -449,12 +465,12 @@ def execute_command(command_index):
 
     result = process.returncode
     if result == 0:
-        print(f"'{commands[command_index]}' 업데이트 성공!")
+        print(f"'{main_commands[command_index]}' 업데이트 성공!")
         display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
         time.sleep(0.5)
         lock_memory_procedure()
     else:
-        print(f"'{commands[command_index]}' 업데이트 실패!")
+        print(f"'{main_commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         display_progress_and_message(0, "업데이트 실패", message_position=(7, 10), font_size=15)
@@ -477,6 +493,7 @@ def get_ip_address():
         
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size, is_button_pressed
+    global in_test_menu
     with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
         if is_button_pressed:
             return  # 버튼 입력 모드에서는 화면 업데이트 무시
@@ -487,6 +504,11 @@ def update_oled_display():
         voltage_percentage = read_ina219_percentage()
 
         with canvas(device) as draw:
+            if in_test_menu:
+                command_names = test_command_names
+            else:
+                command_names = main_command_names
+
             if command_names[current_command_index] != "시스템 업데이트":
                 mode_char = 'A' if is_auto_mode else 'M'
                 outer_ellipse_box = (2, 0, 22, 20)
@@ -524,6 +546,8 @@ def update_oled_display():
                     draw.text((47, 27), 'IPA', font=font_1, fill=255)
                 elif command_names[current_command_index] == "ASGD S PNP":
                     draw.text((2, 27), 'ASGD S PNP', font=font_1, fill=255)
+                elif command_names[current_command_index] == "테스트":
+                    draw.text((33, 27), '테스트', font=font_1, fill=255)
                 elif command_names[current_command_index] == "추출":
                     draw.text((33, 27), '추출', font=font_1, fill=255)
                 elif command_names[current_command_index] == "디버깅":
@@ -570,9 +594,9 @@ try:
             shutdown_system()
 
         # STM32 연결 상태 확인 및 명령 실행
-        if command_names[current_command_index] != "시스템 업데이트":
+        if not in_test_menu and main_command_names[current_command_index] != "시스템 업데이트":
             if is_auto_mode and check_stm32_connection() and connection_success:
-                execute_command(current_command_index)
+                execute_command(current_command_index, in_test_menu=False)
 
         # OLED 디스플레이 업데이트
         if need_update:
