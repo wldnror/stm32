@@ -11,6 +11,7 @@ from luma.oled.device import sh1107
 import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
+from ftplib import FTP
 
 display_lock = threading.Lock()
 # GPIO 핀 설정
@@ -394,10 +395,33 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
+def upload_file_to_ftp(file_path, file_name):
+    ftp_server = "79webhard.com"
+    ftp_user = "stm32"
+    ftp_password = "Gds00700@"
+    ftp_directory = "/home"
+    
+    try:
+        ftp = FTP(ftp_server)
+        ftp.login(ftp_user, ftp_password)
+        ftp.cwd(ftp_directory)
+        
+        with open(file_path, 'rb') as file:
+            ftp.storbinary(f'STOR {file_name}', file)
+        
+        ftp.quit()
+        print("FTP 업로드 성공!")
+        display_progress_and_message(100, "FTP 업로드 성공", message_position=(10, 10), font_size=15)
+    except Exception as e:
+        print("FTP 업로드 실패:", str(e))
+        display_progress_and_message(0, "FTP 업로드 실패", message_position=(10, 10), font_size=15)
+
 def extract_file_from_stm32():
     memory_address = "0x08000000"  # 예시 주소
     memory_size = "256K"
-    save_path = "/home/user/stm32/Download/SAT4010.bin"
+    now = datetime.now()
+    file_name = now.strftime("SAT4010_%Y%m%d_%H%M%S.bin")
+    save_path = f"/home/user/stm32/Download/{file_name}"
     openocd_command = [
         "sudo", "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
@@ -413,6 +437,7 @@ def extract_file_from_stm32():
         if result.returncode == 0:
             print("파일 추출 성공!")
             display_progress_and_message(100, "파일 추출 성공", message_position=(10, 10), font_size=15)
+            upload_file_to_ftp(save_path, file_name)
         else:
             print("파일 추출 실패. 오류 코드:", result.returncode)
             print("오류 메시지:", result.stderr)
