@@ -12,17 +12,10 @@ import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
 
-# import logging
-
-# log_file = os.path.join(os.path.expanduser("~"), "stm32/serve.log")
-
-# logging.basicConfig(filename=log_file, level=logging.WARNING)
-
 display_lock = threading.Lock()
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
-# LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
 LED_ERROR1 = 23
@@ -34,6 +27,7 @@ MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
+is_test_mode = False
 
 # GPIO 핀 번호 모드 설정 및 초기 상태 설정
 GPIO.setmode(GPIO.BCM)
@@ -59,6 +53,17 @@ def toggle_mode():
     last_mode_toggle_time = time.time()
     update_oled_display()
 
+def enter_test_mode():
+    global is_test_mode
+    is_test_mode = True
+    update_oled_display()
+
+def exit_test_mode():
+    global is_test_mode, current_command_index
+    is_test_mode = False
+    current_command_index = command_names.index("TEST")
+    update_oled_display()
+
 def button_next_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
     global last_time_button_next_pressed, last_time_button_execute_pressed
@@ -75,12 +80,14 @@ def button_next_callback(channel):
         toggle_mode()  # 모드 전환
         need_update = True
     else:
-        current_command_index = (current_command_index + 1) % len(commands)
+        if is_test_mode and is_auto_mode:
+            execute_command(current_command_index)
+        else:
+            current_command_index = (current_command_index + 1) % len(commands)
         need_update = True
 
     last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
     is_button_pressed = False
-
 
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
@@ -99,7 +106,7 @@ def button_execute_callback(channel):
         need_update = True
     else:
         # EXECUTE 버튼만 눌렸을 때의 로직
-        if not is_auto_mode:
+        if not is_auto_mode or is_test_mode:
             execute_command(current_command_index)
             need_update = True
         else:
@@ -232,12 +239,13 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
+    "enter_test_mode",
     "upload_test_file",
     "download_test_file",
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
-command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP","업로드 테스트", "다운로드 테스트", "시스템 업데이트"]
+command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP","TEST", "업로드 테스트", "다운로드 테스트", "시스템 업데이트"]
 
 current_command_index = 0
 status_message = ""
@@ -440,17 +448,24 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    if command_index == 7:   # 업로드 테스트
-        lock_memory_procedure()
+    if command_index == 7:   # TEST 메뉴 진입
+        enter_test_mode()
         is_executing = False
         is_command_executing = False
         return
 
-    if command_index == 8:  # 다운로드 테스트
-        extract_file_from_stm32()
-        is_executing = False
-        is_command_executing = False
-        return
+    if is_test_mode:
+        if command_index == 8:  # 업로드 테스트
+            lock_memory_procedure()
+            is_executing = False
+            is_command_executing = False
+            return
+
+        if command_index == 9:  # 다운로드 테스트
+            extract_file_from_stm32()
+            is_executing = False
+            is_command_executing = False
+            return
         
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
