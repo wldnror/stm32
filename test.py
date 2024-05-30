@@ -18,7 +18,7 @@ def read_current(adc, gain):
     # 전압을 전류(mA)로 변환 (250Ω 저항 사용 가정)
     # 4-20mA 범위를 1-5V로 변환
     # 전압을 전류로 변환하는 공식을 정확하게 확인합니다.
-    current = (voltage / 4.096) * 20.0
+    current = (voltage / REFERENCE_VOLTAGE) * 20.0
     
     return adc_value, voltage, current
 
