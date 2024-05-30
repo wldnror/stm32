@@ -12,11 +12,11 @@ RESISTANCE = 270.0  # 270Ω 저항 사용
 def read_current(adc, gain):
     try:
         # ADC 값을 읽기
-        adc_value = adc.read_adc_difference(0, gain=gain)  # 차동 입력 사용
+        adc_value = adc.read_adc(0, gain=gain)  # 싱글 엔디드 모드로 AIN0 읽기
         # ADC 값을 전압으로 변환
         voltage = (adc_value / 32767.0) * REFERENCE_VOLTAGE
         
-        # 전압을 전류(mA)로 변환
+        # 전압을 전류(mA)로 변환 (270Ω 저항 사용 가정)
         current = (voltage / RESISTANCE) * 1000.0  # V = IR, I = V / R (mA로 변환)
         
         return adc_value, voltage, current
@@ -32,4 +32,3 @@ try:
         time.sleep(1)  # 1초 간격으로 읽기
 except KeyboardInterrupt:
     print("Program terminated")
-
