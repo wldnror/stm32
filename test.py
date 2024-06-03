@@ -4,9 +4,9 @@ import time
 # ADS1115 객체 생성, I2C 주소 설정 (0x48로 설정)
 adc = Adafruit_ADS1x15.ADS1115(address=0x48)
 
-# Gain 설정 (1은 +/- 4.096V 범위, 실제 참조 전압은 3.3V로 설정)
+# Gain 설정 (1은 +/- 4.096V 범위)
 GAIN = 1
-REFERENCE_VOLTAGE = 3.3  # 라즈베리파이의 3.3V를 참조 전압으로 설정
+REFERENCE_VOLTAGE = 3.3  # 실제 라즈베리파이의 참조 전압으로 설정
 RESISTANCE = 100.0  # 100Ω 저항 사용
 
 def read_current(adc, gain):
