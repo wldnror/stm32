@@ -6,7 +6,7 @@ adc = Adafruit_ADS1x15.ADS1115(address=0x48)
 
 # Gain 설정 (1은 +/- 4.096V 범위)
 GAIN = 1
-REFERENCE_VOLTAGE = 3.3  # 실제 라즈베리파이의 참조 전압으로 설정
+REFERENCE_VOLTAGE = 4.096  # GAIN=1일 때 참조 전압
 RESISTANCE = 100.0  # 100Ω 저항 사용
 
 def read_current(adc, gain):
