@@ -4,9 +4,9 @@ import time
 # ADS1115 객체 생성, I2C 주소 설정 (0x48로 설정)
 adc = Adafruit_ADS1x15.ADS1115(address=0x48)
 
-# Gain 설정 (1은 +/- 4.096V 범위)
-GAIN = 1
-REFERENCE_VOLTAGE = 4.096  # GAIN=1일 때 참조 전압
+# Gain 설정 (2는 +/- 2.048V 범위)
+GAIN = 2
+REFERENCE_VOLTAGE = 2.048  # GAIN=2일 때 참조 전압
 RESISTANCE = 250.0  # 250Ω 저항 사용
 
 def read_current(adc, gain):
