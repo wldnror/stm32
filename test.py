@@ -7,7 +7,7 @@ adc = Adafruit_ADS1x15.ADS1115(address=0x48)
 # Gain 설정 (1은 +/- 4.096V 범위)
 GAIN = 1
 REFERENCE_VOLTAGE = 4.096  # GAIN=1일 때 참조 전압
-RESISTANCE = 1000.0  # 1000Ω 저항 사용 (1 kΩ)
+RESISTANCE = 100.0  # 100Ω 저항 사용
 
 def read_current(adc, gain):
     try:
@@ -16,7 +16,7 @@ def read_current(adc, gain):
         # ADC 값을 전압으로 변환
         voltage = (adc_value / 32767.0) * REFERENCE_VOLTAGE
         
-        # 전압을 전류(mA)로 변환 (1000Ω 저항 사용 가정)
+        # 전압을 전류(mA)로 변환 (100Ω 저항 사용 가정)
         current = (voltage / RESISTANCE) * 1000.0  # V = IR, I = V / R (mA로 변환)
         
         return adc_value, voltage, current
