@@ -174,23 +174,6 @@ font_status = ImageFont.truetype(font_path, 13)
 font_1 = ImageFont.truetype(font_path, 21)
 font_time = ImageFont.truetype(font_path, 12)
 
-# 배터리 아이콘 로드 제거
-# low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-# medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-# high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-# full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-
-# 배터리 아이콘 선택 함수 제거
-# def select_battery_icon(percentage):
-#     if percentage < 20:
-#         return low_battery_icon
-#     elif percentage < 60:
-#         return medium_battery_icon
-#     elif percentage < 100:
-#         return high_battery_icon
-#     else:
-#         return full_battery_icon
-
 # 명령어 설정
 commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
@@ -459,10 +442,6 @@ def update_oled_display():
                 draw.text(text_position[mode_char], mode_char, font=font, fill=255)
 
             if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "SAT4010", "IPA", "ASGD S PNP"]:
-                # 배터리 아이콘 관련 코드 제거
-                # battery_icon = select_battery_icon(voltage_percentage)
-                # draw.bitmap((90, -9), battery_icon, fill=255)
-                # draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
                 draw.text((27, 1), current_time, font=font_time, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((0, 51), ip_address, font=font_big, fill=255)
@@ -512,11 +491,6 @@ update_oled_display()
 # 메인 루프
 try:
     while True:
-        # 배터리 수준을 확인하고 0%면 시스템 종료 제거
-        # if read_ina219_percentage() == 0:
-        #     print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
-        #     shutdown_system()
-
         # STM32 연결 상태 확인 및 명령 실행
         if command_names[current_command_index] != "시스템 업데이트":
             if is_auto_mode and check_stm32_connection() and connection_success:
