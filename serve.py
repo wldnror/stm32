@@ -8,6 +8,8 @@ import socket
 import subprocess
 from playsound import playsound  # playsound 임포트
 
+os.environ['DISPLAY'] = ':0'
+
 # 사운드 파일 경로 설정
 script_dir = os.path.dirname(os.path.abspath(__file__))
 SUCCESS_SOUND_PATH = os.path.join(script_dir, 'success.wav')
