@@ -2,6 +2,7 @@ import pygame
 import time
 import os
 
+os.environ['DISPLAY'] = ':0'
 # 사운드 파일 경로 설정
 script_dir = os.path.dirname(os.path.abspath(__file__))
 FAILURE_SOUND_PATH = os.path.join(script_dir, 'gms_k1.mp3')  # 또는 변환된 파일 경로
