@@ -9,7 +9,6 @@ from luma.core.interface.serial import i2c
 from luma.core.render import canvas
 from luma.oled.device import sh1107
 import subprocess
-from ina219 import INA219, DeviceRangeError
 import threading
 
 # import logging
@@ -27,10 +26,10 @@ LED_SUCCESS = 24
 LED_ERROR = 25
 LED_ERROR1 = 23
 
-# INA219 설정
-SHUNT_OHMS = 0.1
-MIN_VOLTAGE = 3.1  # 최소 작동 전압
-MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
+# INA219 관련 상수 제거
+# SHUNT_OHMS = 0.1
+# MIN_VOLTAGE = 3.1  # 최소 작동 전압
+# MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
@@ -66,7 +65,7 @@ def button_next_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 10초 동안은 입력 무시
         is_button_pressed = False
         return
 
@@ -81,7 +80,6 @@ def button_next_callback(channel):
     last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
     is_button_pressed = False
 
-
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
     global last_time_button_next_pressed, last_time_button_execute_pressed
@@ -89,7 +87,7 @@ def button_execute_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 10초 동안은 입력 무시
         is_button_pressed = False
         return
 
@@ -121,7 +119,7 @@ def toggle_mode():
     global is_auto_mode
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
-    
+
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
 auto_mode_text = 'A'
 manual_mode_text = 'M'
@@ -160,7 +158,6 @@ def check_stm32_connection():
                     print("STM32 재연결 성공")
                     connection_success = True
                     connection_failed_since_last_success = False  # 성공 후 실패 플래그 초기화
-                    
                 else:
                     print("STM32 연결 성공")
                     connection_success = False  # 연속적인 성공을 방지
@@ -173,24 +170,6 @@ def check_stm32_connection():
             print(f"오류 발생: {e}")
             connection_failed_since_last_success = True  # 실패 플래그 설정
             return False
-
-
-# 배터리 상태 확인 함수
-def read_ina219_percentage():
-    try:
-        ina = INA219(SHUNT_OHMS)
-        ina.configure()
-        voltage = ina.voltage()
-        if voltage <= MIN_VOLTAGE:
-            return 0
-        elif voltage >= MAX_VOLTAGE:
-            return 100
-        else:
-            return int(((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100)
-    except Exception as e:
-        # 예외 발생 시 로그 남기기
-        print("INA219 모듈 읽기 실패:", str(e))
-        return -1
 
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
@@ -206,22 +185,22 @@ font_status = ImageFont.truetype(font_path, 13)
 font_1 = ImageFont.truetype(font_path, 21)
 font_time = ImageFont.truetype(font_path, 12)
 
-# 배터리 아이콘 로드
-low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+# 배터리 아이콘 로드 제거
+# low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+# medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+# high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+# full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 
-# 배터리 아이콘 선택 함수
-def select_battery_icon(percentage):
-    if percentage < 20:
-        return low_battery_icon
-    elif percentage < 60:
-        return medium_battery_icon
-    elif percentage < 100:
-        return high_battery_icon
-    else:
-        return full_battery_icon
+# 배터리 아이콘 선택 함수 제거
+# def select_battery_icon(percentage):
+#     if percentage < 20:
+#         return low_battery_icon
+#     elif percentage < 60:
+#         return medium_battery_icon
+#     elif percentage < 100:
+#         return high_battery_icon
+#     else:
+#         return full_battery_icon
 
 # 명령어 설정
 commands = [
@@ -302,7 +281,7 @@ def restart_script():
     print("스크립트를 재시작합니다.")
     display_status_message("재시작 중",position=(20, 20), font_size=15)
     def restart():
-        time.sleep(3)  # 1초 후에 스크립트를 재시작합니다.
+        time.sleep(3)  # 3초 후에 스크립트를 재시작합니다.
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart).start()
 
@@ -314,7 +293,7 @@ def display_progress_and_message(percentage, message, message_position=(0, 0), f
         # 진행 상태 바 표시
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")  # 상태 바의 외곽선
         draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")  # 상태 바의 내용
-        
+
 def unlock_memory():
     with display_lock:
         print("메모리 해제 시도...")
@@ -352,7 +331,6 @@ def restart_script():
         time.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart).start()   
-
 
 def lock_memory_procedure():
     
@@ -462,7 +440,6 @@ def execute_command(command_index):
     is_executing = False
     is_command_executing = False
 
-        
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -482,7 +459,7 @@ def update_oled_display():
         ip_address = get_ip_address()
         now = datetime.now()
         current_time = now.strftime('%H시 %M분')
-        voltage_percentage = read_ina219_percentage()
+        # voltage_percentage = read_ina219_percentage()  # 제거
 
         with canvas(device) as draw:
             if command_names[current_command_index] != "시스템 업데이트":
@@ -493,9 +470,10 @@ def update_oled_display():
                 draw.text(text_position[mode_char], mode_char, font=font, fill=255)
 
             if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "SAT4010", "IPA", "ASGD S PNP"]:
-                battery_icon = select_battery_icon(voltage_percentage)
-                draw.bitmap((90, -9), battery_icon, fill=255)
-                draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
+                # 배터리 아이콘 관련 코드 제거
+                # battery_icon = select_battery_icon(voltage_percentage)
+                # draw.bitmap((90, -9), battery_icon, fill=255)
+                # draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
                 draw.text((27, 1), current_time, font=font_time, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((0, 51), ip_address, font=font_big, fill=255)
@@ -524,7 +502,6 @@ def update_oled_display():
                     draw.text((2, 27), 'ASGD S PNP', font=font_1, fill=255)
                 elif command_names[current_command_index] == "시스템 업데이트":
                     draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
-
 
 # 실시간 업데이트를 위한 스레드 함수
 def realtime_update_display():
@@ -557,15 +534,17 @@ update_oled_display()
 # 메인 루프
 try:
     while True:
-        # 배터리 수준을 확인하고 0%면 시스템 종료
-        if read_ina219_percentage() == 0:
-            print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
-            shutdown_system()
+        # 배터리 수준을 확인하고 0%면 시스템 종료 제거
+        # if read_ina219_percentage() == 0:
+        #     print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
+        #     shutdown_system()
 
         # STM32 연결 상태 확인 및 명령 실행
         if command_names[current_command_index] != "시스템 업데이트":
             if is_auto_mode and check_stm32_connection() and connection_success:
-                execute_command(current_command_index)
+                execute_command(current_command_index
+
+                )
 
         # OLED 디스플레이 업데이트
         if need_update:
