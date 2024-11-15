@@ -33,7 +33,8 @@ connection_failed_since_last_success = False
 root = tk.Tk()
 root.title("업데이트 관리자")
 root.geometry("500x250")  # 필요에 따라 크기 조정
-
+mode_label = tk.Label(root, text="", font=("Helvetica", 16))
+mode_label.pack(pady=10)
 current_command_label = tk.Label(root, text=f"현재 명령어: {command_names[current_command_index]}", font=("Helvetica", 14))
 current_command_label.pack(pady=5)
 
