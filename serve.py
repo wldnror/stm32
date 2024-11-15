@@ -33,6 +33,7 @@ connection_failed_since_last_success = False
 root = tk.Tk()
 root.title("업데이트 관리자")
 root.geometry("510x350")  # 필요에 따라 크기 조정
+root.attributes("-topmost", True)  # 창을 항상 최상위에 유지
 
 mode_label = tk.Label(root, text="", font=("Helvetica", 17))
 mode_label.pack(pady=10)
