@@ -354,9 +354,6 @@ update_ip_label()
 def keep_on_top():
     root.attributes("-topmost", True)
     root.lift()
-    # 필요하다면 다른 플랫폼에서 추가 설정을 할 수 있습니다.
-    # 예를 들어 Windows에서는 `root.attributes("-topmost", True)`만으로 충분하지만,
-    # 다른 OS에서는 추가적인 조치가 필요할 수 있습니다.
     root.after(1000, keep_on_top)  # 1초마다 이 함수 재실행
 
 # 포커스 이벤트 핸들러
