@@ -1,5 +1,4 @@
 import tkinter as tk
-from tkinter import messagebox
 from datetime import datetime
 import threading
 import time
@@ -75,7 +74,7 @@ def update_led(led_label, status):
 def toggle_mode_gui():
     global is_auto_mode
     if is_executing:
-        messagebox.showwarning("경고", "현재 명령이 실행 중입니다.")
+        show_notification("현재 명령이 실행 중입니다.", "red")
         return
     is_auto_mode = not is_auto_mode
     mode_label.config(text=f"모드: {'자동' if is_auto_mode else '수동'}")
@@ -83,7 +82,7 @@ def toggle_mode_gui():
 def next_command_gui():
     global current_command_index
     if is_executing:
-        messagebox.showwarning("경고", "현재 명령이 실행 중입니다.")
+        show_notification("현재 명령이 실행 중입니다.", "red")
         return
     current_command_index = (current_command_index + 1) % len(commands)
     current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
@@ -91,7 +90,7 @@ def next_command_gui():
 def execute_command_gui():
     global is_executing
     if is_executing:
-        messagebox.showwarning("경고", "이미 명령이 실행 중입니다.")
+        show_notification("이미 명령이 실행 중입니다.", "red")
         return
     threading.Thread(target=execute_command, args=(current_command_index,), daemon=True).start()
 
@@ -148,19 +147,19 @@ def git_pull():
         if result.returncode == 0:
             if "이미 최신 상태" in result.stdout:
                 update_status("이미 최신 상태", "blue")
-                messagebox.showinfo("정보", "시스템이 이미 최신 상태입니다.")
+                show_notification("시스템이 이미 최신 상태입니다.", "blue")
             else:
                 update_status("업데이트 성공!", "green")
-                messagebox.showinfo("성공", "시스템 업데이트에 성공했습니다.")
+                show_notification("시스템 업데이트에 성공했습니다.", "green")
                 restart_script()
         else:
             update_status("업데이트 실패", "red")
-            messagebox.showerror("오류", f"GitHub 업데이트 실패.\n오류 메시지: {result.stderr}")
+            show_notification(f"GitHub 업데이트 실패.\n오류 메시지: {result.stderr}", "red")
             update_led(led_error, True)
             update_led(led_error1, True)
     except Exception as e:
         update_status("업데이트 오류", "red")
-        messagebox.showerror("오류", f"업데이트 중 오류 발생:\n{str(e)}")
+        show_notification(f"업데이트 중 오류 발생:\n{str(e)}", "red")
         update_led(led_error, True)
         update_led(led_error1, True)
 
@@ -231,6 +230,14 @@ def lock_memory_procedure():
 def update_status(message, color):
     status_label.config(text=f"상태: {message}", fg=color)
 
+# 알림 메시지 레이블 (상태 레이블 아래에 추가)
+notification_label = tk.Label(root, text="", font=("Helvetica", 12), fg="green")
+notification_label.pack(pady=5)
+
+def show_notification(message, color="green", duration=3000):
+    notification_label.config(text=message, fg=color)
+    root.after(duration, lambda: notification_label.config(text=""))
+
 def execute_command(command_index):
     global is_executing, connection_success, connection_failed_since_last_success
     is_executing = True
@@ -251,7 +258,7 @@ def execute_command(command_index):
 
     if not unlock_memory():
         update_status("메모리 잠금 해제 실패", "red")
-        messagebox.showerror("오류", "메모리 잠금 해제 실패")
+        show_notification("메모리 잠금 해제 실패", "red")
         is_executing = False
         return
 
@@ -272,16 +279,17 @@ def execute_command(command_index):
         result = process.returncode
         if result == 0:
             update_status("업데이트 성공!", "green")
+            show_notification("업데이트에 성공했습니다.", "green")
             update_led(led_success, True)
             lock_memory_procedure()
         else:
             update_status("업데이트 실패", "red")
+            show_notification(f"'{commands[command_index]}' 업데이트 실패!", "red")
             update_led(led_error, True)
             update_led(led_error1, True)
-            messagebox.showerror("오류", f"'{commands[command_index]}' 업데이트 실패!")
     except Exception as e:
         update_status("업데이트 오류", "red")
-        messagebox.showerror("오류", f"업데이트 중 오류 발생:\n{str(e)}")
+        show_notification(f"업데이트 중 오류 발생:\n{str(e)}", "red")
     finally:
         is_executing = False
 
