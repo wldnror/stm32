@@ -6,6 +6,25 @@ import os
 import sys
 import socket
 import subprocess
+from playsound import playsound  # playsound 임포트
+
+# 사운드 파일 경로 설정
+script_dir = os.path.dirname(os.path.abspath(__file__))
+SUCCESS_SOUND_PATH = os.path.join(script_dir, 'success.wav')
+FAILURE_SOUND_PATH = os.path.join(script_dir, 'failure.wav')
+
+# 사운드 재생 함수 정의
+def play_success_sound():
+    if os.path.isfile(SUCCESS_SOUND_PATH):
+        threading.Thread(target=lambda: playsound(SUCCESS_SOUND_PATH), daemon=True).start()
+    else:
+        print(f"성공 사운드 파일을 찾을 수 없습니다: {SUCCESS_SOUND_PATH}")
+
+def play_failure_sound():
+    if os.path.isfile(FAILURE_SOUND_PATH):
+        threading.Thread(target=lambda: playsound(FAILURE_SOUND_PATH), daemon=True).start()
+    else:
+        print(f"실패 사운드 파일을 찾을 수 없습니다: {FAILURE_SOUND_PATH}")
 
 # 전역 변수 설정
 is_auto_mode = True
@@ -162,15 +181,18 @@ def git_pull():
             else:
                 update_status("업데이트 성공!", "green")
                 show_notification("시스템 업데이트에 성공했습니다.", "green")
+                play_success_sound()  # 성공 사운드 재생
                 restart_script()
         else:
             update_status("업데이트 실패", "red")
             show_notification(f"GitHub 업데이트 실패.\n오류 메시지: {result.stderr}", "red")
+            play_failure_sound()  # 실패 사운드 재생
             update_led(led_error, True)
             update_led(led_error1, True)
     except Exception as e:
         update_status("업데이트 오류", "red")
         show_notification(f"업데이트 중 오류 발생:\n{str(e)}", "red")
+        play_failure_sound()  # 실패 사운드 재생
         update_led(led_error, True)
         update_led(led_error1, True)
 
@@ -203,10 +225,12 @@ def unlock_memory():
         else:
             update_status("메모리 잠금 해제 실패", "red")
             show_notification(f"메모리 잠금 해제 실패: {result.stderr}", "red")
+            play_failure_sound()  # 실패 사운드 재생
             return False
     except Exception as e:
         update_status("오류 발생", "red")
         show_notification(f"메모리 잠금 해제 중 오류 발생: {str(e)}", "red")
+        play_failure_sound()  # 실패 사운드 재생
         return False
 
 def lock_memory_procedure():
@@ -227,15 +251,18 @@ def lock_memory_procedure():
         if result.returncode == 0:
             update_status("메모리 잠금 성공", "green")
             show_notification("메모리 잠금에 성공했습니다.", "green")
+            play_success_sound()  # 최종 성공 사운드 재생
             update_led(led_success, True)
         else:
             update_status("메모리 잠금 실패", "red")
             show_notification(f"메모리 잠금 실패: {result.stderr}", "red")
+            play_failure_sound()  # 실패 사운드 재생
             update_led(led_error, True)
             update_led(led_error1, True)
     except Exception as e:
         update_status("오류 발생", "red")
         show_notification(f"메모리 잠금 중 오류 발생: {str(e)}", "red")
+        play_failure_sound()  # 실패 사운드 재생
 
 # 상태 업데이트 함수
 def update_status(message, color):
@@ -270,6 +297,7 @@ def execute_command(command_index):
     if not unlock_memory():
         update_status("메모리 잠금 해제 실패", "red")
         show_notification("메모리 잠금 해제 실패", "red")
+        play_failure_sound()  # 실패 사운드 재생
         is_executing = False
         return
 
@@ -291,16 +319,19 @@ def execute_command(command_index):
         if result == 0:
             update_status("업데이트 성공!", "green")
             show_notification("업데이트에 성공했습니다.", "green")
+            # 성공 사운드 재생을 제거
             update_led(led_success, True)
             lock_memory_procedure()
         else:
             update_status("업데이트 실패", "red")
             show_notification(f"'{commands[command_index]}' 업데이트 실패!", "red")
+            play_failure_sound()  # 실패 사운드 재생
             update_led(led_error, True)
             update_led(led_error1, True)
     except Exception as e:
         update_status("업데이트 오류", "red")
         show_notification(f"업데이트 중 오류 발생:\n{str(e)}", "red")
+        play_failure_sound()  # 실패 사운드 재생
     finally:
         is_executing = False
 
