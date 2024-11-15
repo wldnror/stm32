@@ -1,180 +1,16 @@
+import tkinter as tk
+from tkinter import messagebox
 from datetime import datetime
-import RPi.GPIO as GPIO
+import threading
 import time
 import os
 import sys
 import socket
-from PIL import Image, ImageDraw, ImageFont
-from luma.core.interface.serial import i2c
-from luma.core.render import canvas
-from luma.oled.device import sh1107
 import subprocess
-import threading
 
-display_lock = threading.Lock()
-# GPIO 핀 설정
-BUTTON_PIN_NEXT = 27
-BUTTON_PIN_EXECUTE = 17
-# LED_DEBUGGING = 23
-LED_SUCCESS = 24
-LED_ERROR = 25
-LED_ERROR1 = 23
-
-# 자동 모드와 수동 모드 상태를 추적하는 전역 변수
+# 전역 변수 설정
 is_auto_mode = True
-
-# GPIO 핀 번호 모드 설정 및 초기 상태 설정
-GPIO.setmode(GPIO.BCM)
-
-# 전역 변수로 마지막으로 눌린 시간을 추적
-last_time_button_next_pressed = 0
-last_time_button_execute_pressed = 0
-button_press_interval = 0.5  # 두 버튼이 동시에 눌린 것으로 간주되는 최대 시간 차이
-
-need_update = False
-is_command_executing = False
-is_button_pressed = False
-
-# 전역 변수로 마지막 모드 전환 시간을 추적
-last_mode_toggle_time = 0
-
-# 스크립트 시작 부분에 전역 변수 정의
-is_executing = False
-
-def toggle_mode():
-    global is_auto_mode, last_mode_toggle_time
-    is_auto_mode = not is_auto_mode
-    last_mode_toggle_time = time.time()
-    update_oled_display()
-
-def button_next_callback(channel):
-    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
-    global last_time_button_next_pressed, last_time_button_execute_pressed
-
-    current_time = time.time()
-    is_button_pressed = True
-
-    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 10초 동안은 입력 무시
-        is_button_pressed = False
-        return
-
-    # EXECUTE 버튼이 최근에 눌렸는지 확인
-    if current_time - last_time_button_execute_pressed < button_press_interval:
-        toggle_mode()  # 모드 전환
-        need_update = True
-    else:
-        current_command_index = (current_command_index + 1) % len(commands)
-        need_update = True
-
-    last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
-    is_button_pressed = False
-
-def button_execute_callback(channel):
-    global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
-    global last_time_button_next_pressed, last_time_button_execute_pressed
-
-    current_time = time.time()
-    is_button_pressed = True
-
-    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 10초 동안은 입력 무시
-        is_button_pressed = False
-        return
-
-    # NEXT 버튼이 최근에 눌렸는지 확인
-    if current_time - last_time_button_next_pressed < button_press_interval:
-        toggle_mode()  # 모드 전환
-        need_update = True
-    else:
-        # EXECUTE 버튼만 눌렸을 때의 로직
-        if not is_auto_mode:
-            execute_command(current_command_index)
-            need_update = True
-        else:
-            with display_lock:
-                if current_command_index == command_names.index("시스템 업데이트"):
-                    execute_command(current_command_index)
-                else:
-                    if is_auto_mode:
-                        current_command_index = (current_command_index - 1) % len(commands)
-                    else:
-                        execute_command(current_command_index)
-            need_update = True
-
-    last_time_button_execute_pressed = current_time  # EXECUTE 버튼 눌린 시간 갱신
-    is_button_pressed = False
-
-# 모드 전환 함수
-def toggle_mode():
-    global is_auto_mode
-    is_auto_mode = not is_auto_mode
-    update_oled_display()  # OLED 화면 업데이트
-
-# 자동 모드와 수동 모드 아이콘 대신 문자열 사용
-auto_mode_text = 'A'
-manual_mode_text = 'M'
-
-# GPIO 설정
-GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=800)
-GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=800)
-GPIO.setup(LED_SUCCESS, GPIO.OUT)
-GPIO.setup(LED_ERROR, GPIO.OUT)
-GPIO.setup(LED_ERROR1, GPIO.OUT)
-
-# 연결 상태를 추적하기 위한 변수
-connection_success = False
-connection_failed_since_last_success = False
-
-def check_stm32_connection():
-    with display_lock:
-        global connection_success, connection_failed_since_last_success, is_command_executing
-        if is_command_executing:  # 명령 실행 중에는 STM32 연결 확인을 하지 않음
-            return False
-
-        try:
-            command = [
-                "sudo", "openocd",
-                "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-                "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-                "-c", "init",
-                "-c", "exit"
-            ]
-            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-            if result.returncode == 0:
-                if connection_failed_since_last_success:
-                    print("STM32 재연결 성공")
-                    connection_success = True
-                    connection_failed_since_last_success = False  # 성공 후 실패 플래그 초기화
-                else:
-                    print("STM32 연결 성공")
-                    connection_success = False  # 연속적인 성공을 방지
-                return True
-            else:
-                print("STM32 연결 실패:", result.stderr)
-                connection_failed_since_last_success = True  # 실패 플래그 
-                return False
-        except Exception as e:
-            print(f"오류 발생: {e}")
-            connection_failed_since_last_success = True  # 실패 플래그 설정
-            return False
-
-# OLED 설정
-serial = i2c(port=1, address=0x3C)
-device = sh1107(serial, rotate=1)
-
-# 폰트 및 이미지 설정
-font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
-font_big = ImageFont.truetype(font_path, 12)
-font_s = ImageFont.truetype(font_path, 13)
-font_st = ImageFont.truetype(font_path, 11)
-font = ImageFont.truetype(font_path, 17)
-font_status = ImageFont.truetype(font_path, 13)
-font_1 = ImageFont.truetype(font_path, 21)
-font_time = ImageFont.truetype(font_path, 12)
-
-# 명령어 설정
+current_command_index = 0
 commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000\"",
@@ -185,12 +21,104 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
-
 command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP", "시스템 업데이트"]
 
-current_command_index = 0
+# 상태 메시지 및 실행 상태
 status_message = ""
+is_executing = False
+need_update = False
+connection_success = False
+connection_failed_since_last_success = False
 
+# Tkinter GUI 설정
+root = tk.Tk()
+root.title("라즈베리파이 업데이트 관리자")
+root.geometry("600x400")  # 필요에 따라 크기 조정
+
+# GUI 요소 정의
+mode_label = tk.Label(root, text="모드: 자동", font=("Helvetica", 16))
+mode_label.pack(pady=10)
+
+current_command_label = tk.Label(root, text=f"현재 명령어: {command_names[current_command_index]}", font=("Helvetica", 14))
+current_command_label.pack(pady=5)
+
+status_label = tk.Label(root, text="상태: 대기 중", font=("Helvetica", 14), fg="blue")
+status_label.pack(pady=5)
+
+ip_label = tk.Label(root, text=f"IP 주소: 로딩 중...", font=("Helvetica", 12))
+ip_label.pack(pady=5)
+
+# LED 상태 표시기 (GUI 내에서 색상으로 대체)
+led_frame = tk.Frame(root)
+led_frame.pack(pady=10)
+
+led_success = tk.Label(led_frame, text="성공 LED", bg="grey", width=10, height=2)
+led_success.grid(row=0, column=0, padx=5)
+
+led_error = tk.Label(led_frame, text="오류 LED1", bg="grey", width=10, height=2)
+led_error.grid(row=0, column=1, padx=5)
+
+led_error1 = tk.Label(led_frame, text="오류 LED2", bg="grey", width=10, height=2)
+led_error1.grid(row=0, column=2, padx=5)
+
+# 버튼 프레임
+button_frame = tk.Frame(root)
+button_frame.pack(pady=20)
+
+def update_led(led_label, status):
+    if status:
+        led_label.config(bg="green")
+    else:
+        led_label.config(bg="grey")
+
+# 버튼 콜백 함수
+def toggle_mode_gui():
+    global is_auto_mode
+    if is_executing:
+        messagebox.showwarning("경고", "현재 명령이 실행 중입니다.")
+        return
+    is_auto_mode = not is_auto_mode
+    mode_label.config(text=f"모드: {'자동' if is_auto_mode else '수동'}")
+
+def next_command_gui():
+    global current_command_index
+    if is_executing:
+        messagebox.showwarning("경고", "현재 명령이 실행 중입니다.")
+        return
+    current_command_index = (current_command_index + 1) % len(commands)
+    current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
+
+def execute_command_gui():
+    global is_executing
+    if is_executing:
+        messagebox.showwarning("경고", "이미 명령이 실행 중입니다.")
+        return
+    threading.Thread(target=execute_command, args=(current_command_index,), daemon=True).start()
+
+# 버튼 생성
+next_button = tk.Button(button_frame, text="Next", command=next_command_gui, width=10, height=2)
+next_button.grid(row=0, column=0, padx=10)
+
+execute_button = tk.Button(button_frame, text="Execute", command=execute_command_gui, width=10, height=2)
+execute_button.grid(row=0, column=1, padx=10)
+
+# IP 주소 업데이트 함수
+def get_ip_address():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception as e:
+        return "0.0.0.0"
+
+def update_ip_label():
+    ip = get_ip_address()
+    ip_label.config(text=f"IP 주소: {ip}")
+    root.after(5000, update_ip_label)  # 5초마다 업데이트
+
+# Git Pull 함수
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
     if not os.path.isfile(shell_script_path):
@@ -209,71 +137,43 @@ def git_pull():
             os.fsync(script_file.fileno())
 
     os.chmod(shell_script_path, 0o755)
-    
-    with canvas(device) as draw:
-        draw.text((36, 8), "시스템", font=font, fill=255)
-        draw.text((17, 27), "업데이트 중", font=font, fill=255)
 
+    update_status("시스템 업데이트 중...", "orange")
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        GPIO.output(LED_SUCCESS, False)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
+        update_led(led_success, False)
+        update_led(led_error, False)
+        update_led(led_error1, False)
         
         if result.returncode == 0:
             if "이미 최신 상태" in result.stdout:
-                display_progress_and_message(100, "이미 최신 상태", message_position=(10, 10), font_size=15)
-                time.sleep(1)
+                update_status("이미 최신 상태", "blue")
+                messagebox.showinfo("정보", "시스템이 이미 최신 상태입니다.")
             else:
-                print("업데이트 성공!")
-                GPIO.output(LED_SUCCESS, True)
-                display_progress_and_message(100, "업데이트 성공!", message_position=(10, 10), font_size=15)
-                time.sleep(1)
-                GPIO.output(LED_SUCCESS, False)
+                update_status("업데이트 성공!", "green")
+                messagebox.showinfo("성공", "시스템 업데이트에 성공했습니다.")
                 restart_script()
         else:
-            print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
-            print("오류 메시지:", result.stderr)
-            GPIO.output(LED_ERROR, True)
-            GPIO.output(LED_ERROR1, True)
-            display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(0, 10), font_size=15)
-            time.sleep(1)
+            update_status("업데이트 실패", "red")
+            messagebox.showerror("오류", f"GitHub 업데이트 실패.\n오류 메시지: {result.stderr}")
+            update_led(led_error, True)
+            update_led(led_error1, True)
     except Exception as e:
-        print("명령 실행 중 오류 발생:", str(e))
-        GPIO.output(LED_ERROR, True)
-        GPIO.output(LED_ERROR1, True)
-        display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(0, 10), font_size=15)
-        time.sleep(1)
-    finally:
-        GPIO.output(LED_SUCCESS, False)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
+        update_status("업데이트 오류", "red")
+        messagebox.showerror("오류", f"업데이트 중 오류 발생:\n{str(e)}")
+        update_led(led_error, True)
+        update_led(led_error1, True)
 
 def restart_script():
-    print("스크립트를 재시작합니다.")
-    display_status_message("재시작 중",position=(20, 20), font_size=15)
+    update_status("스크립트 재시작 중...", "orange")
     def restart():
-        time.sleep(3)  # 3초 후에 스크립트를 재시작합니다.
+        time.sleep(3)  # 3초 후 재시작
         os.execv(sys.executable, [sys.executable] + sys.argv)
-    threading.Thread(target=restart).start()
+    threading.Thread(target=restart, daemon=True).start()
 
-def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
-    with canvas(device) as draw:
-        # 메시지 표시
-        draw.text(message_position, message, font=font, fill=255)
-        
-        # 진행 상태 바 표시
-        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")  # 상태 바의 외곽선
-        draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")  # 상태 바의 내용
-
+# 메모리 잠금 해제 및 잠금 함수
 def unlock_memory():
-    with display_lock:
-        print("메모리 해제 시도...")
-
-    # '메모리 잠금' 및 '해제 중' 메시지와 함께 초기 진행 상태 바 표시
-    display_progress_and_message(0, "메모리 잠금\n   해제 중", message_position=(18, 0), font_size=15)
-
-    # 메모리 잠금 해제 로직 구현...
+    update_status("메모리 잠금 해제 중...", "orange")
     openocd_command = [
         "sudo", "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
@@ -284,29 +184,23 @@ def unlock_memory():
         "-c", "reset run",
         "-c", "shutdown"
     ]
-    result = subprocess.run(openocd_command)
-
-    if result.returncode == 0:
-        display_progress_and_message(30, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
-        time.sleep(1)
-        return True
-    else:
-        display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
-        time.sleep(1)
-        update_oled_display()
+    try:
+        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            update_status("메모리 잠금 해제 성공!", "green")
+            messagebox.showinfo("성공", "메모리 잠금 해제에 성공했습니다.")
+            return True
+        else:
+            update_status("메모리 잠금 해제 실패", "red")
+            messagebox.showerror("오류", f"메모리 잠금 해제 실패.\n오류 메시지: {result.stderr}")
+            return False
+    except Exception as e:
+        update_status("오류 발생", "red")
+        messagebox.showerror("오류", f"메모리 잠금 해제 중 오류 발생:\n{str(e)}")
         return False
 
-def restart_script():
-    print("스크립트를 재시작합니다.")
-    display_progress_and_message(25, "재시작 중", message_position=(20, 10), font_size=15)
-    def restart():
-        time.sleep(1)
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-    threading.Thread(target=restart).start()   
-
 def lock_memory_procedure():
-    
-    display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
+    update_status("메모리 잠금 중...", "orange")
     openocd_command = [
         "sudo",
         "openocd",
@@ -321,186 +215,121 @@ def lock_memory_procedure():
     try:
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
-            print("성공적으로 메모리를 잠갔습니다.")
-            GPIO.output(LED_SUCCESS, True)
-            display_progress_and_message(100,"메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
-            time.sleep(1)
-            GPIO.output(LED_SUCCESS, False)
+            update_status("메모리 잠금 성공", "green")
+            messagebox.showinfo("성공", "메모리 잠금에 성공했습니다.")
+            update_led(led_success, True)
         else:
-            print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
-            GPIO.output(LED_ERROR, True)
-            GPIO.output(LED_ERROR1, True)
-            display_progress_and_message(0,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
-            time.sleep(1)
-            update_oled_display()
-            GPIO.output(LED_ERROR, False)
-            GPIO.output(LED_ERROR1, False)
+            update_status("메모리 잠금 실패", "red")
+            messagebox.showerror("오류", f"메모리 잠금 실패.\n오류 코드: {result.returncode}\n오류 메시지: {result.stderr}")
+            update_led(led_error, True)
+            update_led(led_error1, True)
     except Exception as e:
-        print("명령 실행 중 오류 발생:", str(e))
-        GPIO.output(LED_ERROR, True)
-        GPIO.output(LED_ERROR1, True)
-        update_oled_display()
-        display_progress_and_message(0,"오류 발생")
-        time.sleep(1)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
+        update_status("오류 발생", "red")
+        messagebox.showerror("오류", f"메모리 잠금 중 오류 발생:\n{str(e)}")
+
+# 상태 업데이트 함수
+def update_status(message, color):
+    status_label.config(text=f"상태: {message}", fg=color)
 
 def execute_command(command_index):
-    global is_executing, is_command_executing
-    is_executing = True  # 작업 시작 전에 상태를 실행 중으로 설정
-    is_command_executing = True  # 명령 실행 중 상태 활성화
-
-    print("업데이트 시도...")
-    GPIO.output(LED_SUCCESS, False)
-    GPIO.output(LED_ERROR, False)
-    GPIO.output(LED_ERROR1, False)
+    global is_executing, connection_success, connection_failed_since_last_success
+    is_executing = True
+    update_status("명령 실행 중...", "orange")
+    update_led(led_success, False)
+    update_led(led_error, False)
+    update_led(led_error1, False)
 
     if command_index == len(commands) - 1:
         git_pull()
         is_executing = False
-        is_command_executing = False
         return
 
-    if command_index == 7:   # 메뉴 목록이 늘어나거나 줄어들때 사용!
+    if command_index == 7:   # 시스템 업데이트
         lock_memory_procedure()
         is_executing = False
-        is_command_executing = False
         return
-        
+
     if not unlock_memory():
-        GPIO.output(LED_ERROR, True)
-        GPIO.output(LED_ERROR1, True)
-        with canvas(device) as draw:
-            draw.text((20, 8), "메모리 잠금", font=font, fill=255)
-            draw.text((28, 27), "해제 실패", font=font, fill=255)
-        time.sleep(2)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
+        update_status("메모리 잠금 해제 실패", "red")
+        messagebox.showerror("오류", "메모리 잠금 해제 실패")
         is_executing = False
-        is_command_executing = False
         return
 
-    display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
-    process = subprocess.Popen(commands[command_index], shell=True)
-    
-    start_time = time.time()
-    max_duration = 6
-    progress_increment = 20 / max_duration
-    
-    while process.poll() is None:
-        elapsed = time.time() - start_time
-        current_progress = 30 + (elapsed * progress_increment)
-        current_progress = min(current_progress, 80)
-        display_progress_and_message(current_progress, "업데이트 중...", message_position=(12, 10), font_size=15)
-        time.sleep(0.5)
-
-    result = process.returncode
-    if result == 0:
-        print(f"'{commands[command_index]}' 업데이트 성공!")
-        display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
-        time.sleep(0.5)
-        lock_memory_procedure()
-    else:
-        print(f"'{commands[command_index]}' 업데이트 실패!")
-        GPIO.output(LED_ERROR, True)
-        GPIO.output(LED_ERROR1, True)
-        display_progress_and_message(0, "업데이트 실패", message_position=(7, 10), font_size=15)
-        time.sleep(1)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
-
-    is_executing = False
-    is_command_executing = False
-
-def get_ip_address():
+    update_status("업데이트 중...", "orange")
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
+        process = subprocess.Popen(commands[command_index], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        start_time = time.time()
+        max_duration = 6
+        progress_increment = 20 / max_duration
+
+        while process.poll() is None:
+            elapsed = time.time() - start_time
+            current_progress = 30 + (elapsed * progress_increment)
+            current_progress = min(current_progress, 80)
+            update_status(f"업데이트 중... {int(current_progress)}%", "orange")
+            time.sleep(0.5)
+
+        result = process.returncode
+        if result == 0:
+            update_status("업데이트 성공!", "green")
+            update_led(led_success, True)
+            lock_memory_procedure()
+        else:
+            update_status("업데이트 실패", "red")
+            update_led(led_error, True)
+            update_led(led_error1, True)
+            messagebox.showerror("오류", f"'{commands[command_index]}' 업데이트 실패!")
     except Exception as e:
-        return "0.0.0.0"
-        
-def update_oled_display():
-    global current_command_index, status_message, message_position, message_font_size, is_button_pressed
-    with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
-        if is_button_pressed:
-            return  # 버튼 입력 모드에서는 화면 업데이트 무시
+        update_status("업데이트 오류", "red")
+        messagebox.showerror("오류", f"업데이트 중 오류 발생:\n{str(e)}")
+    finally:
+        is_executing = False
 
-        ip_address = get_ip_address()
-        now = datetime.now()
-        current_time = now.strftime('%H시 %M분')
-        # voltage_percentage = read_ina219_percentage()  # 제거
+# STM32 연결 상태 확인 함수
+def check_stm32_connection():
+    global connection_success, connection_failed_since_last_success
+    try:
+        command = [
+            "sudo", "openocd",
+            "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+            "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+            "-c", "init",
+            "-c", "exit"
+        ]
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-        with canvas(device) as draw:
-            if command_names[current_command_index] != "시스템 업데이트":
-                mode_char = 'A' if is_auto_mode else 'M'
-                outer_ellipse_box = (2, 0, 22, 20)
-                text_position = {'A': (8, -3), 'M': (5, -3)}
-                draw.ellipse(outer_ellipse_box, outline="white", fill=None)
-                draw.text(text_position[mode_char], mode_char, font=font, fill=255)
-
-            if command_names[current_command_index] in ["ORG", "HMDS", "ARF-T", "HC100", "SAT4010", "IPA", "ASGD S PNP"]:
-                draw.text((27, 1), current_time, font=font_time, fill=255)
-            elif command_names[current_command_index] == "시스템 업데이트":
-                draw.text((0, 51), ip_address, font=font_big, fill=255)
-                draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
-                draw.text((90, 50), 'ver 3.5', font=font_big, fill=255)
-                draw.text((0, -3), current_time, font=font_time, fill=255)
-
-            if status_message:
-                draw.rectangle(device.bounding_box, outline="white", fill="black")
-                font_custom = ImageFont.truetype(font_path, message_font_size)
-                draw.text(message_position, status_message, font=font_custom, fill=255)
+        if result.returncode == 0:
+            if connection_failed_since_last_success:
+                print("STM32 재연결 성공")
+                connection_success = True
+                connection_failed_since_last_success = False
             else:
-                if command_names[current_command_index] == "ORG":
-                    draw.text((42, 27), 'ORG', font=font_1, fill=255)
-                elif command_names[current_command_index] == "HMDS":
-                    draw.text((33, 27), 'HMDS', font=font_1, fill=255)
-                elif command_names[current_command_index] == "ARF-T":
-                    draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
-                elif command_names[current_command_index] == "HC100":
-                    draw.text((32, 27), 'HC100', font=font_1, fill=255)
-                elif command_names[current_command_index] == "SAT4010":
-                    draw.text((22, 27), 'SAT4010', font=font_1, fill=255)
-                elif command_names[current_command_index] == "IPA":
-                    draw.text((47, 27), 'IPA', font=font_1, fill=255)
-                elif command_names[current_command_index] == "ASGD S PNP":
-                    draw.text((2, 27), 'ASGD S PNP', font=font_1, fill=255)
-                elif command_names[current_command_index] == "시스템 업데이트":
-                    draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
+                print("STM32 연결 성공")
+                connection_success = False  # 연속적인 성공을 방지
+            return True
+        else:
+            print("STM32 연결 실패:", result.stderr)
+            connection_failed_since_last_success = True
+            return False
+    except Exception as e:
+        print(f"오류 발생: {e}")
+        connection_failed_since_last_success = True
+        return False
 
-# 실시간 업데이트를 위한 스레드 함수
-def realtime_update_display():
-    global is_command_executing
+# 실시간 업데이트를 위한 함수
+def realtime_update():
     while True:
-        if not is_button_pressed and not is_command_executing:
-            update_oled_display()
-        time.sleep(1)
-
-# 스레드 생성 및 시작
-realtime_update_thread = threading.Thread(target=realtime_update_display)
-realtime_update_thread.daemon = True
-realtime_update_thread.start()
-
-
-# 초기 디스플레이 업데이트
-update_oled_display()
-
-# 메인 루프
-try:
-    while True:
-        # STM32 연결 상태 확인 및 명령 실행
-        if command_names[current_command_index] != "시스템 업데이트":
+        if not is_executing:
+            # STM32 연결 상태 확인 및 자동 모드일 때 명령 실행
             if is_auto_mode and check_stm32_connection() and connection_success:
                 execute_command(current_command_index)
+        time.sleep(1)
 
-        # OLED 디스플레이 업데이트
-        if need_update:
-            update_oled_display()
-            need_update = False
+# 백그라운드 스레드 시작
+threading.Thread(target=realtime_update, daemon=True).start()
 
-        time.sleep(0.03)
-except KeyboardInterrupt:
-    GPIO.cleanup()
+# IP 주소 초기 업데이트
+update_ip_label()
+
+# Tkinter 메인 루프 실행
+root.mainloop()
