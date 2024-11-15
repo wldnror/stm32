@@ -1,3 +1,6 @@
+아래 코드에서 버튼을 하나 추가해줘 
+이전 다음 확인 3개 버튼으로 
+
 import tkinter as tk
 from datetime import datetime
 import threading
@@ -83,6 +86,14 @@ def next_command_gui():
         show_notification("현재 명령이 실행 중입니다.", "red")
         return
     current_command_index = (current_command_index + 1) % len(commands)
+    current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
+
+def previous_command_gui():
+    global current_command_index
+    if is_executing:
+        show_notification("현재 명령이 실행 중입니다.", "red")
+        return
+    current_command_index = (current_command_index - 1) % len(commands)
     current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
 
 def execute_command_gui():
