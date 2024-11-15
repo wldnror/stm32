@@ -32,9 +32,9 @@ connection_failed_since_last_success = False
 # Tkinter GUI 설정
 root = tk.Tk()
 root.title("업데이트 관리자")
-root.geometry("500x320")  # 필요에 따라 크기 조정
+root.geometry("510x330")  # 필요에 따라 크기 조정
 
-mode_label = tk.Label(root, text="", font=("Helvetica", 12))
+mode_label = tk.Label(root, text="", font=("Helvetica", 13))
 mode_label.pack(pady=10)
 current_command_label = tk.Label(root, text=f"현재 명령어: {command_names[current_command_index]}", font=("Helvetica", 14))
 current_command_label.pack(pady=5)
