@@ -350,5 +350,25 @@ threading.Thread(target=realtime_update, daemon=True).start()
 # IP 주소 초기 업데이트
 update_ip_label()
 
+# 창이 다른 창에 의해 가려졌을 때 다시 최상위로 올리는 함수
+def keep_on_top():
+    root.attributes("-topmost", True)
+    root.lift()
+    # 필요하다면 다른 플랫폼에서 추가 설정을 할 수 있습니다.
+    # 예를 들어 Windows에서는 `root.attributes("-topmost", True)`만으로 충분하지만,
+    # 다른 OS에서는 추가적인 조치가 필요할 수 있습니다.
+    root.after(1000, keep_on_top)  # 1초마다 이 함수 재실행
+
+# 포커스 이벤트 핸들러
+def on_focus_out(event):
+    # 창이 포커스를 잃었을 때 최상위로 다시 올리기
+    root.after(100, lambda: root.attributes("-topmost", True))
+    root.after(100, lambda: root.lift())
+
+root.bind("<FocusOut>", on_focus_out)
+
+# 최상위 유지 함수 시작
+keep_on_top()
+
 # Tkinter 메인 루프 실행
 root.mainloop()
