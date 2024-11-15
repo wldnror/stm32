@@ -1,34 +1,33 @@
-import Adafruit_ADS1x15
+import pygame
 import time
+import os
 
-# ADS1115 객체 생성, I2C 주소 설정 (0x48로 설정)
-adc = Adafruit_ADS1x15.ADS1115(address=0x48)
+# 사운드 파일 경로 설정
+script_dir = os.path.dirname(os.path.abspath(__file__))
+FAILURE_SOUND_PATH = os.path.join(script_dir, 'failure.wav')  # 또는 변환된 파일 경로
 
-# Gain 설정 (1은 +/- 4.096V 범위)
-GAIN = 1
-REFERENCE_VOLTAGE = 4.096  # GAIN=1일 때 참조 전압
-RESISTANCE = 100.0  # 100Ω 저항 사용
+# Pygame 초기화
+pygame.mixer.init()
 
-def read_current(adc, gain):
+# 사운드 로드
+if os.path.isfile(FAILURE_SOUND_PATH):
     try:
-        # ADC 값을 읽기
-        adc_value = adc.read_adc(0, gain=gain)  # 싱글 엔디드 모드로 AIN0 읽기
-        # ADC 값을 전압으로 변환
-        voltage = (adc_value / 32767.0) * REFERENCE_VOLTAGE
-        
-        # 전압을 전류(mA)로 변환 (100Ω 저항 사용 가정)
-        current = (voltage / RESISTANCE) * 1000.0  # V = IR, I = V / R (mA로 변환)
-        
-        return adc_value, voltage, current
-    except Exception as e:
-        print(f'Error reading ADC: {e}')
-        return None, None, None
+        sound = pygame.mixer.Sound(FAILURE_SOUND_PATH)
+        print("사운드 파일 로드 성공.")
+    except pygame.error as e:
+        print(f"사운드 파일 로드 실패: {e}")
+        exit(1)
+else:
+    print(f"사운드 파일을 찾을 수 없습니다: {FAILURE_SOUND_PATH}")
+    exit(1)
 
+# 사운드 재생
 try:
-    while True:
-        adc_value, voltage, current = read_current(adc, GAIN)
-        if adc_value is not None:
-            print(f'ADC Value: {adc_value}, Voltage: {voltage:.4f} V, Current: {current:.4f} mA')
-        time.sleep(1)  # 1초 간격으로 읽기
-except KeyboardInterrupt:
-    print("Program terminated")
+    print("사운드 재생 중...")
+    sound.play()
+    # 사운드가 재생되는 동안 대기
+    while pygame.mixer.get_busy():
+        time.sleep(0.1)
+    print("사운드 재생 완료.")
+except Exception as e:
+    print(f"사운드 재생 중 오류 발생: {e}")
