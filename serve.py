@@ -16,13 +16,19 @@ FAILURE_SOUND_PATH = os.path.join(script_dir, 'failure.wav')
 # 사운드 재생 함수 정의
 def play_success_sound():
     if os.path.isfile(SUCCESS_SOUND_PATH):
-        threading.Thread(target=lambda: playsound(SUCCESS_SOUND_PATH), daemon=True).start()
+        try:
+            threading.Thread(target=lambda: playsound(SUCCESS_SOUND_PATH), daemon=True).start()
+        except Exception as e:
+            print(f"성공 사운드 재생 중 오류 발생: {e}")
     else:
         print(f"성공 사운드 파일을 찾을 수 없습니다: {SUCCESS_SOUND_PATH}")
 
 def play_failure_sound():
     if os.path.isfile(FAILURE_SOUND_PATH):
-        threading.Thread(target=lambda: playsound(FAILURE_SOUND_PATH), daemon=True).start()
+        try:
+            threading.Thread(target=lambda: playsound(FAILURE_SOUND_PATH), daemon=True).start()
+        except Exception as e:
+            print(f"실패 사운드 재생 중 오류 발생: {e}")
     else:
         print(f"실패 사운드 파일을 찾을 수 없습니다: {FAILURE_SOUND_PATH}")
 
