@@ -1,3 +1,6 @@
+아래 코드에서 버튼을 하나 추가해줘 
+이전 다음 확인 3개 버튼으로 
+
 import tkinter as tk
 from datetime import datetime
 import threading
@@ -32,12 +35,10 @@ connection_failed_since_last_success = False
 # Tkinter GUI 설정
 root = tk.Tk()
 root.title("업데이트 관리자")
-root.geometry("600x300")  # 필요에 따라 크기 조정
+root.geometry("510x350")  # 필요에 따라 크기 조정
 
-# GUI 요소 정의
-mode_label = tk.Label(root, text="모드: 자동", font=("Helvetica", 16))
+mode_label = tk.Label(root, text="", font=("Helvetica", 17))
 mode_label.pack(pady=10)
-
 current_command_label = tk.Label(root, text=f"현재 명령어: {command_names[current_command_index]}", font=("Helvetica", 14))
 current_command_label.pack(pady=5)
 
@@ -94,12 +95,15 @@ def execute_command_gui():
         return
     threading.Thread(target=execute_command, args=(current_command_index,), daemon=True).start()
 
-# 버튼 생성
-next_button = tk.Button(button_frame, text="Next", command=next_command_gui, width=10, height=2)
-next_button.grid(row=0, column=0, padx=10)
+# 버튼 생성 (이전, 다음, 확인)
+previous_button = tk.Button(button_frame, text="이전", command=previous_command_gui, width=10, height=2)
+previous_button.grid(row=0, column=0, padx=10)
 
-execute_button = tk.Button(button_frame, text="Execute", command=execute_command_gui, width=10, height=2)
-execute_button.grid(row=0, column=1, padx=10)
+next_button = tk.Button(button_frame, text="다음", command=next_command_gui, width=10, height=2)
+next_button.grid(row=0, column=1, padx=10)
+
+execute_button = tk.Button(button_frame, text="확인", command=execute_command_gui, width=10, height=2)
+execute_button.grid(row=0, column=2, padx=10)
 
 # IP 주소 업데이트 함수
 def get_ip_address():
