@@ -1,6 +1,3 @@
-아래 코드에서 버튼을 하나 추가해줘 
-이전 다음 확인 3개 버튼으로 
-
 import tkinter as tk
 from datetime import datetime
 import threading
