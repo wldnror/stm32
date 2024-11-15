@@ -4,7 +4,7 @@ import os
 
 # 사운드 파일 경로 설정
 script_dir = os.path.dirname(os.path.abspath(__file__))
-FAILURE_SOUND_PATH = os.path.join(script_dir, 'failure.mp3')  # 또는 변환된 파일 경로
+FAILURE_SOUND_PATH = os.path.join(script_dir, 'gms_k1.mp3')  # 또는 변환된 파일 경로
 
 # Pygame 초기화
 pygame.mixer.init()
