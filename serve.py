@@ -187,15 +187,15 @@ def unlock_memory():
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
             update_status("메모리 잠금 해제 성공!", "green")
-            messagebox.showinfo("성공", "메모리 잠금 해제에 성공했습니다.")
+            show_notification("메모리 잠금 해제에 성공했습니다.", "green")
             return True
         else:
             update_status("메모리 잠금 해제 실패", "red")
-            messagebox.showerror("오류", f"메모리 잠금 해제 실패.\n오류 메시지: {result.stderr}")
+            show_notification(f"메모리 잠금 해제 실패: {result.stderr}", "red")
             return False
     except Exception as e:
         update_status("오류 발생", "red")
-        messagebox.showerror("오류", f"메모리 잠금 해제 중 오류 발생:\n{str(e)}")
+        show_notification(f"메모리 잠금 해제 중 오류 발생: {str(e)}", "red")
         return False
 
 def lock_memory_procedure():
@@ -215,16 +215,16 @@ def lock_memory_procedure():
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
             update_status("메모리 잠금 성공", "green")
-            messagebox.showinfo("성공", "메모리 잠금에 성공했습니다.")
+            show_notification("메모리 잠금에 성공했습니다.", "green")
             update_led(led_success, True)
         else:
             update_status("메모리 잠금 실패", "red")
-            messagebox.showerror("오류", f"메모리 잠금 실패.\n오류 코드: {result.returncode}\n오류 메시지: {result.stderr}")
+            show_notification(f"메모리 잠금 실패: {result.stderr}", "red")
             update_led(led_error, True)
             update_led(led_error1, True)
     except Exception as e:
         update_status("오류 발생", "red")
-        messagebox.showerror("오류", f"메모리 잠금 중 오류 발생:\n{str(e)}")
+        show_notification(f"메모리 잠금 중 오류 발생: {str(e)}", "red")
 
 # 상태 업데이트 함수
 def update_status(message, color):
