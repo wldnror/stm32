@@ -7,6 +7,7 @@ import sys
 import socket
 import subprocess
 import pygame  # pygame 임포트
+import ftplib
 
 # DISPLAY 환경 변수 설정 (Linux 환경에서 GUI 사용 시 필요)
 os.environ['DISPLAY'] = ':0'
@@ -78,12 +79,14 @@ connection_failed_since_last_success = False
 # Tkinter GUI 설정
 root = tk.Tk()
 root.title("업데이트 관리자")
-root.geometry("510x350")  # 필요에 따라 크기 조정
+root.geometry("600x450")  # 필요에 따라 크기 조정
 root.attributes("-topmost", True)  # 창을 항상 최상위에 유지
 root.lift()  # 창을 최상위로 올리기 (필요한 경우)
 
 mode_label = tk.Label(root, text="", font=("Helvetica", 17))
 mode_label.pack(pady=10)
+mode_label.config(text=f"모드: {'자동' if is_auto_mode else '수동'}")
+
 current_command_label = tk.Label(root, text=f"현재 명령어: {command_names[current_command_index]}", font=("Helvetica", 14))
 current_command_label.pack(pady=5)
 
@@ -157,6 +160,23 @@ next_button.grid(row=0, column=1, padx=10)
 
 execute_button = tk.Button(button_frame, text="확인", command=execute_command_gui, width=10, height=2)
 execute_button.grid(row=0, column=2, padx=10)
+
+# --- 새로 추가된 부분 시작 ---
+
+# 새로운 버튼 프레임
+extra_button_frame = tk.Frame(root)
+extra_button_frame.pack(pady=10)
+
+def extract_and_upload_gui():
+    if is_executing:
+        show_notification("현재 명령이 실행 중입니다.", "red")
+        return
+    threading.Thread(target=extract_file_from_stm32, daemon=True).start()
+
+extract_button = tk.Button(extra_button_frame, text="파일 추출 및 업로드", command=extract_and_upload_gui, width=20, height=2, bg="purple", fg="white")
+extract_button.pack(pady=5)
+
+# --- 새로 추가된 부분 끝 ---
 
 # IP 주소 업데이트 함수
 def get_ip_address():
@@ -424,6 +444,91 @@ root.bind("<FocusOut>", on_focus_out)
 
 # 최상위 유지 함수 시작
 keep_on_top()
+
+# --- 새로 추가된 기능 시작 ---
+
+def extract_file_from_stm32():
+    global is_executing
+    is_executing = True
+    update_status("파일 추출 중...", "orange")
+    update_led(led_success, False)
+    update_led(led_error, False)
+    update_led(led_error1, False)
+
+    # 추출할 파일의 STM32 메모리 주소 및 크기 설정
+    memory_address = "0x08000000"  # 예시 주소
+    memory_size = "256K"
+
+    # 현재 날짜와 시간을 기반으로 파일 이름 지정
+    now = datetime.now()
+    filename = now.strftime("%Y%m%d_%H%M%S") + ".bin"
+    save_path = f"/home/user/stm32/Download/{filename}"
+
+    # OpenOCD 명령을 사용하여 STM32의 메모리 덤프
+    openocd_command = [
+        "sudo", "openocd",
+        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "init",
+        "-c", "reset halt",
+        "-c", f"flash read_bank 0 {save_path} 0",
+        "-c", "reset run",
+        "-c", "shutdown",
+    ]
+
+    # 명령 실행 및 결과 확인
+    try:
+        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            print("파일 추출 성공!")
+            show_notification("파일 추출에 성공했습니다.", "green")
+            play_success_sound()
+            upload_to_ftp(save_path, filename)
+        else:
+            print("파일 추출 실패. 오류 코드:", result.returncode)
+            print("오류 메시지:", result.stderr)
+            update_status("파일 추출 실패", "red")
+            show_notification(f"파일 추출 실패.\n오류 메시지: {result.stderr}", "red")
+            play_failure_sound()
+            update_led(led_error, True)
+            update_led(led_error1, True)
+    except Exception as e:
+        print("명령 실행 중 오류 발생:", str(e))
+        update_status("파일 추출 오류", "red")
+        show_notification(f"파일 추출 중 오류 발생:\n{str(e)}", "red")
+        play_failure_sound()
+        update_led(led_error, True)
+        update_led(led_error1, True)
+    finally:
+        is_executing = False
+
+def upload_to_ftp(file_path, filename):
+    ftp_server = "79webhard.com"
+    ftp_user = "stm32"
+    ftp_password = "Gds00700@"
+    ftp_path = "/home"
+
+    try:
+        with ftplib.FTP(ftp_server) as ftp:
+            ftp.login(ftp_user, ftp_password)
+            ftp.cwd(ftp_path)
+
+            with open(file_path, 'rb') as file:
+                ftp.storbinary(f'STOR {filename}', file)
+            
+            print("파일 FTP 업로드 성공!")
+            show_notification("파일 FTP 업로드에 성공했습니다.", "green")
+            play_success_sound()
+            update_led(led_success, True)
+    except ftplib.all_errors as e:
+        print("FTP 업로드 실패:", str(e))
+        update_status("FTP 업로드 실패", "red")
+        show_notification(f"FTP 업로드 실패:\n{str(e)}", "red")
+        play_failure_sound()
+        update_led(led_error, True)
+        update_led(led_error1, True)
+
+# --- 새로 추가된 기능 끝 ---
 
 # Tkinter 메인 루프 실행
 root.mainloop()
