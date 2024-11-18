@@ -79,7 +79,7 @@ connection_failed_since_last_success = False
 # Tkinter GUI 설정
 root = tk.Tk()
 root.title("업데이트 관리자")
-root.geometry("600x500")  # 필요에 따라 크기 조정
+root.geometry("600x600")  # 필요에 따라 크기 조정
 root.attributes("-topmost", True)  # 창을 항상 최상위에 유지
 root.lift()  # 창을 최상위로 올리기 (필요한 경우)
 
@@ -108,6 +108,34 @@ led_error.grid(row=0, column=1, padx=5)
 
 led_error1 = tk.Label(led_frame, text="오류 LED2", bg="grey", width=10, height=2)
 led_error1.grid(row=0, column=2, padx=5)
+
+# 업데이트 요청 프레임 (초기에는 숨김)
+update_frame = tk.Frame(root, bg='yellow', pady=10)
+
+update_label = tk.Label(update_frame, text="업데이트를 자동으로 확인하고 업데이트 하시겠습니까?", font=("Helvetica", 12), bg='yellow')
+update_label.pack(pady=5)
+
+update_buttons_frame = tk.Frame(update_frame, bg='yellow')
+update_buttons_frame.pack(pady=5)
+
+def on_update_yes():
+    threading.Thread(target=git_pull, daemon=True).start()
+    hide_update_frame()
+
+def on_update_no():
+    hide_update_frame()
+
+update_yes_button = tk.Button(update_buttons_frame, text="예", command=on_update_yes, width=10, bg="green", fg="white")
+update_yes_button.pack(side=tk.LEFT, padx=10)
+
+update_no_button = tk.Button(update_buttons_frame, text="아니오", command=on_update_no, width=10, bg="red", fg="white")
+update_no_button.pack(side=tk.LEFT, padx=10)
+
+def show_update_frame():
+    update_frame.pack(pady=10)
+
+def hide_update_frame():
+    update_frame.pack_forget()
 
 # 버튼 프레임
 button_frame = tk.Frame(root)
@@ -426,28 +454,48 @@ def realtime_update():
                 execute_command(current_command_index)
         time.sleep(1)
 
-# 백그라운드 스레드 시작
-threading.Thread(target=realtime_update, daemon=True).start()
+# --- 새로 추가된 기능 시작 ---
 
-# IP 주소 초기 업데이트
-update_ip_label()
+def check_for_updates():
+    """
+    새로운 커밋이 있는지 확인하는 함수.
+    """
+    try:
+        # git fetch 실행
+        fetch_result = subprocess.run(['git', 'fetch'], cwd='/home/user/stm32', stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        
+        # git status -uno 실행하여 로컬과 원격 상태 확인
+        status_result = subprocess.run(['git', 'status', '-uno'], cwd='/home/user/stm32', stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        
+        if "Your branch is behind" in status_result.stdout:
+            return True
+        else:
+            return False
+    except Exception as e:
+        print(f"업데이트 확인 중 오류 발생: {e}")
+        return False
 
-# 창이 다른 창에 의해 가려졌을 때 다시 최상위로 올리는 함수
-def keep_on_top():
-    root.attributes("-topmost", True)
-    root.lift()
-    root.after(1000, keep_on_top)  # 1초마다 이 함수 재실행
+def show_update_prompt():
+    """
+    업데이트가 있을 경우 GUI 내에 업데이트 요청 프레임을 표시하는 함수.
+    """
+    show_update_frame()
 
-# 포커스 이벤트 핸들러
-def on_focus_out(event):
-    # 창이 포커스를 잃었을 때 최상위로 다시 올리기
-    root.after(100, lambda: root.attributes("-topmost", True))
-    root.after(100, lambda: root.lift())
+def check_updates_and_prompt():
+    """
+    업데이트가 있는지 확인하고, 있다면 GUI 내에 업데이트 요청을 표시하는 함수.
+    """
+    updates_available = check_for_updates()
+    if updates_available:
+        # Tkinter는 스레드 안전하지 않으므로 main thread에서 프레임 표시
+        root.after(0, show_update_prompt)
 
-root.bind("<FocusOut>", on_focus_out)
+# 업데이트 체크 주기 설정 (예: 60초마다 확인)
+def periodic_update_check():
+    threading.Thread(target=check_updates_and_prompt, daemon=True).start()
+    root.after(60000, periodic_update_check)  # 60,000ms = 60초
 
-# 최상위 유지 함수 시작
-keep_on_top()
+# --- 새로 추가된 기능 끝 ---
 
 # --- 새로 추가된 기능 시작 ---
 
@@ -531,6 +579,43 @@ def upload_to_ftp(file_path, filename):
         play_failure_sound()
         update_led(led_error, True)
         update_led(led_error1, True)
+
+# --- 새로 추가된 기능 끝 ---
+
+# --- 새로 추가된 기능 시작 ---
+
+# 업데이트 체크 및 프롬프트 실행 (GUI 초기화 후)
+periodic_update_check()
+
+# --- 새로 추가된 기능 끝 ---
+
+# 백그라운드 스레드 시작
+threading.Thread(target=realtime_update, daemon=True).start()
+
+# IP 주소 초기 업데이트
+update_ip_label()
+
+# 창이 다른 창에 의해 가려졌을 때 다시 최상위로 올리는 함수
+def keep_on_top():
+    root.attributes("-topmost", True)
+    root.lift()
+    root.after(1000, keep_on_top)  # 1초마다 이 함수 재실행
+
+# 포커스 이벤트 핸들러
+def on_focus_out(event):
+    # 창이 포커스를 잃었을 때 최상위로 다시 올리기
+    root.after(100, lambda: root.attributes("-topmost", True))
+    root.after(100, lambda: root.lift())
+
+root.bind("<FocusOut>", on_focus_out)
+
+# 최상위 유지 함수 시작
+keep_on_top()
+
+# --- 새로 추가된 기능 시작 ---
+
+# STM32 연결 상태 확인 및 실시간 업데이트 확인이 이미 추가된 위치에 위치
+# 업데이트 프레임과 관련된 함수는 이미 위에서 정의됨
 
 # --- 새로 추가된 기능 끝 ---
 
