@@ -6,7 +6,7 @@ import os
 import sys
 import socket
 import subprocess
-import pygame  # pygame 임포트
+import pygame
 import ftplib
 
 # DISPLAY 환경 변수 설정 (Linux 환경에서 GUI 사용 시 필요)
@@ -84,16 +84,20 @@ root.geometry("600x700")  # 필요에 따라 크기 조정
 root.attributes("-topmost", True)  # 창을 항상 최상위에 유지
 root.lift()  # 창을 최상위로 올리기 (필요한 경우)
 
+# 모드 라벨
 mode_label = tk.Label(root, text="", font=("Helvetica", 17))
 mode_label.pack(pady=10)
 mode_label.config(text=f"모드: {'자동' if is_auto_mode else '수동'}")
 
+# 현재 명령어 라벨
 current_command_label = tk.Label(root, text=f"현재 명령어: {command_names[current_command_index]}", font=("Helvetica", 14))
 current_command_label.pack(pady=5)
 
+# 상태 라벨
 status_label = tk.Label(root, text="상태: 대기 중", font=("Helvetica", 14), fg="blue")
 status_label.pack(pady=5)
 
+# IP 주소 라벨
 ip_label = tk.Label(root, text=f"IP 주소: 로딩 중...", font=("Helvetica", 12))
 ip_label.pack(pady=5)
 
@@ -164,6 +168,7 @@ def toggle_mode_gui():
     global is_auto_mode
     if is_executing:
         show_notification("현재 명령이 실행 중입니다.", "red")
+        print("모드 전환 시도: 명령 실행 중.")
         return
     is_auto_mode = not is_auto_mode
     mode_label.config(text=f"모드: {'자동' if is_auto_mode else '수동'}")
@@ -174,6 +179,7 @@ def next_command_gui():
     global current_command_index
     if is_executing:
         show_notification("현재 명령이 실행 중입니다.", "red")
+        print("명령어 변경 시도: 명령 실행 중.")
         return
     current_command_index = (current_command_index + 1) % len(commands)
     current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
@@ -183,6 +189,7 @@ def previous_command_gui():
     global current_command_index
     if is_executing:
         show_notification("현재 명령이 실행 중입니다.", "red")
+        print("명령어 변경 시도: 명령 실행 중.")
         return
     current_command_index = (current_command_index - 1) % len(commands)
     current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
@@ -192,7 +199,7 @@ def execute_command_gui():
     global is_executing
     if is_executing:
         show_notification("이미 명령이 실행 중입니다.", "red")
-        print("명령 실행 중: 이미 명령이 실행 중입니다.")
+        print("명령 실행 시도: 이미 명령이 실행 중입니다.")
         return
     threading.Thread(target=execute_command, args=(current_command_index,), daemon=True).start()
 
@@ -218,7 +225,7 @@ extra_button_frame.pack(pady=10)
 def extract_and_upload_gui():
     if is_executing:
         show_notification("현재 명령이 실행 중입니다.", "red")
-        print("파일 추출 중: 이미 명령이 실행 중입니다.")
+        print("파일 추출 시도: 이미 명령이 실행 중입니다.")
         return
     threading.Thread(target=extract_file_from_stm32, daemon=True).start()
 
@@ -270,25 +277,26 @@ def git_pull():
 
     update_status("시스템 업데이트 중...", "orange")
     try:
+        print("git-pull.sh 스크립트를 실행합니다.")
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        update_led(led_success, False)
-        update_led(led_error, False)
-        update_led(led_error1, False)
         print(f"git-pull.sh 출력: {result.stdout}")
         print(f"git-pull.sh 오류 출력: {result.stderr}")
-        
-        if result.returncode == 0:
-            if "이미 최신 상태입니다." in result.stdout:
-                update_status("이미 최신 상태", "blue")
-                show_notification("시스템이 이미 최신 상태입니다.", "blue")
-                print("시스템이 이미 최신 상태입니다.")
-            else:
-                update_status("업데이트 성공!", "green")
-                show_notification("시스템 업데이트에 성공했습니다.", "green")
-                play_success_sound()  # 성공 사운드 재생
-                print("시스템 업데이트에 성공했습니다.")
-                restart_script()
+
+        # 스크립트의 반환값으로 업데이트 필요 여부 판단
+        if result.returncode == 1:
+            # 업데이트가 수행되었음을 알림
+            update_status("업데이트 성공!", "green")
+            show_notification("시스템 업데이트에 성공했습니다.", "green")
+            play_success_sound()  # 성공 사운드 재생
+            print("시스템 업데이트에 성공했습니다.")
+            restart_script()
+        elif result.returncode == 0:
+            # 이미 최신 상태임을 알림
+            update_status("이미 최신 상태", "blue")
+            show_notification("시스템이 이미 최신 상태입니다.", "blue")
+            print("시스템이 이미 최신 상태입니다.")
         else:
+            # 기타 오류
             update_status("업데이트 실패", "red")
             show_notification(f"GitHub 업데이트 실패.\n오류 메시지: {result.stderr}", "red")
             play_failure_sound()  # 실패 사운드 재생
@@ -325,6 +333,7 @@ def unlock_memory():
         "-c", "shutdown"
     ]
     try:
+        print("unlock_memory 명령 실행 중...")
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         print(f"unlock_memory 명령 출력: {result.stdout}")
         print(f"unlock_memory 명령 오류 출력: {result.stderr}")
@@ -357,6 +366,7 @@ def lock_memory_procedure():
         "-c", "shutdown",
     ]
     try:
+        print("lock_memory_procedure 명령 실행 중...")
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         print(f"lock_memory_procedure 명령 출력: {result.stdout}")
         print(f"lock_memory_procedure 명령 오류 출력: {result.stderr}")
@@ -421,6 +431,7 @@ def execute_command(command_index):
 
     update_status("업데이트 중...", "orange")
     try:
+        print(f"업데이트 명령 실행 중: {commands[command_index]}")
         process = subprocess.Popen(commands[command_index], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         start_time = time.time()
         max_duration = 6
@@ -498,33 +509,34 @@ def realtime_update():
                 execute_command(current_command_index)
         time.sleep(1)  # 1초마다 확인
 
-# --- 새로 추가된 기능 시작 ---
+# --- 새로 추가된 부분 시작 ---
 
 def check_for_updates():
     """
     새로운 커밋이 있는지 확인하는 함수.
     """
     try:
-        print("업데이트 확인: git fetch 실행 중...")
-        # git fetch 실행
-        fetch_result = subprocess.run(['git', 'fetch'], cwd='/home/user/stm32', stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-        print("git fetch 완료.")
+        print("업데이트 확인: git-pull.sh 실행 중...")
+        # git-pull.sh 스크립트를 실행하여 업데이트 확인 및 적용
+        result = subprocess.run(['/home/user/stm32/git-pull.sh'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        print(f"git-pull.sh 출력: {result.stdout}")
+        print(f"git-pull.sh 오류 출력: {result.stderr}")
 
-        # git status -uno 실행하여 로컬과 원격 상태 확인
-        status_result = subprocess.run(['git', 'status', '-uno'], cwd='/home/user/stm32', stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        print("git status -uno 결과:", status_result.stdout)
-
-        if "Your branch is behind" in status_result.stdout:
-            print("업데이트가 필요합니다.")
+        # 스크립트의 반환값으로 업데이트 필요 여부 판단
+        if result.returncode == 1:
+            # 업데이트가 수행되었음을 알림
+            print("업데이트가 수행되었습니다.")
             return True
-        else:
-            print("업데이트가 필요하지 않습니다.")
+        elif result.returncode == 0:
+            # 이미 최신 상태임을 알림
+            print("시스템이 이미 최신 상태입니다.")
             return False
-    except subprocess.CalledProcessError as e:
-        print(f"업데이트 확인 중 오류 발생: {e.stderr}")
-        return False
+        else:
+            # 기타 오류
+            print(f"업데이트 실패 또는 상태 판단 불가: {result.stderr}")
+            return False
     except Exception as e:
-        print(f"업데이트 확인 중 예외 발생: {e}")
+        print(f"업데이트 확인 중 오류 발생: {e}")
         return False
 
 def show_update_prompt():
@@ -546,14 +558,14 @@ def check_updates_and_prompt():
     else:
         print("업데이트가 없습니다.")
 
-# 업데이트 체크 주기 설정 (예: 1초마다 확인)
+# 업데이트 체크 주기 설정 (1초마다 확인)
 def periodic_update_check():
     threading.Thread(target=check_updates_and_prompt, daemon=True).start()
     root.after(1000, periodic_update_check)  # 1,000ms = 1초
 
-# --- 새로 추가된 기능 끝 ---
+# --- 새로 추가된 부분 끝 ---
 
-# --- 새로 추가된 기능 시작 ---
+# --- 새로 추가된 부분 시작 ---
 
 def extract_file_from_stm32():
     global is_executing
@@ -644,14 +656,14 @@ def upload_to_ftp(file_path, filename):
         update_led(led_error, True)
         update_led(led_error1, True)
 
-# --- 새로 추가된 기능 끝 ---
+# --- 새로 추가된 부분 끝 ---
 
-# --- 새로 추가된 기능 시작 ---
+# --- 새로 추가된 부분 시작 ---
 
 # 업데이트 체크 및 프롬프트 실행 (GUI 초기화 후)
 periodic_update_check()
 
-# --- 새로 추가된 기능 끝 ---
+# --- 새로 추가된 부분 끝 ---
 
 # 백그라운드 스레드 시작
 threading.Thread(target=realtime_update, daemon=True).start()
