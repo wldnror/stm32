@@ -75,11 +75,12 @@ is_executing = False
 need_update = False
 connection_success = False
 connection_failed_since_last_success = False
+update_prompt_shown = False  # 업데이트 프롬프트가 이미 표시되었는지 여부
 
 # Tkinter GUI 설정
 root = tk.Tk()
 root.title("업데이트 관리자")
-root.geometry("600x600")  # 필요에 따라 크기 조정
+root.geometry("600x700")  # 필요에 따라 크기 조정
 root.attributes("-topmost", True)  # 창을 항상 최상위에 유지
 root.lift()  # 창을 최상위로 올리기 (필요한 경우)
 
@@ -119,11 +120,17 @@ update_buttons_frame = tk.Frame(update_frame, bg='yellow')
 update_buttons_frame.pack(pady=5)
 
 def on_update_yes():
+    global update_prompt_shown
+    print("사용자가 '예'를 선택했습니다. 업데이트를 시작합니다.")
     threading.Thread(target=git_pull, daemon=True).start()
     hide_update_frame()
+    update_prompt_shown = False
 
 def on_update_no():
+    global update_prompt_shown
+    print("사용자가 '아니오'를 선택했습니다. 업데이트를 건너뜁니다.")
     hide_update_frame()
+    update_prompt_shown = False
 
 update_yes_button = tk.Button(update_buttons_frame, text="예", command=on_update_yes, width=10, bg="green", fg="white")
 update_yes_button.pack(side=tk.LEFT, padx=10)
@@ -132,9 +139,14 @@ update_no_button = tk.Button(update_buttons_frame, text="아니오", command=on_
 update_no_button.pack(side=tk.LEFT, padx=10)
 
 def show_update_frame():
-    update_frame.pack(pady=10)
+    global update_prompt_shown
+    if not update_prompt_shown:
+        print("업데이트 프레임을 표시합니다.")
+        update_frame.pack(pady=10)
+        update_prompt_shown = True
 
 def hide_update_frame():
+    print("업데이트 프레임을 숨깁니다.")
     update_frame.pack_forget()
 
 # 버튼 프레임
@@ -156,6 +168,7 @@ def toggle_mode_gui():
     is_auto_mode = not is_auto_mode
     mode_label.config(text=f"모드: {'자동' if is_auto_mode else '수동'}")
     show_notification(f"모드가 {'자동' if is_auto_mode else '수동'}으로 변경되었습니다.", "blue")
+    print(f"모드가 {'자동' if is_auto_mode else '수동'}으로 변경되었습니다.")
 
 def next_command_gui():
     global current_command_index
@@ -164,6 +177,7 @@ def next_command_gui():
         return
     current_command_index = (current_command_index + 1) % len(commands)
     current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
+    print(f"다음 명령어로 변경: {command_names[current_command_index]}")
 
 def previous_command_gui():
     global current_command_index
@@ -172,11 +186,13 @@ def previous_command_gui():
         return
     current_command_index = (current_command_index - 1) % len(commands)
     current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
+    print(f"이전 명령어로 변경: {command_names[current_command_index]}")
 
 def execute_command_gui():
     global is_executing
     if is_executing:
         show_notification("이미 명령이 실행 중입니다.", "red")
+        print("명령 실행 중: 이미 명령이 실행 중입니다.")
         return
     threading.Thread(target=execute_command, args=(current_command_index,), daemon=True).start()
 
@@ -202,6 +218,7 @@ extra_button_frame.pack(pady=10)
 def extract_and_upload_gui():
     if is_executing:
         show_notification("현재 명령이 실행 중입니다.", "red")
+        print("파일 추출 중: 이미 명령이 실행 중입니다.")
         return
     threading.Thread(target=extract_file_from_stm32, daemon=True).start()
 
@@ -219,17 +236,21 @@ def get_ip_address():
         s.close()
         return ip
     except Exception as e:
+        print(f"IP 주소 가져오기 실패: {e}")
         return "0.0.0.0"
 
 def update_ip_label():
     ip = get_ip_address()
     ip_label.config(text=f"IP 주소: {ip}")
+    print(f"IP 주소 업데이트: {ip}")
     root.after(5000, update_ip_label)  # 5초마다 업데이트
 
 # Git Pull 함수
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
+    print("업데이트를 시작합니다.")
     if not os.path.isfile(shell_script_path):
+        print(f"{shell_script_path} 파일이 존재하지 않습니다. 스크립트를 생성합니다.")
         with open(shell_script_path, 'w') as script_file:
             script_file.write("#!/bin/bash\n")
             script_file.write("cd /home/user/stm32\n")
@@ -245,6 +266,7 @@ def git_pull():
             os.fsync(script_file.fileno())
 
     os.chmod(shell_script_path, 0o755)
+    print("git-pull.sh 스크립트 실행 권한을 설정했습니다.")
 
     update_status("시스템 업데이트 중...", "orange")
     try:
@@ -252,15 +274,19 @@ def git_pull():
         update_led(led_success, False)
         update_led(led_error, False)
         update_led(led_error1, False)
+        print(f"git-pull.sh 출력: {result.stdout}")
+        print(f"git-pull.sh 오류 출력: {result.stderr}")
         
         if result.returncode == 0:
-            if "이미 최신 상태" in result.stdout:
+            if "이미 최신 상태입니다." in result.stdout:
                 update_status("이미 최신 상태", "blue")
                 show_notification("시스템이 이미 최신 상태입니다.", "blue")
+                print("시스템이 이미 최신 상태입니다.")
             else:
                 update_status("업데이트 성공!", "green")
                 show_notification("시스템 업데이트에 성공했습니다.", "green")
                 play_success_sound()  # 성공 사운드 재생
+                print("시스템 업데이트에 성공했습니다.")
                 restart_script()
         else:
             update_status("업데이트 실패", "red")
@@ -268,15 +294,18 @@ def git_pull():
             play_failure_sound()  # 실패 사운드 재생
             update_led(led_error, True)
             update_led(led_error1, True)
+            print(f"업데이트 실패: {result.stderr}")
     except Exception as e:
         update_status("업데이트 오류", "red")
         show_notification(f"업데이트 중 오류 발생:\n{str(e)}", "red")
         play_failure_sound()  # 실패 사운드 재생
         update_led(led_error, True)
         update_led(led_error1, True)
+        print(f"업데이트 중 오류 발생: {e}")
 
 def restart_script():
     update_status("스크립트 재시작 중...", "orange")
+    print("스크립트를 재시작합니다.")
     def restart():
         time.sleep(3)  # 3초 후 재시작
         os.execv(sys.executable, [sys.executable] + sys.argv)
@@ -297,6 +326,8 @@ def unlock_memory():
     ]
     try:
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        print(f"unlock_memory 명령 출력: {result.stdout}")
+        print(f"unlock_memory 명령 오류 출력: {result.stderr}")
         if result.returncode == 0:
             update_status("메모리 잠금 해제 성공!", "green")
             show_notification("메모리 잠금 해제에 성공했습니다.", "green")
@@ -327,25 +358,31 @@ def lock_memory_procedure():
     ]
     try:
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        print(f"lock_memory_procedure 명령 출력: {result.stdout}")
+        print(f"lock_memory_procedure 명령 오류 출력: {result.stderr}")
         if result.returncode == 0:
             update_status("메모리 잠금 성공", "green")
             show_notification("메모리 잠금에 성공했습니다.", "green")
             play_success_sound()  # 최종 성공 사운드 재생
             update_led(led_success, True)
+            print("메모리 잠금에 성공했습니다.")
         else:
             update_status("메모리 잠금 실패", "red")
             show_notification(f"메모리 잠금 실패: {result.stderr}", "red")
             play_failure_sound()  # 실패 사운드 재생
             update_led(led_error, True)
             update_led(led_error1, True)
+            print(f"메모리 잠금 실패: {result.stderr}")
     except Exception as e:
         update_status("오류 발생", "red")
         show_notification(f"메모리 잠금 중 오류 발생: {str(e)}", "red")
         play_failure_sound()  # 실패 사운드 재생
+        print(f"메모리 잠금 중 오류 발생: {e}")
 
 # 상태 업데이트 함수
 def update_status(message, color):
     status_label.config(text=f"상태: {message}", fg=color)
+    print(f"상태 업데이트: {message} ({color})")
 
 # 알림 메시지 레이블 (상태 레이블 아래에 추가)
 notification_label = tk.Label(root, text="", font=("Helvetica", 12), fg="green")
@@ -353,6 +390,7 @@ notification_label.pack(pady=5)
 
 def show_notification(message, color="green", duration=3000):
     notification_label.config(text=message, fg=color)
+    print(f"알림 표시: {message} ({color})")
     root.after(duration, lambda: notification_label.config(text=""))
 
 def execute_command(command_index):
@@ -362,6 +400,7 @@ def execute_command(command_index):
     update_led(led_success, False)
     update_led(led_error, False)
     update_led(led_error1, False)
+    print(f"명령 실행 시작: {command_names[command_index]}")
 
     if command_index == len(commands) - 1:
         git_pull()
@@ -395,6 +434,7 @@ def execute_command(command_index):
             time.sleep(0.5)
 
         result = process.returncode
+        print(f"명령어 실행 완료: {command_names[command_index]} (Return code: {result})")
         if result == 0:
             update_status("업데이트 성공!", "green")
             show_notification("업데이트에 성공했습니다.", "green")
@@ -407,12 +447,15 @@ def execute_command(command_index):
             play_failure_sound()  # 실패 사운드 재생
             update_led(led_error, True)
             update_led(led_error1, True)
+            print(f"업데이트 실패: {commands[command_index]}")
     except Exception as e:
         update_status("업데이트 오류", "red")
         show_notification(f"업데이트 중 오류 발생:\n{str(e)}", "red")
         play_failure_sound()  # 실패 사운드 재생
+        print(f"업데이트 중 오류 발생: {e}")
     finally:
         is_executing = False
+        print("명령 실행 종료.")
 
 # STM32 연결 상태 확인 함수
 def check_stm32_connection():
@@ -451,8 +494,9 @@ def realtime_update():
         if not is_executing:
             # STM32 연결 상태 확인 및 자동 모드일 때 명령 실행
             if is_auto_mode and check_stm32_connection() and connection_success:
+                print("자동 모드: 업데이트를 실행합니다.")
                 execute_command(current_command_index)
-        time.sleep(1)
+        time.sleep(1)  # 1초마다 확인
 
 # --- 새로 추가된 기능 시작 ---
 
@@ -461,18 +505,26 @@ def check_for_updates():
     새로운 커밋이 있는지 확인하는 함수.
     """
     try:
+        print("업데이트 확인: git fetch 실행 중...")
         # git fetch 실행
         fetch_result = subprocess.run(['git', 'fetch'], cwd='/home/user/stm32', stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-        
+        print("git fetch 완료.")
+
         # git status -uno 실행하여 로컬과 원격 상태 확인
         status_result = subprocess.run(['git', 'status', '-uno'], cwd='/home/user/stm32', stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        
+        print("git status -uno 결과:", status_result.stdout)
+
         if "Your branch is behind" in status_result.stdout:
+            print("업데이트가 필요합니다.")
             return True
         else:
+            print("업데이트가 필요하지 않습니다.")
             return False
+    except subprocess.CalledProcessError as e:
+        print(f"업데이트 확인 중 오류 발생: {e.stderr}")
+        return False
     except Exception as e:
-        print(f"업데이트 확인 중 오류 발생: {e}")
+        print(f"업데이트 확인 중 예외 발생: {e}")
         return False
 
 def show_update_prompt():
@@ -485,15 +537,19 @@ def check_updates_and_prompt():
     """
     업데이트가 있는지 확인하고, 있다면 GUI 내에 업데이트 요청을 표시하는 함수.
     """
+    print("업데이트 확인을 시작합니다.")
     updates_available = check_for_updates()
     if updates_available:
+        print("업데이트가 감지되었습니다. 업데이트 프레임을 표시합니다.")
         # Tkinter는 스레드 안전하지 않으므로 main thread에서 프레임 표시
         root.after(0, show_update_prompt)
+    else:
+        print("업데이트가 없습니다.")
 
-# 업데이트 체크 주기 설정 (예: 60초마다 확인)
+# 업데이트 체크 주기 설정 (예: 1초마다 확인)
 def periodic_update_check():
     threading.Thread(target=check_updates_and_prompt, daemon=True).start()
-    root.after(1000, periodic_update_check)  # 60,000ms = 60초
+    root.after(1000, periodic_update_check)  # 1,000ms = 1초
 
 # --- 새로 추가된 기능 끝 ---
 
@@ -506,6 +562,7 @@ def extract_file_from_stm32():
     update_led(led_success, False)
     update_led(led_error, False)
     update_led(led_error1, False)
+    print("파일 추출을 시작합니다.")
 
     # 추출할 파일의 STM32 메모리 주소 및 크기 설정
     memory_address = "0x08000000"  # 예시 주소
@@ -515,6 +572,7 @@ def extract_file_from_stm32():
     now = datetime.now()
     filename = now.strftime("%Y%m%d_%H%M%S") + ".bin"
     save_path = f"/home/user/stm32/Download/{filename}"
+    print(f"파일 저장 경로: {save_path}")
 
     # OpenOCD 명령을 사용하여 STM32의 메모리 덤프
     openocd_command = [
@@ -530,7 +588,10 @@ def extract_file_from_stm32():
 
     # 명령 실행 및 결과 확인
     try:
+        print("OpenOCD 명령 실행 중...")
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        print(f"OpenOCD 출력: {result.stdout}")
+        print(f"OpenOCD 오류 출력: {result.stderr}")
         if result.returncode == 0:
             print("파일 추출 성공!")
             show_notification("파일 추출에 성공했습니다.", "green")
@@ -553,6 +614,7 @@ def extract_file_from_stm32():
         update_led(led_error1, True)
     finally:
         is_executing = False
+        print("파일 추출 작업 종료.")
 
 def upload_to_ftp(file_path, filename):
     ftp_server = "79webhard.com"
@@ -561,9 +623,11 @@ def upload_to_ftp(file_path, filename):
     ftp_path = "/home"
 
     try:
+        print(f"FTP 서버에 연결 중: {ftp_server}")
         with ftplib.FTP(ftp_server) as ftp:
             ftp.login(ftp_user, ftp_password)
             ftp.cwd(ftp_path)
+            print(f"FTP 경로 변경: {ftp_path}")
 
             with open(file_path, 'rb') as file:
                 ftp.storbinary(f'STOR {filename}', file)
@@ -600,24 +664,19 @@ def keep_on_top():
     root.attributes("-topmost", True)
     root.lift()
     root.after(1000, keep_on_top)  # 1초마다 이 함수 재실행
+    #print("keep_on_top 실행")
 
 # 포커스 이벤트 핸들러
 def on_focus_out(event):
     # 창이 포커스를 잃었을 때 최상위로 다시 올리기
     root.after(100, lambda: root.attributes("-topmost", True))
     root.after(100, lambda: root.lift())
+    print("포커스 아웃 이벤트 발생: 창을 최상위로 올립니다.")
 
 root.bind("<FocusOut>", on_focus_out)
 
 # 최상위 유지 함수 시작
 keep_on_top()
-
-# --- 새로 추가된 기능 시작 ---
-
-# STM32 연결 상태 확인 및 실시간 업데이트 확인이 이미 추가된 위치에 위치
-# 업데이트 프레임과 관련된 함수는 이미 위에서 정의됨
-
-# --- 새로 추가된 기능 끝 ---
 
 # Tkinter 메인 루프 실행
 root.mainloop()
