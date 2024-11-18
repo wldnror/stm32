@@ -494,7 +494,7 @@ def update_oled_display():
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((0, 51), ip_address, font=font_big, fill=255)
                 draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
-                draw.text((85, 50), 'ver 3.54', font=font_big, fill=255)
+                draw.text((83, 50), 'ver 3.54', font=font_big, fill=255)
                 draw.text((0, -3), current_time, font=font_time, fill=255)
 
             if status_message:
@@ -515,7 +515,7 @@ def update_oled_display():
                 elif command_names[current_command_index] == "SAT4010":
                     draw.text((22, 27), 'SAT4010', font=font_1, fill=255)
                 elif command_names[current_command_index] == "IPA":
-                    draw.text((42, 27), 'IPA', font=font_1, fill=255)
+                    draw.text((44, 27), 'IPA', font=font_1, fill=255)
                 elif command_names[current_command_index] == "시스템 업데이트":
                     draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
 
