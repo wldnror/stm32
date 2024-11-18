@@ -506,7 +506,7 @@ def update_oled_display():
                     draw.text((42, 27), 'ORG', font=font_1, fill=255)
                 elif command_names[current_command_index] == "HMDS":
                     draw.text((33, 27), 'HMDS', font=font_1, fill=255)
-                elif command_names[current_command_index] == "HMDS":
+                elif command_names[current_command_index] == "HMDS-IR":
                     draw.text((33, 27), 'HMDS-IR', font=font_1, fill=255)
                 elif command_names[current_command_index] == "ARF-T":
                     draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
@@ -514,8 +514,6 @@ def update_oled_display():
                     draw.text((32, 27), 'HC100', font=font_1, fill=255)
                 elif command_names[current_command_index] == "SAT4010":
                     draw.text((22, 27), 'SAT4010', font=font_1, fill=255)
-                elif command_names[current_command_index] == "IPA":
-                    draw.text((2, 27), 'ASGD S PNP', font=font_1, fill=255)
                 elif command_names[current_command_index] == "시스템 업데이트":
                     draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
 
