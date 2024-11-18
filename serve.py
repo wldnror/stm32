@@ -67,7 +67,7 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
-command_names = ["ORG","HMDS","HMDS-IR","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP", "시스템 업데이트"]
+command_names = ["ORG","HMDS","HMDS-IR","ARF-T","HC100", "SAT4010","IPA", "시스템 업데이트"]
 
 # 상태 메시지 및 실행 상태
 status_message = ""
