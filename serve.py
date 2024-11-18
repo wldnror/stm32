@@ -231,7 +231,7 @@ def git_pull():
             else:
                 update_status("업데이트 성공!", "green")
                 show_notification("시스템 업데이트에 성공했습니다.", "green")
-                play_success_sound()  # 성공 사운드 재생
+                # play_success_sound()  # 성공 사운드 재생
                 restart_script()
         else:
             update_status("업데이트 실패", "red")
