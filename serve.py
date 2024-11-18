@@ -79,7 +79,7 @@ connection_failed_since_last_success = False
 # Tkinter GUI 설정
 root = tk.Tk()
 root.title("업데이트 관리자")
-root.geometry("600x450")  # 필요에 따라 크기 조정
+root.geometry("600x500")  # 필요에 따라 크기 조정
 root.attributes("-topmost", True)  # 창을 항상 최상위에 유지
 root.lift()  # 창을 최상위로 올리기 (필요한 경우)
 
@@ -127,6 +127,7 @@ def toggle_mode_gui():
         return
     is_auto_mode = not is_auto_mode
     mode_label.config(text=f"모드: {'자동' if is_auto_mode else '수동'}")
+    show_notification(f"모드가 {'자동' if is_auto_mode else '수동'}으로 변경되었습니다.", "blue")
 
 def next_command_gui():
     global current_command_index
@@ -151,7 +152,7 @@ def execute_command_gui():
         return
     threading.Thread(target=execute_command, args=(current_command_index,), daemon=True).start()
 
-# 버튼 생성 (이전, 다음, 확인)
+# 버튼 생성 (이전, 다음, 확인, 모드 전환)
 previous_button = tk.Button(button_frame, text="이전", command=previous_command_gui, width=10, height=2)
 previous_button.grid(row=0, column=0, padx=10)
 
@@ -160,6 +161,9 @@ next_button.grid(row=0, column=1, padx=10)
 
 execute_button = tk.Button(button_frame, text="확인", command=execute_command_gui, width=10, height=2)
 execute_button.grid(row=0, column=2, padx=10)
+
+toggle_mode_button = tk.Button(button_frame, text="모드 전환", command=toggle_mode_gui, width=10, height=2, bg="orange")
+toggle_mode_button.grid(row=0, column=3, padx=10)
 
 # --- 새로 추가된 부분 시작 ---
 
@@ -520,10 +524,38 @@ def upload_to_ftp(file_path, filename):
             show_notification("파일 FTP 업로드에 성공했습니다.", "green")
             play_success_sound()
             update_led(led_success, True)
+            
+            # GitHub 푸시 함수 호출
+            git_push_file(filename)
     except ftplib.all_errors as e:
         print("FTP 업로드 실패:", str(e))
         update_status("FTP 업로드 실패", "red")
         show_notification(f"FTP 업로드 실패:\n{str(e)}", "red")
+        play_failure_sound()
+        update_led(led_error, True)
+        update_led(led_error1, True)
+
+# Git Push를 위한 함수 추가
+def git_push_file(filename):
+    repo_dir = "/home/user/stm32"  # Git 저장소 디렉토리
+    file_path = f"Download/{filename}"  # Git에 추가할 파일 경로 (상대 경로)
+
+    try:
+        # Git Add
+        subprocess.run(["git", "add", file_path], cwd=repo_dir, check=True)
+        
+        # Git Commit
+        commit_message = f"Add {filename} via 자동 스크립트"
+        subprocess.run(["git", "commit", "-m", commit_message], cwd=repo_dir, check=True)
+        
+        # Git Push
+        subprocess.run(["git", "push"], cwd=repo_dir, check=True)
+        
+        print(f"{filename}를 GitHub에 성공적으로 푸시했습니다.")
+        show_notification(f"{filename}를 GitHub에 업로드했습니다.", "green")
+    except subprocess.CalledProcessError as e:
+        print(f"GitHub 푸시 중 오류 발생: {e}")
+        show_notification(f"GitHub 푸시에 실패했습니다.\n오류: {e}", "red")
         play_failure_sound()
         update_led(led_error, True)
         update_led(led_error1, True)
