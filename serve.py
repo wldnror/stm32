@@ -1,3 +1,6 @@
+
+
+
 import tkinter as tk
 from datetime import datetime
 import threading
@@ -524,42 +527,10 @@ def upload_to_ftp(file_path, filename):
             show_notification("파일 FTP 업로드에 성공했습니다.", "green")
             play_success_sound()
             update_led(led_success, True)
-            
-            # GitHub 푸시 함수 호출
-            git_push_file(filename)
     except ftplib.all_errors as e:
         print("FTP 업로드 실패:", str(e))
         update_status("FTP 업로드 실패", "red")
         show_notification(f"FTP 업로드 실패:\n{str(e)}", "red")
-        play_failure_sound()
-        update_led(led_error, True)
-        update_led(led_error1, True)
-
-# Git Push를 위한 함수 추가
-def git_push_file(filename):
-    repo_dir = "/home/user/stm32"  # Git 저장소 디렉토리
-    file_path = f"Download/{filename}"  # Git에 추가할 파일 경로 (상대 경로)
-
-    try:
-        # Git 사용자 정보 설정 (필요 시)
-        subprocess.run(["git", "config", "--global", "user.name", "지용준"], check=True)
-        subprocess.run(["git", "config", "--global", "user.email", "wldnror@naver.com"], check=True)
-
-        # Git Add
-        subprocess.run(["git", "add", file_path], cwd=repo_dir, check=True)
-        
-        # Git Commit
-        commit_message = f"Add {filename} via 자동 스크립트"
-        subprocess.run(["git", "commit", "-m", commit_message], cwd=repo_dir, check=True)
-        
-        # Git Push
-        subprocess.run(["git", "push"], cwd=repo_dir, check=True)
-        
-        print(f"{filename}를 GitHub에 성공적으로 푸시했습니다.")
-        show_notification(f"{filename}를 GitHub에 업로드했습니다.", "green")
-    except subprocess.CalledProcessError as e:
-        print(f"GitHub 푸시 중 오류 발생: {e}")
-        show_notification(f"GitHub 푸시에 실패했습니다.\n오류: {e}", "red")
         play_failure_sound()
         update_led(led_error, True)
         update_led(led_error1, True)
