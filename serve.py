@@ -8,7 +8,7 @@ import socket
 import subprocess
 import pygame
 import ftplib
-#test
+
 # DISPLAY 환경 변수 설정 (Linux 환경에서 GUI 사용 시 필요)
 os.environ['DISPLAY'] = ':0'
 
@@ -65,9 +65,10 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
-    "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
+    # "git_pull",  # 이 줄을 제거했습니다.
 ]
-command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP", "시스템 업데이트"]
+command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP"]
+# "시스템 업데이트" 항목도 제거되었습니다.
 
 # 상태 메시지 및 실행 상태
 status_message = ""
@@ -412,10 +413,11 @@ def execute_command(command_index):
     update_led(led_error1, False)
     print(f"명령 실행 시작: {command_names[command_index]}")
 
-    if command_index == len(commands) - 1:
-        git_pull()
-        is_executing = False
-        return
+    # "git_pull" 관련 조건문 제거
+    # if command_index == len(commands) - 1:
+    #     git_pull()
+    #     is_executing = False
+    #     return
 
     if not unlock_memory():
         update_status("메모리 잠금 해제 실패", "red")
