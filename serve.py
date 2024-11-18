@@ -12,8 +12,8 @@ os.environ['DISPLAY'] = ':0'
 
 # 사운드 파일 경로 설정
 script_dir = os.path.dirname(os.path.abspath(__file__))
-SUCCESS_SOUND_PATH = os.path.join(script_dir, 'success.mp3')
-FAILURE_SOUND_PATH = os.path.join(script_dir, 'failure.mp3')
+SUCCESS_SOUND_PATH = os.path.join(script_dir, 'gms_k1.mp3')
+FAILURE_SOUND_PATH = os.path.join(script_dir, 'gms_k1.mp3')
 
 # 사운드 재생 함수 정의
 def play_success_sound():
