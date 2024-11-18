@@ -79,7 +79,7 @@ connection_failed_since_last_success = False
 # Tkinter GUI 설정
 root = tk.Tk()
 root.title("업데이트 관리자")
-root.geometry("600x500")  # 필요에 따라 크기 조정
+root.geometry("600x400")  # 필요에 따라 크기 조정
 root.attributes("-topmost", True)  # 창을 항상 최상위에 유지
 root.lift()  # 창을 최상위로 올리기 (필요한 경우)
 
