@@ -229,7 +229,7 @@ commands = [
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
-command_names = ["ORG","HMDS","HMDS-IR","ARF-T","HC100", "SAT4010","IPA", "시스템 업데이트"]
+command_names = ["ORG","HMDS","HMDS-IR","ARF-T","HC100","SAT4010","IPA","시스템 업데이트"]
 
 current_command_index = 0
 status_message = ""
@@ -486,7 +486,7 @@ def update_oled_display():
                 draw.ellipse(outer_ellipse_box, outline="white", fill=None)
                 draw.text(text_position[mode_char], mode_char, font=font, fill=255)
 
-            if command_names[current_command_index] in ["ORG", "HMDS", "HMDS-IR", "ARF-T", "HC100", "SAT4010", "IPA"]:
+            if command_names[current_command_index] in ["ORG","HMDS","HMDS-IR","ARF-T","HC100","SAT4010","IPA"]:
                 battery_icon = select_battery_icon(voltage_percentage)
                 draw.bitmap((90, -9), battery_icon, fill=255)
                 draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
@@ -494,7 +494,7 @@ def update_oled_display():
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((0, 51), ip_address, font=font_big, fill=255)
                 draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
-                draw.text((90, 50), 'ver 3.54', font=font_big, fill=255)
+                draw.text((85, 50), 'ver 3.54', font=font_big, fill=255)
                 draw.text((0, -3), current_time, font=font_time, fill=255)
 
             if status_message:
