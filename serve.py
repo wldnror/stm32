@@ -507,7 +507,7 @@ def update_oled_display():
                 elif command_names[current_command_index] == "HMDS":
                     draw.text((33, 27), 'HMDS', font=font_1, fill=255)
                 elif command_names[current_command_index] == "HMDS-IR":
-                    draw.text((22, 27), 'HMDS-IR', font=font_1, fill=255)
+                    draw.text((20, 27), 'HMDS-IR', font=font_1, fill=255)
                 elif command_names[current_command_index] == "ARF-T":
                     draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
                 elif command_names[current_command_index] == "HC100":
