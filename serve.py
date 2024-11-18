@@ -65,10 +65,8 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000-V352PNP_0X009D2B7C.bin verify reset exit 0x08000000\"",
-    # "git_pull",  # 이 줄을 제거했습니다.
 ]
 command_names = ["ORG","HMDS","ARF-T","HC100", "SAT4010","IPA", "ASGD S PNP"]
-# "시스템 업데이트" 항목도 제거되었습니다.
 
 # 상태 메시지 및 실행 상태
 status_message = ""
@@ -118,7 +116,7 @@ led_error1.grid(row=0, column=2, padx=5)
 # 업데이트 요청 프레임 (초기에는 숨김)
 update_frame = tk.Frame(root, bg='yellow', pady=10)
 
-update_label = tk.Label(update_frame, text="업데이트가 있습니다 업데이트 하시겠습니까?", font=("Helvetica", 12), bg='yellow')
+update_label = tk.Label(update_frame, text="업데이트가 있습니다. 업데이트 하시겠습니까?", font=("Helvetica", 12), bg='yellow')
 update_label.pack(pady=5)
 
 update_buttons_frame = tk.Frame(update_frame, bg='yellow')
@@ -127,7 +125,7 @@ update_buttons_frame.pack(pady=5)
 def on_update_yes():
     global update_prompt_shown
     print("사용자가 '예'를 선택했습니다. 업데이트를 시작합니다.")
-    threading.Thread(target=git_pull, daemon=True).start()
+    threading.Thread(target=perform_git_pull, daemon=True).start()
     hide_update_frame()
     update_prompt_shown = False
 
@@ -261,15 +259,21 @@ def git_pull():
         print(f"{shell_script_path} 파일이 존재하지 않습니다. 스크립트를 생성합니다.")
         with open(shell_script_path, 'w') as script_file:
             script_file.write("#!/bin/bash\n")
-            script_file.write("cd /home/user/stm32\n")
-            script_file.write("git remote update\n")  # 원격 저장소 정보 업데이트
-            script_file.write("if git status -uno | grep -q 'Your branch is up to date'; then\n")
-            script_file.write("   echo '이미 최신 상태입니다.'\n")
-            script_file.write("   exit 0\n")
-            script_file.write("fi\n")
-            script_file.write("git stash\n")  # 임시로 변경사항을 저장
-            script_file.write("git pull\n")  # 원격 저장소의 변경사항을 가져옴
-            script_file.write("git stash pop\n")  # 저장했던 변경사항을 다시 적용
+            script_file.write("cd /home/user/stm32 || exit\n")
+            script_file.write("git fetch\n")
+            script_file.write("LOCAL=$(git rev-parse @)\n")
+            script_file.write("REMOTE=$(git rev-parse @{u})\n")
+            script_file.write("BASE=$(git merge-base @ @{u})\n")
+            script_file.write("if [ \"$LOCAL\" = \"$REMOTE\" ]; then\n")
+            script_file.write("    echo '이미 최신 상태입니다.'\n")
+            script_file.write("    exit 0\n")
+            script_file.write("elif [ \"$LOCAL\" = \"$BASE\" ]; then\n")
+            script_file.write("    echo '업데이트가 있습니다. pull을 수행합니다.'\n")
+            script_file.write("    git pull\n")
+            script_file.write("    exit 1\n")
+            script_file.write("else\n")
+            script_file.write("    echo '로컬 브랜치가 원격 브랜치보다 앞서 있습니다.'\n")
+            script_file.write("    exit 2\n")
             script_file.flush()
             os.fsync(script_file.fileno())
 
@@ -346,11 +350,15 @@ def unlock_memory():
             update_status("메모리 잠금 해제 실패", "red")
             show_notification(f"메모리 잠금 해제 실패: {result.stderr}", "red")
             play_failure_sound()  # 실패 사운드 재생
+            update_led(led_error, True)
+            update_led(led_error1, True)
             return False
     except Exception as e:
         update_status("오류 발생", "red")
         show_notification(f"메모리 잠금 해제 중 오류 발생: {str(e)}", "red")
         play_failure_sound()  # 실패 사운드 재생
+        update_led(led_error, True)
+        update_led(led_error1, True)
         return False
 
 def lock_memory_procedure():
@@ -388,6 +396,8 @@ def lock_memory_procedure():
         update_status("오류 발생", "red")
         show_notification(f"메모리 잠금 중 오류 발생: {str(e)}", "red")
         play_failure_sound()  # 실패 사운드 재생
+        update_led(led_error, True)
+        update_led(led_error1, True)
         print(f"메모리 잠금 중 오류 발생: {e}")
 
 # 상태 업데이트 함수
@@ -412,12 +422,6 @@ def execute_command(command_index):
     update_led(led_error, False)
     update_led(led_error1, False)
     print(f"명령 실행 시작: {command_names[command_index]}")
-
-    # "git_pull" 관련 조건문 제거
-    # if command_index == len(commands) - 1:
-    #     git_pull()
-    #     is_executing = False
-    #     return
 
     if not unlock_memory():
         update_status("메모리 잠금 해제 실패", "red")
@@ -555,10 +559,10 @@ def check_updates_and_prompt():
     else:
         print("업데이트가 없습니다.")
 
-# 업데이트 체크 주기 설정 (1초마다 확인)
+# 업데이트 체크 주기 설정 (5분마다 확인)
 def periodic_update_check():
     threading.Thread(target=check_updates_and_prompt, daemon=True).start()
-    root.after(1000, periodic_update_check)  # 1,000ms = 1초
+    root.after(300000, periodic_update_check)  # 300,000ms = 5분
 
 # --- 새로 추가된 부분 끝 ---
 
@@ -689,3 +693,61 @@ keep_on_top()
 
 # Tkinter 메인 루프 실행
 root.mainloop()
+
+# --- 업데이트 관련 함수 재정의 ---
+
+def check_for_updates():
+    """
+    새로운 커밋이 있는지 확인하는 함수.
+    """
+    try:
+        print("업데이트 확인: git-pull.sh 실행 중...")
+        # git-pull.sh 스크립트를 실행하여 업데이트 확인
+        result = subprocess.run(['/home/user/stm32/git-pull.sh'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        print(f"git-pull.sh 출력: {result.stdout}")
+        print(f"git-pull.sh 오류 출력: {result.stderr}")
+
+        # 스크립트의 반환값으로 업데이트 필요 여부 판단
+        if result.returncode == 1:
+            # 업데이트가 필요함
+            print("업데이트가 필요합니다.")
+            return True
+        elif result.returncode == 0:
+            # 이미 최신 상태
+            print("시스템이 이미 최신 상태입니다.")
+            return False
+        else:
+            # 기타 오류
+            print(f"업데이트 실패 또는 상태 판단 불가: {result.stderr}")
+            return False
+    except Exception as e:
+        print(f"업데이트 확인 중 오류 발생: {e}")
+        return False
+
+def show_update_prompt():
+    """
+    업데이트가 있을 경우 GUI 내에 업데이트 요청 프레임을 표시하는 함수.
+    """
+    show_update_frame()
+
+def check_updates_and_prompt():
+    """
+    업데이트가 있는지 확인하고, 있다면 GUI 내에 업데이트 요청을 표시하는 함수.
+    """
+    print("업데이트 확인을 시작합니다.")
+    updates_available = check_for_updates()
+    if updates_available:
+        print("업데이트가 감지되었습니다. 업데이트 프레임을 표시합니다.")
+        # Tkinter는 스레드 안전하지 않으므로 main thread에서 프레임 표시
+        root.after(0, show_update_prompt)
+    else:
+        print("업데이트가 없습니다.")
+
+# 업데이트 실행 함수
+def perform_git_pull():
+    """
+    실제로 git pull을 수행하는 함수.
+    """
+    git_pull()
+
+# --- 새로 추가된 부분 끝 ---
