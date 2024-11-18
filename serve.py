@@ -17,7 +17,7 @@ pygame.mixer.init()
 # 사운드 파일 경로 설정
 script_dir = os.path.dirname(os.path.abspath(__file__))
 SUCCESS_SOUND_PATH = os.path.join(script_dir, 'success.mp3')
-FAILURE_SOUND_PATH = os.path.join(script_dir, 'gms_k1.mp3')  # 실패 사운드 파일 경로 (별도 파일 권장)
+FAILURE_SOUND_PATH = os.path.join(script_dir, 'failure.mp3')  # 실패 사운드 파일 경로 (별도 파일 권장)
 
 # 사운드 로드
 def load_sound(path):
