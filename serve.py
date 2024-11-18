@@ -417,11 +417,6 @@ def execute_command(command_index):
         is_executing = False
         return
 
-    if command_index == 7:   # 시스템 업데이트
-        lock_memory_procedure()
-        is_executing = False
-        return
-
     if not unlock_memory():
         update_status("메모리 잠금 해제 실패", "red")
         show_notification("메모리 잠금 해제 실패", "red")
@@ -454,11 +449,11 @@ def execute_command(command_index):
             lock_memory_procedure()
         else:
             update_status("업데이트 실패", "red")
-            show_notification(f"'{commands[command_index]}' 업데이트 실패!", "red")
+            show_notification(f"'{command_names[command_index]}' 업데이트 실패!", "red")
             play_failure_sound()  # 실패 사운드 재생
             update_led(led_error, True)
             update_led(led_error1, True)
-            print(f"업데이트 실패: {commands[command_index]}")
+            print(f"업데이트 실패: {command_names[command_index]}")
     except Exception as e:
         update_status("업데이트 오류", "red")
         show_notification(f"업데이트 중 오류 발생:\n{str(e)}", "red")
