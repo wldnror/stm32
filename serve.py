@@ -118,7 +118,7 @@ led_error1.grid(row=0, column=2, padx=5)
 # 업데이트 요청 프레임 (초기에는 숨김)
 update_frame = tk.Frame(root, bg='yellow', pady=10)
 
-update_label = tk.Label(update_frame, text="업데이트를 자동으로 확인하고 업데이트 하시겠습니까?", font=("Helvetica", 12), bg='yellow')
+update_label = tk.Label(update_frame, text="업데이트가 있습니다 업데이트 하시겠습니까?", font=("Helvetica", 12), bg='yellow')
 update_label.pack(pady=5)
 
 update_buttons_frame = tk.Frame(update_frame, bg='yellow')
