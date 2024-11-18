@@ -493,7 +493,7 @@ def check_updates_and_prompt():
 # 업데이트 체크 주기 설정 (예: 60초마다 확인)
 def periodic_update_check():
     threading.Thread(target=check_updates_and_prompt, daemon=True).start()
-    root.after(60000, periodic_update_check)  # 60,000ms = 60초
+    root.after(1000, periodic_update_check)  # 60,000ms = 60초
 
 # --- 새로 추가된 기능 끝 ---
 
