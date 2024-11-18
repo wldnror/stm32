@@ -114,10 +114,9 @@ button_frame = tk.Frame(root)
 button_frame.pack(pady=20)
 
 def update_led(led_label, status):
-    if status:
-        led_label.config(bg="green")
-    else:
-        led_label.config(bg="grey")
+    def set_color():
+        led_label.config(bg="green" if status else "grey")
+    root.after(0, set_color)
 
 # 버튼 콜백 함수
 def toggle_mode_gui():
@@ -126,7 +125,7 @@ def toggle_mode_gui():
         show_notification("현재 명령이 실행 중입니다.", "red")
         return
     is_auto_mode = not is_auto_mode
-    mode_label.config(text=f"모드: {'자동' if is_auto_mode else '수동'}")
+    root.after(0, lambda: mode_label.config(text=f"모드: {'자동' if is_auto_mode else '수동'}"))
     show_notification(f"모드가 {'자동' if is_auto_mode else '수동'}으로 변경되었습니다.", "blue")
 
 def next_command_gui():
@@ -135,7 +134,7 @@ def next_command_gui():
         show_notification("현재 명령이 실행 중입니다.", "red")
         return
     current_command_index = (current_command_index + 1) % len(commands)
-    current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
+    root.after(0, lambda: current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}"))
 
 def previous_command_gui():
     global current_command_index
@@ -143,7 +142,7 @@ def previous_command_gui():
         show_notification("현재 명령이 실행 중입니다.", "red")
         return
     current_command_index = (current_command_index - 1) % len(commands)
-    current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
+    root.after(0, lambda: current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}"))
 
 def execute_command_gui():
     global is_executing
@@ -195,7 +194,7 @@ def get_ip_address():
 
 def update_ip_label():
     ip = get_ip_address()
-    ip_label.config(text=f"IP 주소: {ip}")
+    root.after(0, lambda: ip_label.config(text=f"IP 주소: {ip}"))
     root.after(5000, update_ip_label)  # 5초마다 업데이트
 
 # Git Pull 함수
@@ -277,11 +276,15 @@ def unlock_memory():
             update_status("메모리 잠금 해제 실패", "red")
             show_notification(f"메모리 잠금 해제 실패: {result.stderr}", "red")
             play_failure_sound()  # 실패 사운드 재생
+            update_led(led_error, True)
+            update_led(led_error1, True)
             return False
     except Exception as e:
         update_status("오류 발생", "red")
         show_notification(f"메모리 잠금 해제 중 오류 발생: {str(e)}", "red")
         play_failure_sound()  # 실패 사운드 재생
+        update_led(led_error, True)
+        update_led(led_error1, True)
         return False
 
 def lock_memory_procedure():
@@ -317,15 +320,17 @@ def lock_memory_procedure():
 
 # 상태 업데이트 함수
 def update_status(message, color):
-    status_label.config(text=f"상태: {message}", fg=color)
+    root.after(0, lambda: status_label.config(text=f"상태: {message}", fg=color))
 
 # 알림 메시지 레이블 (상태 레이블 아래에 추가)
 notification_label = tk.Label(root, text="", font=("Helvetica", 12), fg="green")
 notification_label.pack(pady=5)
 
 def show_notification(message, color="green", duration=3000):
-    notification_label.config(text=message, fg=color)
-    root.after(duration, lambda: notification_label.config(text=""))
+    def update_message():
+        notification_label.config(text=message, fg=color)
+        root.after(duration, lambda: notification_label.config(text=""))
+    root.after(0, update_message)
 
 def execute_command(command_index):
     global is_executing, connection_success, connection_failed_since_last_success
