@@ -8,7 +8,7 @@ import socket
 import subprocess
 import pygame
 import ftplib
-
+#test
 # DISPLAY 환경 변수 설정 (Linux 환경에서 GUI 사용 시 필요)
 os.environ['DISPLAY'] = ':0'
 
