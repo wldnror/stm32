@@ -541,6 +541,10 @@ def git_push_file(filename):
     file_path = f"Download/{filename}"  # Git에 추가할 파일 경로 (상대 경로)
 
     try:
+        # Git 사용자 정보 설정 (필요 시)
+        subprocess.run(["git", "config", "--global", "user.name", "지용준"], check=True)
+        subprocess.run(["git", "config", "--global", "user.email", "wldnror@naver.com"], check=True)
+
         # Git Add
         subprocess.run(["git", "add", file_path], cwd=repo_dir, check=True)
         
