@@ -14,7 +14,7 @@ import threading
 
 display_lock = threading.Lock()
 # GPIO 핀 설정
-BUTTON_PIN_NEXT = 27
+BUTTON_PIN_NEXT = 5
 BUTTON_PIN_EXECUTE = 22
 # LED_DEBUGGING = 23
 LED_SUCCESS = 24
