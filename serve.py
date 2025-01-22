@@ -272,19 +272,22 @@ def update_ip_label():
     ip_label.config(text=f"IP 주소: {ip}")
     root.after(5000, update_ip_label)
 
-# Git Pull 함수 (원격 기준으로 무조건 동기화: 강제 reset 방식)
+# Git Pull 함수 (원격 기준으로 무조건 동기화: 강제 reset 및 로컬 트랙킹 브랜치 생성/삭제 적용)
 def git_pull():
     global selected_branch
     shell_script_path = '/home/user/stm32/git-pull.sh'
-    # git-pull.sh 파일을 새로 작성 (또는 덮어씀)
     with open(shell_script_path, 'w') as script_file:
         script_file.write("#!/bin/bash\n")
         script_file.write("cd /home/user/stm32\n")
-        # 선택한 브랜치 정보를 변수로 저장
+        # 선택한 브랜치를 변수에 저장
         script_file.write("branch='{}'\n".format(selected_branch))
-        # 최신 원격 정보를 가져옴 (prune 옵션 포함)
+        # 최신 원격 정보를 가져오고 prune 수행
         script_file.write("git fetch --prune\n")
-        # 원격 기준으로 강제 동기화: 체크아웃 후 reset --hard 실행
+        # for-loop를 통해 원격 브랜치(-> 표시 제외)에서 로컬 트랙킹 브랜치 생성 시도
+        script_file.write("for remote in $(git branch -r | grep -v '\\->'); do \n")
+        script_file.write("    git branch --track \"${remote#origin/}\" \"$remote\" 2>/dev/null || echo \"Branch ${remote#origin/} already exists.\" \n")
+        script_file.write("done\n")
+        # 선택한 브랜치로 체크아웃 후 강제로 원격 상태로 reset
         script_file.write("git checkout $branch\n")
         script_file.write("git reset --hard origin/$branch\n")
         script_file.write("echo '브랜치 업데이트 완료:'$branch\n")
