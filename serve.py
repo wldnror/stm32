@@ -21,7 +21,6 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 SUCCESS_SOUND_PATH = os.path.join(script_dir, 'success.mp3')
 FAILURE_SOUND_PATH = os.path.join(script_dir, 'failure.mp3')
 
-# 사운드 로드 함수
 def load_sound(path):
     if os.path.isfile(path):
         try:
@@ -55,12 +54,12 @@ def play_failure_sound():
         print(f"실패 사운드 파일을 로드하지 못했습니다: {FAILURE_SOUND_PATH}")
 
 # ----------------------------
-# 전역 변수 설정 (메뉴 사용 전 선언)
+# 전역 변수 설정
 # ----------------------------
-selected_branch = "master"  # 반드시 Tkinter 위젯 생성 전에 선언되어야 함.
+selected_branch = "master"
 is_auto_mode = True
 current_command_index = 0
-# 시스템 업데이트 항목은 메뉴에서 제외하고 openocd 관련 명령어만 포함
+
 commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
     "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
@@ -91,11 +90,11 @@ is_executing = False
 connection_success = False
 connection_failed_since_last_success = False
 
-# 업데이트 알림 관련 전역 변수 (실시간 업데이트 체크)
+# 업데이트 알림 관련
 checking_updates = True
 ignore_commit = None
 update_notification_frame = None
-synced_branches = set()  # 이미 동기화(또는 알림)한 새로운 브랜치를 기록
+synced_branches = set()
 
 # ----------------------------
 # Tkinter GUI 구성
@@ -119,7 +118,7 @@ status_label.pack(pady=5)
 ip_label = tk.Label(root, text="IP 주소: 로딩 중...", font=("Helvetica", 12))
 ip_label.pack(pady=5)
 
-# LED 상태 표시 (색상)
+# LED 상태 표시
 led_frame = tk.Frame(root)
 led_frame.pack(pady=10)
 
@@ -130,7 +129,6 @@ led_error.grid(row=0, column=1, padx=5)
 led_error1 = tk.Label(led_frame, text="오류 LED2", bg="grey", width=10, height=2)
 led_error1.grid(row=0, column=2, padx=5)
 
-# 명령 버튼 프레임
 button_frame = tk.Frame(root)
 button_frame.pack(pady=20)
 
@@ -234,7 +232,7 @@ def change_branch():
             update_status(f"브랜치 변경됨: {selected_branch}", "green")
             show_notification(f"브랜치가 {selected_branch}(으)로 변경되었습니다.", "green")
             play_success_sound()
-            restart_script()  # 변경 후 재시작
+            restart_script()
         else:
             update_status("브랜치 변경 실패", "red")
             show_notification(f"브랜치 변경 실패:\n{result.stderr}", "red")
@@ -283,7 +281,7 @@ def update_ip_label():
 # ----------------------------
 def update_system(root):
     global checking_updates
-    checking_updates = False  # 업데이트 중에는 체크 중지
+    checking_updates = False
     try:
         result = subprocess.run(['git', 'pull'], capture_output=True, text=True)
         message = "업데이트 완료. 애플리케이션을 재시작합니다."
@@ -293,20 +291,6 @@ def update_system(root):
     finally:
         checking_updates = True
     messagebox.showinfo("시스템 업데이트", message)
-
-def sync_branches(root):
-    try:
-        subprocess.check_call(['git', 'fetch', '--all'])
-        subprocess.check_call(['git', 'pull', '--all'])
-        subprocess.check_call(['git', 'remote', 'prune', 'origin'])
-    except subprocess.CalledProcessError as e:
-        messagebox.showerror("브랜치 동기화 오류", f"브랜치 동기화 중 오류가 발생했습니다: {e}")
-
-def prune_deleted_branches(root):
-    try:
-        subprocess.check_call(['git', 'fetch', '--prune'])
-    except subprocess.CalledProcessError as e:
-        messagebox.showerror("브랜치 정리 오류", f"브랜치 정리 중 오류가 발생했습니다: {e}")
 
 def show_update_notification(root, remote_commit):
     global update_notification_frame
@@ -352,34 +336,108 @@ def ignore_update(remote_commit):
     if update_notification_frame and update_notification_frame.winfo_exists():
         update_notification_frame.destroy()
 
+def force_sync_with_remote():
+    """
+    원격에 있는 브랜치는 전부 로컬에 만들고,
+    원격에 없는 로컬 브랜치는 삭제,
+    각 로컬 브랜치는 origin/<branch> 기준으로 reset --hard
+    """
+    global is_executing
+    # 중복 실행 방지
+    if is_executing:
+        return
+
+    is_executing = True
+    try:
+        cwd = "/home/user/stm32"
+
+        # 1) fetch --all --prune
+        subprocess.check_call(["git", "fetch", "--all", "--prune"], cwd=cwd)
+
+        # 2) 원격 브랜치 목록
+        remote_branches_raw = subprocess.check_output(["git", "branch", "-r"], cwd=cwd, text=True)
+        remote_branches = []
+        for line in remote_branches_raw.splitlines():
+            line = line.strip()
+            if line and "HEAD" not in line:
+                remote_branches.append(line)  # e.g. "origin/master", "origin/용준"
+
+        # 로컬 브랜치 목록
+        local_list_raw = subprocess.check_output(["git", "branch"], cwd=cwd, text=True)
+        local_list = [x.strip().lstrip("* ").strip() for x in local_list_raw.splitlines()]
+
+        # 3) 원격 브랜치별로 로컬에 없으면 새로 생성, reset --hard
+        for rb in remote_branches:
+            lb = rb.replace("origin/", "")  # 예: "origin/master" -> "master"
+
+            if lb not in local_list:
+                # 트래킹 브랜치 생성
+                try:
+                    subprocess.check_call(["git", "branch", "--track", lb, rb], cwd=cwd)
+                except subprocess.CalledProcessError:
+                    pass
+
+            # checkout + reset --hard
+            subprocess.check_call(["git", "checkout", lb], cwd=cwd)
+            subprocess.check_call(["git", "reset", "--hard", rb], cwd=cwd)
+
+        # 4) 원격에 없는 로컬 브랜치는 삭제
+        new_local_list_raw = subprocess.check_output(["git", "branch"], cwd=cwd, text=True)
+        new_local_list = [x.strip().lstrip("* ").strip() for x in new_local_list_raw.splitlines()]
+
+        for lb in new_local_list:
+            if f"origin/{lb}" not in remote_branches_raw:
+                # 원격에 없는 로컬 브랜치
+                subprocess.check_call(["git", "branch", "-D", lb], cwd=cwd)
+
+        show_notification("자동 강제 동기화 완료: 로컬이 원격과 동일해졌습니다.", "green", duration=5000)
+        play_success_sound()
+    except subprocess.CalledProcessError as e:
+        show_notification(f"강제 동기화 중 오류:\n{str(e)}", "red", duration=5000)
+        play_failure_sound()
+    except Exception as e:
+        show_notification(f"강제 동기화 중 예외:\n{str(e)}", "red", duration=5000)
+        play_failure_sound()
+    finally:
+        is_executing = False
+
 def check_for_updates(root):
     global synced_branches
     while checking_updates:
         try:
-            current_branch = subprocess.check_output(['git', 'branch', '--show-current']).strip().decode()
-            remote_info = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin']).strip().decode().splitlines()
-            remote_branches = [line.split()[1].split('/')[-1] for line in remote_info]
-            local_info = subprocess.check_output(['git', 'branch', '--list']).strip().decode().splitlines()
-            local_branches = [line.strip().replace('* ', '') for line in local_info]
-            tracked_remote = subprocess.check_output(['git', 'branch', '-r']).strip().decode().splitlines()
-            tracked_remote = [line.split('/')[-1].strip() for line in tracked_remote]
-            deleted_branches = [b for b in tracked_remote if b not in remote_branches]
-            # 새로운 브랜치: 원격에 존재하지만 로컬에 없는 것 중, 이미 동기화(알림)한 것은 제외
-            new_branches = [b for b in remote_branches if b not in local_branches and b not in synced_branches]
-            remote_branch_info = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', current_branch]).strip().decode()
-            remote_commit = remote_branch_info.split()[0] if remote_branch_info else None
-            local_commit = subprocess.check_output(['git', 'rev-parse', current_branch]).strip().decode()
+            cwd = "/home/user/stm32"
 
-            if deleted_branches:
-                prune_deleted_branches(root)
-                show_temporary_notification(root, "삭제된 브랜치가 정리되었습니다.")
-            elif new_branches:
-                sync_branches(root)
+            current_branch = subprocess.check_output(['git', 'branch', '--show-current'], cwd=cwd).strip().decode()
+            remote_info = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin'], cwd=cwd).strip().decode().splitlines()
+            remote_branches = [line.split()[1].split('/')[-1] for line in remote_info]
+
+            local_info = subprocess.check_output(['git', 'branch', '--list'], cwd=cwd).strip().decode().splitlines()
+            local_branches = [line.strip().replace('* ', '') for line in local_info]
+
+            tracked_remote = subprocess.check_output(['git', 'branch', '-r'], cwd=cwd).strip().decode().splitlines()
+            tracked_remote = [line.split('/')[-1].strip() for line in tracked_remote]
+
+            # 원격에 사라진 브랜치
+            deleted_branches = [b for b in tracked_remote if b not in remote_branches]
+
+            # 새 브랜치(원격에만 존재 & 아직 synced_branches에 없는 것)
+            new_branches = [b for b in remote_branches if b not in local_branches and b not in synced_branches]
+
+            remote_branch_info = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', current_branch], cwd=cwd).strip().decode()
+            remote_commit = remote_branch_info.split()[0] if remote_branch_info else None
+            local_commit = subprocess.check_output(['git', 'rev-parse', current_branch], cwd=cwd).strip().decode()
+
+            # 만약 삭제된 브랜치나 신규 브랜치가 있다면 => 강제 동기화
+            if deleted_branches or new_branches:
+                force_sync_with_remote()
+                # 새로 생긴 브랜치는 synced_branches에 등록
                 for branch in new_branches:
                     synced_branches.add(branch)
-                show_temporary_notification(root, "새로운 브랜치가 동기화되었습니다.")
+
+            # 현재 브랜치 커밋이 원격과 다른데, ignore_commit이 아니면 => 업데이트 안내
             elif local_commit != remote_commit and remote_commit != ignore_commit:
                 show_update_notification(root, remote_commit)
+
         except Exception as e:
             print(f"업데이트 체크 중 오류 발생: {e}")
         time.sleep(1)
@@ -395,7 +453,7 @@ def restart_script():
     threading.Thread(target=restart, daemon=True).start()
 
 # ----------------------------
-# 메모리 잠금 해제 및 잠금 함수 (openocd)
+# 메모리 잠금 해제 및 잠금
 # ----------------------------
 def unlock_memory():
     update_status("메모리 잠금 해제 중...", "orange")
@@ -467,7 +525,7 @@ def lock_memory_procedure():
         play_failure_sound()
 
 # ----------------------------
-# 상태 업데이트 및 알림 함수
+# 상태 및 알림
 # ----------------------------
 def update_status(message, color):
     status_label.config(text=f"상태: {message}", fg=color)
@@ -561,7 +619,6 @@ def check_stm32_connection():
 def realtime_update():
     while True:
         if not is_executing:
-            # 자동 모드이면서 STM32 연결이 재성공된 경우만 명령 실행
             if is_auto_mode and check_stm32_connection() and connection_success:
                 execute_command(current_command_index)
         time.sleep(1)
@@ -593,6 +650,7 @@ def extract_file_from_stm32():
     update_led(led_success, False)
     update_led(led_error, False)
     update_led(led_error1, False)
+
     now = datetime.now()
     filename = now.strftime("%Y%m%d_%H%M%S") + ".bin"
     save_path = f"/home/user/stm32/Download/{filename}"
@@ -660,83 +718,6 @@ def upload_to_ftp(file_path, filename):
         update_led(led_error1, True)
 
 # ----------------------------
-# 로컬-원격 강제 동기화 함수
-# ----------------------------
-def force_sync_with_remote():
-    """
-    원격에 있는 브랜치는 모두 로컬에 만들고,
-    로컬에만 있는 브랜치는 삭제,
-    각 로컬 브랜치는 origin/<branch> 상태로 reset --hard
-    """
-    global is_executing
-    if is_executing:
-        show_notification("현재 명령이 실행 중입니다.", "red")
-        return
-
-    is_executing = True
-    show_notification("모든 브랜치 강제 동기화 중...(로컬 변경 사항이 사라질 수 있음)", "orange", duration=5000)
-
-    try:
-        cwd = "/home/user/stm32"
-        # 1) fetch --all --prune
-        subprocess.check_call(["git", "fetch", "--all", "--prune"], cwd=cwd)
-
-        # 2) 원격 브랜치 목록 가져오기 (HEAD 제외)
-        remote_branches_raw = subprocess.check_output(["git", "branch", "-r"], cwd=cwd, text=True)
-        remote_branches = []
-        for line in remote_branches_raw.splitlines():
-            line = line.strip()
-            if line and "HEAD" not in line:
-                remote_branches.append(line)  # e.g. "origin/master", "origin/용준"
-
-        # 로컬 목록
-        local_list_raw = subprocess.check_output(["git", "branch"], cwd=cwd, text=True)
-        local_list = [x.strip().lstrip("* ").strip() for x in local_list_raw.splitlines()]
-
-        # 3) 원격 브랜치별 로컬에 없으면 생성, 그리고 reset --hard
-        for rb in remote_branches:
-            # rb 예: "origin/master"
-            lb = rb.replace("origin/", "")  # "master"
-
-            if lb not in local_list:
-                # 로컬에 해당 브랜치가 없으면 새로 트래킹
-                try:
-                    subprocess.check_call(["git", "branch", "--track", lb, rb], cwd=cwd)
-                except subprocess.CalledProcessError:
-                    pass  # 이미 tracking 중인 경우 등 에러 무시
-
-            # checkout 후 reset --hard
-            subprocess.check_call(["git", "checkout", lb], cwd=cwd)
-            subprocess.check_call(["git", "reset", "--hard", rb], cwd=cwd)
-
-        # 4) 원격에 없는 로컬 브랜치는 삭제
-        new_local_list_raw = subprocess.check_output(["git", "branch"], cwd=cwd, text=True)
-        new_local_list = [x.strip().lstrip("* ").strip() for x in new_local_list_raw.splitlines()]
-
-        for lb in new_local_list:
-            if f"origin/{lb}" not in remote_branches_raw:
-                # 원격에 없는 로컬 브랜치이므로 삭제
-                subprocess.check_call(["git", "branch", "-D", lb], cwd=cwd)
-
-        show_notification("로컬-원격 브랜치 완전 동기화가 완료되었습니다.", "green", duration=5000)
-        play_success_sound()
-    except subprocess.CalledProcessError as e:
-        show_notification(f"강제 동기화 실패:\n{str(e)}", "red", duration=5000)
-        play_failure_sound()
-    except Exception as e:
-        show_notification(f"오류 발생:\n{str(e)}", "red", duration=5000)
-        play_failure_sound()
-    finally:
-        is_executing = False
-
-# ----------------------------
-# 강제 동기화 버튼 추가
-# ----------------------------
-sync_button = tk.Button(extra_button_frame, text="강제 동기화(주의)", command=force_sync_with_remote,
-                        width=20, height=2, bg="red", fg="white")
-sync_button.pack(pady=5)
-
-# ----------------------------
-# Tkinter 메인 루프 실행
+# 메인 루프
 # ----------------------------
 root.mainloop()
