@@ -227,6 +227,7 @@ def change_branch():
             update_status(f"브랜치 변경됨: {selected_branch}", "green")
             show_notification(f"브랜치가 {selected_branch}(으)로 변경되었습니다.", "green")
             play_success_sound()
+            restart_script()  # 브랜치 변경 시 스크립트 재시작
         else:
             update_status("브랜치 변경 실패", "red")
             show_notification(f"브랜치 변경 실패:\n{result.stderr}", "red")
