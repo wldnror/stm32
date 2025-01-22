@@ -55,12 +55,12 @@ def play_failure_sound():
         print(f"실패 사운드 파일을 로드하지 못했습니다: {FAILURE_SOUND_PATH}")
 
 # ----------------------------
-# 전역 변수 선언 (Tkinter 위젯 사용 전에 선언)
+# 전역 변수 설정 (메뉴 사용 전 선언)
 # ----------------------------
-selected_branch = "master"  # 반드시 메뉴 생성 전에 선언되어야 함.
+selected_branch = "master"  # 반드시 Tkinter 위젯 생성 전에 선언되어야 함.
 is_auto_mode = True
 current_command_index = 0
-# 시스템 업데이트 기능은 메뉴에서 제외하고, openocd 관련 명령어만 포함
+# 시스템 업데이트 메뉴는 제외하고, openocd 관련 명령어만 포함함.
 commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
     "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
@@ -91,10 +91,11 @@ is_executing = False
 connection_success = False
 connection_failed_since_last_success = False
 
-# 업데이트 알림 관련 전역 변수
+# 업데이트 알림 관련 전역 변수 (실시간 업데이트 체크)
 checking_updates = True
 ignore_commit = None
 update_notification_frame = None
+synced_branches = set()  # 이미 동기화한(또는 알림한) 새로운 브랜치 목록
 
 # ----------------------------
 # Tkinter GUI 구성
@@ -233,7 +234,7 @@ def change_branch():
             update_status(f"브랜치 변경됨: {selected_branch}", "green")
             show_notification(f"브랜치가 {selected_branch}(으)로 변경되었습니다.", "green")
             play_success_sound()
-            restart_script()
+            restart_script()  # 변경 후 재시작
         else:
             update_status("브랜치 변경 실패", "red")
             show_notification(f"브랜치 변경 실패:\n{result.stderr}", "red")
@@ -281,7 +282,7 @@ def update_ip_label():
 # ----------------------------
 def update_system(root):
     global checking_updates
-    checking_updates = False  # 업데이트 중 체크 중지
+    checking_updates = False  # 업데이트 중에는 체크 중지
     try:
         result = subprocess.run(['git', 'pull'], capture_output=True, text=True)
         message = "업데이트 완료. 애플리케이션을 재시작합니다."
@@ -318,12 +319,15 @@ def show_update_notification(root, remote_commit):
 
     update_notification_frame = tk.Frame(root)
     update_notification_frame.place(relx=0.5, rely=0.95, anchor='center')
+
     update_label = tk.Label(update_notification_frame,
                             text="새로운 버전이 있습니다. 업데이트를 진행하시겠습니까?",
                             font=("Arial", 15), fg="red")
     update_label.pack(side="left", padx=5)
+
     yes_button = tk.Button(update_notification_frame, text="예", command=on_yes, font=("Arial", 14), fg="red")
     yes_button.pack(side="left", padx=5)
+    
     no_button = tk.Button(update_notification_frame, text="건너뛰기", command=on_no, font=("Arial", 14), fg="red")
     no_button.pack(side="left", padx=5)
 
@@ -335,11 +339,12 @@ def show_temporary_notification(root, message, duration=5000):
     root.after(duration, notification_frame.destroy)
 
 def start_update(root, remote_commit):
-    global update_notification_frame, ignore_commit, checking_updates
+    global update_notification_frame, ignore_commit, checking_updates, synced_branches
     ignore_commit = None
     checking_updates = False
     if update_notification_frame and update_notification_frame.winfo_exists():
         update_notification_frame.destroy()
+    # (필요시) 새로운 브랜치가 동기화되었다면 synced_branches에 추가할 수 있음.
     threading.Thread(target=update_system, args=(root,), daemon=True).start()
 
 def ignore_update(remote_commit):
@@ -351,6 +356,7 @@ def ignore_update(remote_commit):
         update_notification_frame.destroy()
 
 def check_for_updates(root):
+    global synced_branches
     while checking_updates:
         try:
             current_branch = subprocess.check_output(['git', 'branch', '--show-current']).strip().decode()
@@ -361,7 +367,8 @@ def check_for_updates(root):
             tracked_remote = subprocess.check_output(['git', 'branch', '-r']).strip().decode().splitlines()
             tracked_remote = [line.split('/')[-1].strip() for line in tracked_remote]
             deleted_branches = [b for b in tracked_remote if b not in remote_branches]
-            new_branches = [b for b in remote_branches if b not in local_branches]
+            # 새로운 브랜치: 원격에 존재하지만 로컬에 없는 것 중, 이미 동기화한 것은 제외
+            new_branches = [b for b in remote_branches if b not in local_branches and b not in synced_branches]
             remote_branch_info = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', current_branch]).strip().decode()
             remote_commit = remote_branch_info.split()[0] if remote_branch_info else None
             local_commit = subprocess.check_output(['git', 'rev-parse', current_branch]).strip().decode()
@@ -370,6 +377,9 @@ def check_for_updates(root):
                 show_temporary_notification(root, "삭제된 브랜치가 정리되었습니다.")
             elif new_branches:
                 sync_branches(root)
+                # 기록: 한번 동기화한 브랜치는 반복 알림을 막기 위해 저장
+                for branch in new_branches:
+                    synced_branches.add(branch)
                 show_temporary_notification(root, "새로운 브랜치가 동기화되었습니다.")
             elif local_commit != remote_commit and remote_commit != ignore_commit:
                 show_update_notification(root, remote_commit)
@@ -473,7 +483,6 @@ def execute_command(command_index):
     update_led(led_success, False)
     update_led(led_error, False)
     update_led(led_error1, False)
-    # 선택한 명령어(여기서는 openocd 관련 명령어만 있음)를 실행
     try:
         if not unlock_memory():
             update_status("메모리 잠금 해제 실패", "red")
