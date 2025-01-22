@@ -55,44 +55,48 @@ def play_failure_sound():
         print(f"실패 사운드 파일을 로드하지 못했습니다: {FAILURE_SOUND_PATH}")
 
 # ----------------------------
-# 전역 변수
+# 전역 변수 설정
 # ----------------------------
 is_auto_mode = True
 current_command_index = 0
-selected_branch = "master"  # 기본 브랜치 (드롭다운에서 선택 가능)
+# 시스템 업데이트 기능은 메뉴에서 제외하므로 openocd 관련 명령어만 포함합니다.
 commands = [
-    # 임의의 openocd 명령들...
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-      "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
-      "-c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-      "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
-      "-c \"program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-      "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
-      "-c \"program /home/user/stm32/Program/HMDS-IR.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-      "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
-      "-c \"program /home/user/stm32/Program/ARF-T.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-      "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
-      "-c \"program /home/user/stm32/Program/HC100.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-      "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
-      "-c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-      "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
-      "-c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
-    "git_pull",  # 시스템 업데이트 (git_pull() 함수로 동기화 수행)
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "-c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
+    
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "-c \"program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000\"",
+    
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "-c \"program /home/user/stm32/Program/HMDS-IR.bin verify reset exit 0x08000000\"",
+    
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "-c \"program /home/user/stm32/Program/ARF-T.bin verify reset exit 0x08000000\"",
+    
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "-c \"program /home/user/stm32/Program/HC100.bin verify reset exit 0x08000000\"",
+    
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "-c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
+    
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "-c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\""
 ]
-command_names = ["ORG", "HMDS", "HMDS-IR", "ARF-T", "HC100", "SAT4010", "IPA", "시스템 업데이트"]
+command_names = ["ORG", "HMDS", "HMDS-IR", "ARF-T", "HC100", "SAT4010", "IPA"]
 
 status_message = ""
 is_executing = False
 connection_success = False
 connection_failed_since_last_success = False
 
-# 사용자 업데이트 알림 관련 전역 변수
+# 업데이트 알림 관련 전역 변수 (실시간 업데이트 체크)
 checking_updates = True
 ignore_commit = None
 update_notification_frame = None
@@ -179,7 +183,7 @@ execute_button.grid(row=0, column=2, padx=10)
 toggle_mode_button = tk.Button(button_frame, text="모드 전환", command=toggle_mode_gui, width=10, height=2, bg="orange")
 toggle_mode_button.grid(row=0, column=3, padx=10)
 
-# --- 브랜치 드롭다운 기능 ---
+# --- 브랜치 드롭다운 ---
 branch_frame = tk.Frame(root)
 branch_frame.pack(pady=10)
 
@@ -234,7 +238,7 @@ def change_branch():
             update_status(f"브랜치 변경됨: {selected_branch}", "green")
             show_notification(f"브랜치가 {selected_branch}(으)로 변경되었습니다.", "green")
             play_success_sound()
-            restart_script()
+            restart_script()  # 변경 후 재시작
         else:
             update_status("브랜치 변경 실패", "red")
             show_notification(f"브랜치 변경 실패:\n{result.stderr}", "red")
@@ -282,7 +286,7 @@ def update_ip_label():
 # ----------------------------
 def update_system(root):
     global checking_updates
-    checking_updates = False  # 업데이트 중 체크 중지
+    checking_updates = False
     try:
         result = subprocess.run(['git', 'pull'], capture_output=True, text=True)
         message = "업데이트 완료. 애플리케이션을 재시작합니다."
@@ -353,7 +357,6 @@ def ignore_update(remote_commit):
         update_notification_frame.destroy()
 
 def check_for_updates(root):
-    # 주기적으로 원격과 로컬 브랜치를 확인하여 업데이트 또는 동기화 대상이 있으면 사용자에게 알림을 띄웁니다.
     while checking_updates:
         try:
             current_branch = subprocess.check_output(['git', 'branch', '--show-current']).strip().decode()
@@ -361,13 +364,10 @@ def check_for_updates(root):
             remote_branches = [line.split()[1].split('/')[-1] for line in remote_info]
             local_info = subprocess.check_output(['git', 'branch', '--list']).strip().decode().splitlines()
             local_branches = [line.strip().replace('* ', '') for line in local_info]
-            # 삭제된 원격 브랜치
             tracked_remote = subprocess.check_output(['git', 'branch', '-r']).strip().decode().splitlines()
             tracked_remote = [line.split('/')[-1].strip() for line in tracked_remote]
             deleted_branches = [b for b in tracked_remote if b not in remote_branches]
-            # 새로운 원격 브랜치
             new_branches = [b for b in remote_branches if b not in local_branches]
-            # 현재 브랜치 커밋 비교
             remote_branch_info = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', current_branch]).strip().decode()
             remote_commit = remote_branch_info.split()[0] if remote_branch_info else None
             local_commit = subprocess.check_output(['git', 'rev-parse', current_branch]).strip().decode()
@@ -384,7 +384,7 @@ def check_for_updates(root):
         time.sleep(1)
 
 # ----------------------------
-# 재시작 및 시스템 업데이트 함수
+# 재시작 및 시스템 업데이트 함수 (메뉴에서는 시스템 업데이트 기능 제거됨)
 # ----------------------------
 def restart_script():
     update_status("스크립트 재시작 중...", "orange")
@@ -460,7 +460,7 @@ def lock_memory_procedure():
         play_failure_sound()
 
 # ----------------------------
-# 상태 업데이트 및 기타 함수
+# 상태 업데이트 및 알림 함수
 # ----------------------------
 def update_status(message, color):
     status_label.config(text=f"상태: {message}", fg=color)
@@ -479,22 +479,15 @@ def execute_command(command_index):
     update_led(led_success, False)
     update_led(led_error, False)
     update_led(led_error1, False)
-    if command_index == len(commands) - 1:
-        git_pull()
-        is_executing = False
-        return
-    if command_index == 7:  # 시스템 업데이트 처리
-        lock_memory_procedure()
-        is_executing = False
-        return
-    if not unlock_memory():
-        update_status("메모리 잠금 해제 실패", "red")
-        show_notification("메모리 잠금 해제 실패", "red")
-        play_failure_sound()
-        is_executing = False
-        return
-    update_status("업데이트 중...", "orange")
+    # 시스템 업데이트 메뉴는 제거되었으므로 해당 조건은 삭제되었습니다.
     try:
+        if not unlock_memory():
+            update_status("메모리 잠금 해제 실패", "red")
+            show_notification("메모리 잠금 해제 실패", "red")
+            play_failure_sound()
+            is_executing = False
+            return
+        update_status("업데이트 중...", "orange")
         process = subprocess.Popen(commands[command_index], shell=True,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         start_time = time.time()
@@ -578,7 +571,9 @@ def on_focus_out(event):
 root.bind("<FocusOut>", on_focus_out)
 keep_on_top()
 
-# --- 파일 추출 및 FTP 업로드 ---
+# ----------------------------
+# 파일 추출 및 FTP 업로드
+# ----------------------------
 def extract_file_from_stm32():
     global is_executing
     is_executing = True
@@ -602,8 +597,7 @@ def extract_file_from_stm32():
         "-c", "shutdown",
     ]
     try:
-        result = subprocess.run(openocd_command, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
             print("파일 추출 성공!")
             show_notification("파일 추출에 성공했습니다.", "green")
@@ -650,5 +644,7 @@ def upload_to_ftp(file_path, filename):
         update_led(led_error, True)
         update_led(led_error1, True)
 
+# ----------------------------
 # Tkinter 메인 루프 실행
+# ----------------------------
 root.mainloop()
