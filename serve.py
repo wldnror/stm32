@@ -101,7 +101,7 @@ synced_branches = set()
 # ----------------------------
 root = tk.Tk()
 root.title("업데이트 관리자")
-root.geometry("800x400")
+root.geometry("700x450")
 root.attributes("-topmost", True)
 root.lift()
 
