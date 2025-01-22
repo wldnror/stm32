@@ -60,30 +60,17 @@ selected_branch = "master"
 is_auto_mode = True
 current_command_index = 0
 
+# Program 폴더 내 .bin 파일을 자동으로 스캔하여 commands, command_names 구성
+bin_dir = "/home/user/stm32/Program"
+bin_file_list = [f for f in os.listdir(bin_dir) if f.lower().endswith(".bin")]
+
 commands = [
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
-    "-c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
-    "-c \"program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
-    "-c \"program /home/user/stm32/Program/HMDS-IR.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
-    "-c \"program /home/user/stm32/Program/ARF-T.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
-    "-c \"program /home/user/stm32/Program/HC100.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
-    "-c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
-    "-c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\""
+    f"sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    f"-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    f"-c \"program {os.path.join(bin_dir, bin_file)} verify reset exit 0x08000000\""
+    for bin_file in bin_file_list
 ]
-command_names = ["ORG", "HMDS", "HMDS-IR", "ARF-T", "HC100", "SAT4010", "IPA"]
+command_names = [os.path.splitext(bin_file)[0] for bin_file in bin_file_list]
 
 status_message = ""
 is_executing = False
@@ -109,7 +96,11 @@ mode_label = tk.Label(root, text="", font=("Helvetica", 17))
 mode_label.pack(pady=10)
 mode_label.config(text=f"모드: {'자동' if is_auto_mode else '수동'}")
 
-current_command_label = tk.Label(root, text=f"현재 명령어: {command_names[current_command_index]}", font=("Helvetica", 14))
+# 만약 bin_file_list가 비어있다면 대비책(예: "No bin files" 표시 등)
+if len(bin_file_list) == 0:
+    current_command_label = tk.Label(root, text="(Program 폴더에 .bin 파일이 없습니다.)", font=("Helvetica", 14))
+else:
+    current_command_label = tk.Label(root, text=f"현재 명령어: {command_names[current_command_index]}", font=("Helvetica", 14))
 current_command_label.pack(pady=5)
 
 status_label = tk.Label(root, text="상태: 대기 중", font=("Helvetica", 14), fg="blue")
@@ -151,6 +142,9 @@ def next_command_gui():
     if is_executing:
         show_notification("현재 명령이 실행 중입니다.", "red")
         return
+    if len(commands) == 0:
+        show_notification("Program 폴더 내 .bin 파일이 없습니다.", "red")
+        return
     current_command_index = (current_command_index + 1) % len(commands)
     current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
 
@@ -159,12 +153,18 @@ def previous_command_gui():
     if is_executing:
         show_notification("현재 명령이 실행 중입니다.", "red")
         return
+    if len(commands) == 0:
+        show_notification("Program 폴더 내 .bin 파일이 없습니다.", "red")
+        return
     current_command_index = (current_command_index - 1) % len(commands)
     current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
 
 def execute_command_gui():
     if is_executing:
         show_notification("이미 명령이 실행 중입니다.", "red")
+        return
+    if len(commands) == 0:
+        show_notification("Program 폴더 내 .bin 파일이 없습니다.", "red")
         return
     threading.Thread(target=execute_command, args=(current_command_index,), daemon=True).start()
 
@@ -189,7 +189,6 @@ branch_combo = ttk.Combobox(branch_frame, textvariable=branch_var, state="readon
                             font=("Helvetica", 12), width=20)
 branch_combo.grid(row=0, column=1, padx=5)
 
-# 현재 브랜치를 가져오는 함수 (문제가 생길 경우 "master"를 기본값으로 설정)
 def get_current_git_branch():
     try:
         output = subprocess.check_output(["git", "branch", "--show-current"],
@@ -352,11 +351,6 @@ def ignore_update(remote_commit):
         update_notification_frame.destroy()
 
 def force_sync_with_remote():
-    """
-    원격에 있는 브랜치는 전부 로컬에 만들고,
-    원격에 없는 로컬 브랜치는 삭제,
-    각 로컬 브랜치는 origin/<branch> 기준으로 reset --hard
-    """
     global is_executing
     if is_executing:
         return
@@ -373,6 +367,7 @@ def force_sync_with_remote():
                 remote_branches.append(line)
         local_list_raw = subprocess.check_output(["git", "branch"], cwd=cwd, text=True)
         local_list = [x.strip().lstrip("* ").strip() for x in local_list_raw.splitlines()]
+
         for rb in remote_branches:
             lb = rb.replace("origin/", "")
             if lb not in local_list:
@@ -382,11 +377,13 @@ def force_sync_with_remote():
                     pass
             subprocess.check_call(["git", "checkout", lb], cwd=cwd)
             subprocess.check_call(["git", "reset", "--hard", rb], cwd=cwd)
+
         new_local_list_raw = subprocess.check_output(["git", "branch"], cwd=cwd, text=True)
         new_local_list = [x.strip().lstrip("* ").strip() for x in new_local_list_raw.splitlines()]
         for lb in new_local_list:
             if f"origin/{lb}" not in remote_branches_raw:
                 subprocess.check_call(["git", "branch", "-D", lb], cwd=cwd)
+
         show_notification("자동 강제 동기화 완료: 로컬이 원격과 동일해졌습니다.", "green", duration=5000)
         play_success_sound()
     except subprocess.CalledProcessError as e:
