@@ -350,6 +350,9 @@ def ignore_update(remote_commit):
     if update_notification_frame and update_notification_frame.winfo_exists():
         update_notification_frame.destroy()
 
+# ----------------------------
+# (수정된 부분) 브랜치 강제 동기화
+# ----------------------------
 def force_sync_with_remote():
     global is_executing
     if is_executing:
@@ -358,13 +361,21 @@ def force_sync_with_remote():
     is_executing = True
     try:
         cwd = "/home/user/stm32"
+
+        # --- 동기화 전, 현재 브랜치를 기억 ---
+        original_branch = subprocess.check_output(
+            ["git", "branch", "--show-current"], cwd=cwd, text=True
+        ).strip()
+
         subprocess.check_call(["git", "fetch", "--all", "--prune"], cwd=cwd)
+        
         remote_branches_raw = subprocess.check_output(["git", "branch", "-r"], cwd=cwd, text=True)
         remote_branches = []
         for line in remote_branches_raw.splitlines():
             line = line.strip()
             if line and "HEAD" not in line:
                 remote_branches.append(line)
+
         local_list_raw = subprocess.check_output(["git", "branch"], cwd=cwd, text=True)
         local_list = [x.strip().lstrip("* ").strip() for x in local_list_raw.splitlines()]
 
@@ -380,9 +391,14 @@ def force_sync_with_remote():
 
         new_local_list_raw = subprocess.check_output(["git", "branch"], cwd=cwd, text=True)
         new_local_list = [x.strip().lstrip("* ").strip() for x in new_local_list_raw.splitlines()]
+
         for lb in new_local_list:
             if f"origin/{lb}" not in remote_branches_raw:
                 subprocess.check_call(["git", "branch", "-D", lb], cwd=cwd)
+
+        # --- 동기화 종료 후, 원래 브랜치로 돌아오기 ---
+        if original_branch in new_local_list:
+            subprocess.check_call(["git", "checkout", original_branch], cwd=cwd)
 
         show_notification("자동 강제 동기화 완료: 로컬이 원격과 동일해졌습니다.", "green", duration=5000)
         play_success_sound()
@@ -557,7 +573,7 @@ def execute_command(command_index):
             update_status("업데이트 성공!", "green")
             show_notification("업데이트에 성공했습니다.", "green")
             update_led(led_success, True)
-            time.sleep(0) # 대기시간 추가 해당 기능은 파일 추출 데이터 만들기 위함 기본값 0
+            time.sleep(0)  # 대기시간(파일 추출용 등) 필요 시 조절
             lock_memory_procedure()
         else:
             update_status("업데이트 실패", "red")
