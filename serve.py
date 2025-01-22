@@ -55,38 +55,33 @@ def play_failure_sound():
         print(f"실패 사운드 파일을 로드하지 못했습니다: {FAILURE_SOUND_PATH}")
 
 # ----------------------------
-# 전역 변수 설정
+# 전역 변수 선언 (Tkinter 위젯 사용 전에 선언)
 # ----------------------------
+selected_branch = "master"  # 반드시 메뉴 생성 전에 선언되어야 함.
 is_auto_mode = True
 current_command_index = 0
-# 시스템 업데이트 기능은 메뉴에서 제외하므로 openocd 관련 명령어만 포함합니다.
+# 시스템 업데이트 기능은 메뉴에서 제외하고, openocd 관련 명령어만 포함
 commands = [
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
     "-c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
-    
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
     "-c \"program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000\"",
-    
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
     "-c \"program /home/user/stm32/Program/HMDS-IR.bin verify reset exit 0x08000000\"",
-    
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
     "-c \"program /home/user/stm32/Program/ARF-T.bin verify reset exit 0x08000000\"",
-    
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
     "-c \"program /home/user/stm32/Program/HC100.bin verify reset exit 0x08000000\"",
-    
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
     "-c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
-    
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
     "-c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\""
 ]
 command_names = ["ORG", "HMDS", "HMDS-IR", "ARF-T", "HC100", "SAT4010", "IPA"]
@@ -96,7 +91,7 @@ is_executing = False
 connection_success = False
 connection_failed_since_last_success = False
 
-# 업데이트 알림 관련 전역 변수 (실시간 업데이트 체크)
+# 업데이트 알림 관련 전역 변수
 checking_updates = True
 ignore_commit = None
 update_notification_frame = None
@@ -238,7 +233,7 @@ def change_branch():
             update_status(f"브랜치 변경됨: {selected_branch}", "green")
             show_notification(f"브랜치가 {selected_branch}(으)로 변경되었습니다.", "green")
             play_success_sound()
-            restart_script()  # 변경 후 재시작
+            restart_script()
         else:
             update_status("브랜치 변경 실패", "red")
             show_notification(f"브랜치 변경 실패:\n{result.stderr}", "red")
@@ -286,7 +281,7 @@ def update_ip_label():
 # ----------------------------
 def update_system(root):
     global checking_updates
-    checking_updates = False
+    checking_updates = False  # 업데이트 중 체크 중지
     try:
         result = subprocess.run(['git', 'pull'], capture_output=True, text=True)
         message = "업데이트 완료. 애플리케이션을 재시작합니다."
@@ -323,7 +318,6 @@ def show_update_notification(root, remote_commit):
 
     update_notification_frame = tk.Frame(root)
     update_notification_frame.place(relx=0.5, rely=0.95, anchor='center')
-
     update_label = tk.Label(update_notification_frame,
                             text="새로운 버전이 있습니다. 업데이트를 진행하시겠습니까?",
                             font=("Arial", 15), fg="red")
@@ -384,7 +378,7 @@ def check_for_updates(root):
         time.sleep(1)
 
 # ----------------------------
-# 재시작 및 시스템 업데이트 함수 (메뉴에서는 시스템 업데이트 기능 제거됨)
+# 재시작 함수
 # ----------------------------
 def restart_script():
     update_status("스크립트 재시작 중...", "orange")
@@ -479,7 +473,7 @@ def execute_command(command_index):
     update_led(led_success, False)
     update_led(led_error, False)
     update_led(led_error1, False)
-    # 시스템 업데이트 메뉴는 제거되었으므로 해당 조건은 삭제되었습니다.
+    # 선택한 명령어(여기서는 openocd 관련 명령어만 있음)를 실행
     try:
         if not unlock_memory():
             update_status("메모리 잠금 해제 실패", "red")
