@@ -20,7 +20,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 SUCCESS_SOUND_PATH = os.path.join(script_dir, 'success.mp3')
 FAILURE_SOUND_PATH = os.path.join(script_dir, 'failure.mp3')  # 실패 사운드 파일 경로 (별도 파일 권장)
 
-# 사운드 로드
+# 사운드 로드 함수
 def load_sound(path):
     if os.path.isfile(path):
         try:
@@ -35,7 +35,7 @@ def load_sound(path):
 success_sound = load_sound(SUCCESS_SOUND_PATH)
 failure_sound = load_sound(FAILURE_SOUND_PATH)
 
-# 사운드 재생 함수 정의
+# 사운드 재생 함수
 def play_success_sound():
     if success_sound:
         try:
@@ -57,6 +57,7 @@ def play_failure_sound():
 # 전역 변수 설정
 is_auto_mode = True
 current_command_index = 0
+selected_branch = "master"  # 기본 브랜치 (사용자가 변경 가능)
 commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000\"",
@@ -65,9 +66,9 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/HC100.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
-    "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
+    "git_pull",  # 업데이트 시 git_pull() 함수 호출
 ]
-command_names = ["ORG","HMDS","HMDS-IR","ARF-T","HC100", "SAT4010","IPA", "시스템 업데이트"]
+command_names = ["ORG", "HMDS", "HMDS-IR", "ARF-T", "HC100", "SAT4010", "IPA", "시스템 업데이트"]
 
 # 상태 메시지 및 실행 상태
 status_message = ""
@@ -79,9 +80,9 @@ connection_failed_since_last_success = False
 # Tkinter GUI 설정
 root = tk.Tk()
 root.title("업데이트 관리자")
-root.geometry("600x400")  # 필요에 따라 크기 조정
-root.attributes("-topmost", True)  # 창을 항상 최상위에 유지
-root.lift()  # 창을 최상위로 올리기 (필요한 경우)
+root.geometry("800x600")  # 창 크기 조정
+root.attributes("-topmost", True)
+root.lift()
 
 mode_label = tk.Label(root, text="", font=("Helvetica", 17))
 mode_label.pack(pady=10)
@@ -93,10 +94,10 @@ current_command_label.pack(pady=5)
 status_label = tk.Label(root, text="상태: 대기 중", font=("Helvetica", 14), fg="blue")
 status_label.pack(pady=5)
 
-ip_label = tk.Label(root, text=f"IP 주소: 로딩 중...", font=("Helvetica", 12))
+ip_label = tk.Label(root, text="IP 주소: 로딩 중...", font=("Helvetica", 12))
 ip_label.pack(pady=5)
 
-# LED 상태 표시기 (GUI 내에서 색상으로 대체)
+# LED 상태 표시 (색상으로 표현)
 led_frame = tk.Frame(root)
 led_frame.pack(pady=10)
 
@@ -109,7 +110,7 @@ led_error.grid(row=0, column=1, padx=5)
 led_error1 = tk.Label(led_frame, text="오류 LED2", bg="grey", width=10, height=2)
 led_error1.grid(row=0, column=2, padx=5)
 
-# 버튼 프레임
+# 명령 버튼 프레임
 button_frame = tk.Frame(root)
 button_frame.pack(pady=20)
 
@@ -118,14 +119,14 @@ def update_led(led_label, status):
         led_label.config(bg="green" if status else "grey")
     root.after(0, set_color)
 
-# 버튼 콜백 함수
+# 버튼 콜백 함수들
 def toggle_mode_gui():
     global is_auto_mode
     if is_executing:
         show_notification("현재 명령이 실행 중입니다.", "red")
         return
     is_auto_mode = not is_auto_mode
-    root.after(0, lambda: mode_label.config(text=f"모드: {'자동' if is_auto_mode else '수동'}"))
+    mode_label.config(text=f"모드: {'자동' if is_auto_mode else '수동'}")
     show_notification(f"모드가 {'자동' if is_auto_mode else '수동'}으로 변경되었습니다.", "blue")
 
 def next_command_gui():
@@ -134,7 +135,7 @@ def next_command_gui():
         show_notification("현재 명령이 실행 중입니다.", "red")
         return
     current_command_index = (current_command_index + 1) % len(commands)
-    root.after(0, lambda: current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}"))
+    current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
 
 def previous_command_gui():
     global current_command_index
@@ -142,31 +143,64 @@ def previous_command_gui():
         show_notification("현재 명령이 실행 중입니다.", "red")
         return
     current_command_index = (current_command_index - 1) % len(commands)
-    root.after(0, lambda: current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}"))
+    current_command_label.config(text=f"현재 명령어: {command_names[current_command_index]}")
 
 def execute_command_gui():
-    global is_executing
     if is_executing:
         show_notification("이미 명령이 실행 중입니다.", "red")
         return
     threading.Thread(target=execute_command, args=(current_command_index,), daemon=True).start()
 
-# 버튼 생성 (이전, 다음, 확인, 모드 전환)
 previous_button = tk.Button(button_frame, text="이전", command=previous_command_gui, width=10, height=2)
 previous_button.grid(row=0, column=0, padx=10)
-
 next_button = tk.Button(button_frame, text="다음", command=next_command_gui, width=10, height=2)
 next_button.grid(row=0, column=1, padx=10)
-
 execute_button = tk.Button(button_frame, text="확인", command=execute_command_gui, width=10, height=2)
 execute_button.grid(row=0, column=2, padx=10)
-
 toggle_mode_button = tk.Button(button_frame, text="모드 전환", command=toggle_mode_gui, width=10, height=2, bg="orange")
 toggle_mode_button.grid(row=0, column=3, padx=10)
 
-# --- 새로 추가된 부분 시작 ---
+# --- 브랜치 변경 기능 ---
+branch_frame = tk.Frame(root)
+branch_frame.pack(pady=10)
 
-# 새로운 버튼 프레임
+branch_label = tk.Label(branch_frame, text="현재 브랜치:", font=("Helvetica", 12))
+branch_label.grid(row=0, column=0, padx=5)
+branch_var = tk.StringVar(value=selected_branch)
+branch_entry = tk.Entry(branch_frame, textvariable=branch_var, font=("Helvetica", 12), width=20)
+branch_entry.grid(row=0, column=1, padx=5)
+
+def change_branch():
+    global selected_branch
+    new_branch = branch_var.get().strip()
+    if new_branch == "":
+        show_notification("브랜치 이름을 입력해주세요.", "red")
+        return
+    selected_branch = new_branch
+    try:
+        # /home/user/stm32 디렉토리에서 해당 브랜치로 checkout 시도
+        result = subprocess.run(["git", "checkout", selected_branch],
+                                cwd="/home/user/stm32",
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True)
+        if result.returncode == 0:
+            update_status(f"브랜치 변경됨: {selected_branch}", "green")
+            show_notification(f"브랜치가 {selected_branch}(으)로 변경되었습니다.", "green")
+            play_success_sound()
+        else:
+            update_status("브랜치 변경 실패", "red")
+            show_notification(f"브랜치 변경 실패: {result.stderr}", "red")
+            play_failure_sound()
+    except Exception as e:
+        update_status("브랜치 변경 오류", "red")
+        show_notification(f"브랜치 변경 중 오류 발생: {str(e)}", "red")
+        play_failure_sound()
+
+change_branch_button = tk.Button(branch_frame, text="브랜치 변경", command=change_branch, width=15, height=1, bg="lightblue")
+change_branch_button.grid(row=0, column=2, padx=5)
+
+# --- 추가 기능 : 파일 추출 및 FTP 업로드 ---
 extra_button_frame = tk.Frame(root)
 extra_button_frame.pack(pady=10)
 
@@ -178,8 +212,6 @@ def extract_and_upload_gui():
 
 extract_button = tk.Button(extra_button_frame, text="파일 추출 및 업로드", command=extract_and_upload_gui, width=20, height=2, bg="purple", fg="white")
 extract_button.pack(pady=5)
-
-# --- 새로 추가된 부분 끝 ---
 
 # IP 주소 업데이트 함수
 def get_ip_address():
@@ -194,62 +226,86 @@ def get_ip_address():
 
 def update_ip_label():
     ip = get_ip_address()
-    root.after(0, lambda: ip_label.config(text=f"IP 주소: {ip}"))
-    root.after(5000, update_ip_label)  # 5초마다 업데이트
+    ip_label.config(text=f"IP 주소: {ip}")
+    root.after(5000, update_ip_label)
 
-# Git Pull 함수
+# Git Pull 함수 (브랜치 삭제/업데이트 반영)
 def git_pull():
+    global selected_branch
     shell_script_path = '/home/user/stm32/git-pull.sh'
-    if not os.path.isfile(shell_script_path):
-        with open(shell_script_path, 'w') as script_file:
-            script_file.write("#!/bin/bash\n")
-            script_file.write("cd /home/user/stm32\n")
-            script_file.write("git remote update\n")  # 원격 저장소 정보 업데이트
-            script_file.write("if git status -uno | grep -q 'Your branch is up to date'; then\n")
-            script_file.write("   echo '이미 최신 상태입니다.'\n")
-            script_file.write("   exit 0\n")
-            script_file.write("fi\n")
-            script_file.write("git stash\n")  # 임시로 변경사항을 저장
-            script_file.write("git pull\n")  # 원격 저장소의 변경사항을 가져옴
-            script_file.write("git stash pop\n")  # 저장했던 변경사항을 다시 적용
-            script_file.flush()
-            os.fsync(script_file.fileno())
-
+    # git-pull.sh 파일을 새로 작성(또는 덮어씀)
+    with open(shell_script_path, 'w') as script_file:
+        script_file.write("#!/bin/bash\n")
+        script_file.write("cd /home/user/stm32\n")
+        # 선택한 브랜치를 branch 변수에 할당
+        script_file.write(f"branch='{selected_branch}'\n")
+        # 원격 업데이트 및 --prune 옵션으로 삭제된 브랜치 제거
+        script_file.write("git remote update\n")
+        script_file.write("git fetch --prune\n")
+        # 선택한 브랜치로 checkout 시도
+        script_file.write("git checkout $branch\n")
+        # 원격에 브랜치가 없는 경우 로컬 브랜치 삭제
+        script_file.write("if [ -z \"$(git ls-remote --heads origin $branch)\" ]; then\n")
+        script_file.write("   echo '브랜치 삭제:'$branch\n")
+        script_file.write("   git branch -D $branch\n")
+        script_file.write("   exit 0\n")
+        script_file.write("fi\n")
+        # 로컬 HEAD와 원격 HEAD가 다르면 강제 업데이트 수행
+        script_file.write("if [ \"$(git rev-parse HEAD)\" != \"$(git rev-parse origin/$branch)\" ]; then\n")
+        script_file.write("   git reset --hard origin/$branch\n")
+        script_file.write("   echo '브랜치 업데이트 완료:'$branch\n")
+        script_file.write("else\n")
+        script_file.write("   echo '이미 최신 상태입니다.'\n")
+        script_file.write("fi\n")
+        script_file.flush()
+        os.fsync(script_file.fileno())
     os.chmod(shell_script_path, 0o755)
 
     update_status("시스템 업데이트 중...", "orange")
     try:
-        result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        update_led(led_success, False)
-        update_led(led_error, False)
-        update_led(led_error1, False)
-        
+        result = subprocess.run([shell_script_path],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True)
+        stdout = result.stdout.strip()
         if result.returncode == 0:
-            if "이미 최신 상태" in result.stdout:
+            if "이미 최신 상태입니다." in stdout:
                 update_status("이미 최신 상태", "blue")
                 show_notification("시스템이 이미 최신 상태입니다.", "blue")
+            elif "브랜치 삭제" in stdout:
+                branch_name = stdout.split(":", 1)[1] if ":" in stdout else ""
+                update_status(f"삭제된 브랜치({branch_name}) 제거됨", "green")
+                show_notification(f"삭제된 브랜치({branch_name})가 로컬에서 제거되었습니다.", "green")
+                play_success_sound()
+                restart_script()
+            elif "브랜치 업데이트 완료" in stdout:
+                branch_name = stdout.split(":", 1)[1] if ":" in stdout else ""
+                update_status(f"업데이트 완료 ({branch_name})", "green")
+                show_notification(f"브랜치({branch_name})가 원격과 동기화되었습니다.", "green")
+                play_success_sound()
+                restart_script()
             else:
                 update_status("업데이트 성공!", "green")
                 show_notification("시스템 업데이트에 성공했습니다.", "green")
-                play_success_sound()  # 성공 사운드 재생
+                play_success_sound()
                 restart_script()
         else:
             update_status("업데이트 실패", "red")
             show_notification(f"GitHub 업데이트 실패.\n오류 메시지: {result.stderr}", "red")
-            play_failure_sound()  # 실패 사운드 재생
+            play_failure_sound()
             update_led(led_error, True)
             update_led(led_error1, True)
     except Exception as e:
         update_status("업데이트 오류", "red")
         show_notification(f"업데이트 중 오류 발생:\n{str(e)}", "red")
-        play_failure_sound()  # 실패 사운드 재생
+        play_failure_sound()
         update_led(led_error, True)
         update_led(led_error1, True)
 
 def restart_script():
     update_status("스크립트 재시작 중...", "orange")
     def restart():
-        time.sleep(3)  # 3초 후 재시작
+        time.sleep(3)
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart, daemon=True).start()
 
@@ -275,14 +331,14 @@ def unlock_memory():
         else:
             update_status("메모리 잠금 해제 실패", "red")
             show_notification(f"메모리 잠금 해제 실패: {result.stderr}", "red")
-            play_failure_sound()  # 실패 사운드 재생
+            play_failure_sound()
             update_led(led_error, True)
             update_led(led_error1, True)
             return False
     except Exception as e:
         update_status("오류 발생", "red")
         show_notification(f"메모리 잠금 해제 중 오류 발생: {str(e)}", "red")
-        play_failure_sound()  # 실패 사운드 재생
+        play_failure_sound()
         update_led(led_error, True)
         update_led(led_error1, True)
         return False
@@ -305,32 +361,29 @@ def lock_memory_procedure():
         if result.returncode == 0:
             update_status("메모리 잠금 성공", "green")
             show_notification("메모리 잠금에 성공했습니다.", "green")
-            play_success_sound()  # 최종 성공 사운드 재생
+            play_success_sound()
             update_led(led_success, True)
         else:
             update_status("메모리 잠금 실패", "red")
             show_notification(f"메모리 잠금 실패: {result.stderr}", "red")
-            play_failure_sound()  # 실패 사운드 재생
+            play_failure_sound()
             update_led(led_error, True)
             update_led(led_error1, True)
     except Exception as e:
         update_status("오류 발생", "red")
         show_notification(f"메모리 잠금 중 오류 발생: {str(e)}", "red")
-        play_failure_sound()  # 실패 사운드 재생
+        play_failure_sound()
 
-# 상태 업데이트 함수
+# 상태 업데이트 및 알림 함수
 def update_status(message, color):
-    root.after(0, lambda: status_label.config(text=f"상태: {message}", fg=color))
+    status_label.config(text=f"상태: {message}", fg=color)
 
-# 알림 메시지 레이블 (상태 레이블 아래에 추가)
 notification_label = tk.Label(root, text="", font=("Helvetica", 12), fg="green")
 notification_label.pack(pady=5)
 
 def show_notification(message, color="green", duration=3000):
-    def update_message():
-        notification_label.config(text=message, fg=color)
-        root.after(duration, lambda: notification_label.config(text=""))
-    root.after(0, update_message)
+    notification_label.config(text=message, fg=color)
+    root.after(duration, lambda: notification_label.config(text=""))
 
 def execute_command(command_index):
     global is_executing, connection_success, connection_failed_since_last_success
@@ -345,7 +398,7 @@ def execute_command(command_index):
         is_executing = False
         return
 
-    if command_index == 7:   # 시스템 업데이트
+    if command_index == 7:  # 시스템 업데이트 (시스템 자체의 업데이트 처리)
         lock_memory_procedure()
         is_executing = False
         return
@@ -353,7 +406,7 @@ def execute_command(command_index):
     if not unlock_memory():
         update_status("메모리 잠금 해제 실패", "red")
         show_notification("메모리 잠금 해제 실패", "red")
-        play_failure_sound()  # 실패 사운드 재생
+        play_failure_sound()
         is_executing = False
         return
 
@@ -375,19 +428,18 @@ def execute_command(command_index):
         if result == 0:
             update_status("업데이트 성공!", "green")
             show_notification("업데이트에 성공했습니다.", "green")
-            # play_success_sound()  # 성공 사운드 재생
             update_led(led_success, True)
             lock_memory_procedure()
         else:
             update_status("업데이트 실패", "red")
             show_notification(f"'{commands[command_index]}' 업데이트 실패!", "red")
-            play_failure_sound()  # 실패 사운드 재생
+            play_failure_sound()
             update_led(led_error, True)
             update_led(led_error1, True)
     except Exception as e:
         update_status("업데이트 오류", "red")
         show_notification(f"업데이트 중 오류 발생:\n{str(e)}", "red")
-        play_failure_sound()  # 실패 사운드 재생
+        play_failure_sound()
     finally:
         is_executing = False
 
@@ -411,7 +463,7 @@ def check_stm32_connection():
                 connection_failed_since_last_success = False
             else:
                 print("STM32 연결 성공")
-                connection_success = False  # 연속적인 성공을 방지
+                connection_success = False
             return True
         else:
             print("STM32 연결 실패:", result.stderr)
@@ -422,40 +474,31 @@ def check_stm32_connection():
         connection_failed_since_last_success = True
         return False
 
-# 실시간 업데이트를 위한 함수
+# 실시간 업데이트 (자동 모드 시 STM32 연결 상태에 따라 명령 실행)
 def realtime_update():
     while True:
         if not is_executing:
-            # STM32 연결 상태 확인 및 자동 모드일 때 명령 실행
             if is_auto_mode and check_stm32_connection() and connection_success:
                 execute_command(current_command_index)
         time.sleep(1)
 
-# 백그라운드 스레드 시작
 threading.Thread(target=realtime_update, daemon=True).start()
 
-# IP 주소 초기 업데이트
 update_ip_label()
 
-# 창이 다른 창에 의해 가려졌을 때 다시 최상위로 올리는 함수
 def keep_on_top():
     root.attributes("-topmost", True)
     root.lift()
-    root.after(1000, keep_on_top)  # 1초마다 이 함수 재실행
+    root.after(1000, keep_on_top)
 
-# 포커스 이벤트 핸들러
 def on_focus_out(event):
-    # 창이 포커스를 잃었을 때 최상위로 다시 올리기
     root.after(100, lambda: root.attributes("-topmost", True))
     root.after(100, lambda: root.lift())
 
 root.bind("<FocusOut>", on_focus_out)
-
-# 최상위 유지 함수 시작
 keep_on_top()
 
-# --- 새로 추가된 기능 시작 ---
-
+# --- 파일 추출 및 FTP 업로드 기능 ---
 def extract_file_from_stm32():
     global is_executing
     is_executing = True
@@ -464,16 +507,13 @@ def extract_file_from_stm32():
     update_led(led_error, False)
     update_led(led_error1, False)
 
-    # 추출할 파일의 STM32 메모리 주소 및 크기 설정
     memory_address = "0x08000000"  # 예시 주소
     memory_size = "256K"
 
-    # 현재 날짜와 시간을 기반으로 파일 이름 지정
     now = datetime.now()
     filename = now.strftime("%Y%m%d_%H%M%S") + ".bin"
     save_path = f"/home/user/stm32/Download/{filename}"
 
-    # OpenOCD 명령을 사용하여 STM32의 메모리 덤프
     openocd_command = [
         "sudo", "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
@@ -485,7 +525,6 @@ def extract_file_from_stm32():
         "-c", "shutdown",
     ]
 
-    # 명령 실행 및 결과 확인
     try:
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
@@ -521,15 +560,12 @@ def upload_to_ftp(file_path, filename):
         with ftplib.FTP(ftp_server) as ftp:
             ftp.login(ftp_user, ftp_password)
             ftp.cwd(ftp_path)
-
             with open(file_path, 'rb') as file:
                 ftp.storbinary(f'STOR {filename}', file)
-            
             print("파일 FTP 업로드 성공!")
             show_notification("파일 FTP 업로드에 성공했습니다.", "green")
             play_success_sound()
             update_led(led_success, True)
-            
     except ftplib.all_errors as e:
         print("FTP 업로드 실패:", str(e))
         update_status("FTP 업로드 실패", "red")
@@ -538,8 +574,5 @@ def upload_to_ftp(file_path, filename):
         update_led(led_error, True)
         update_led(led_error1, True)
 
-
-# --- 새로 추가된 기능 끝 ---
-
-# Tkinter 메인 루프 실행
+# Tkinter 메인 루프 시작
 root.mainloop()
