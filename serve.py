@@ -57,7 +57,7 @@ def play_failure_sound():
 # 전역 변수 설정
 is_auto_mode = True
 current_command_index = 0
-selected_branch = "master"  # 기본 브랜치 (사용자가 변경 가능)
+selected_branch = "master"  # 기본 브랜치 (드롭다운에서 선택 가능)
 commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000\"",
@@ -80,7 +80,7 @@ connection_failed_since_last_success = False
 # Tkinter GUI 설정
 root = tk.Tk()
 root.title("업데이트 관리자")
-root.geometry("800x600")  # 창 크기 조정
+root.geometry("800x600")
 root.attributes("-topmost", True)
 root.lift()
 
@@ -119,7 +119,6 @@ def update_led(led_label, status):
         led_label.config(bg="green" if status else "grey")
     root.after(0, set_color)
 
-# 버튼 콜백 함수들
 def toggle_mode_gui():
     global is_auto_mode
     if is_executing:
@@ -160,25 +159,65 @@ execute_button.grid(row=0, column=2, padx=10)
 toggle_mode_button = tk.Button(button_frame, text="모드 전환", command=toggle_mode_gui, width=10, height=2, bg="orange")
 toggle_mode_button.grid(row=0, column=3, padx=10)
 
-# --- 브랜치 변경 기능 ---
+# --- 브랜치 드롭다운 기능 (실시간 업데이트) ---
 branch_frame = tk.Frame(root)
 branch_frame.pack(pady=10)
 
-branch_label = tk.Label(branch_frame, text="현재 브랜치:", font=("Helvetica", 12))
+branch_label = tk.Label(branch_frame, text="브랜치 선택:", font=("Helvetica", 12))
 branch_label.grid(row=0, column=0, padx=5)
+
+# 선택된 브랜치를 담는 변수 (기본값: selected_branch)
 branch_var = tk.StringVar(value=selected_branch)
-branch_entry = tk.Entry(branch_frame, textvariable=branch_var, font=("Helvetica", 12), width=20)
-branch_entry.grid(row=0, column=1, padx=5)
+
+# OptionMenu 위젯 (초기 목록은 빈 리스트; 이후 refresh_git_branches()에서 갱신)
+branch_menu = tk.OptionMenu(branch_frame, branch_var, ())
+branch_menu.config(width=20, font=("Helvetica", 12))
+branch_menu.grid(row=0, column=1, padx=5)
+
+def get_git_branches():
+    """
+    /home/user/stm32 디렉토리에서 로컬 브랜치 목록을 가져와 리스트로 반환합니다.
+    """
+    try:
+        result = subprocess.run(["git", "branch"], cwd="/home/user/stm32",
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            branches = []
+            for line in result.stdout.splitlines():
+                # '*' 표시와 공백 제거
+                branch = line.strip().lstrip("*").strip()
+                if branch:
+                    branches.append(branch)
+            return branches
+        else:
+            print("브랜치 목록 조회 실패:", result.stderr)
+            return []
+    except Exception as e:
+        print("브랜치 목록 조회 중 오류 발생:", e)
+        return []
+
+def refresh_git_branches():
+    branches = get_git_branches()
+    menu = branch_menu["menu"]
+    menu.delete(0, "end")
+    for br in branches:
+        menu.add_command(label=br, command=lambda value=br: branch_var.set(value))
+    # 만약 선택된 브랜치가 목록에 없으면 기본값을 첫번째 항목으로 설정
+    if branches:
+        if branch_var.get() not in branches:
+            branch_var.set(branches[0])
+    # 10초마다 갱신 (원하는 시간으로 수정 가능)
+    root.after(10000, refresh_git_branches)
 
 def change_branch():
     global selected_branch
     new_branch = branch_var.get().strip()
     if new_branch == "":
-        show_notification("브랜치 이름을 입력해주세요.", "red")
+        show_notification("브랜치가 선택되지 않았습니다.", "red")
         return
     selected_branch = new_branch
     try:
-        # /home/user/stm32 디렉토리에서 해당 브랜치로 checkout 시도
+        # 지정한 리포지토리에서 브랜치 체크아웃 수행
         result = subprocess.run(["git", "checkout", selected_branch],
                                 cwd="/home/user/stm32",
                                 stdout=subprocess.PIPE,
@@ -190,15 +229,18 @@ def change_branch():
             play_success_sound()
         else:
             update_status("브랜치 변경 실패", "red")
-            show_notification(f"브랜치 변경 실패: {result.stderr}", "red")
+            show_notification(f"브랜치 변경 실패:\n{result.stderr}", "red")
             play_failure_sound()
     except Exception as e:
         update_status("브랜치 변경 오류", "red")
-        show_notification(f"브랜치 변경 중 오류 발생: {str(e)}", "red")
+        show_notification(f"브랜치 변경 중 오류 발생:\n{str(e)}", "red")
         play_failure_sound()
 
 change_branch_button = tk.Button(branch_frame, text="브랜치 변경", command=change_branch, width=15, height=1, bg="lightblue")
 change_branch_button.grid(row=0, column=2, padx=5)
+
+# 초기에 브랜치 목록 갱신 시작
+refresh_git_branches()
 
 # --- 추가 기능 : 파일 추출 및 FTP 업로드 ---
 extra_button_frame = tk.Frame(root)
@@ -233,16 +275,16 @@ def update_ip_label():
 def git_pull():
     global selected_branch
     shell_script_path = '/home/user/stm32/git-pull.sh'
-    # git-pull.sh 파일을 새로 작성(또는 덮어씀)
+    # git-pull.sh 파일을 새로 작성 (또는 덮어씀)
     with open(shell_script_path, 'w') as script_file:
         script_file.write("#!/bin/bash\n")
         script_file.write("cd /home/user/stm32\n")
-        # 선택한 브랜치를 branch 변수에 할당
+        # 선택한 브랜치 정보를 변수로 저장
         script_file.write(f"branch='{selected_branch}'\n")
         # 원격 업데이트 및 --prune 옵션으로 삭제된 브랜치 제거
         script_file.write("git remote update\n")
         script_file.write("git fetch --prune\n")
-        # 선택한 브랜치로 checkout 시도
+        # 선택한 브랜치로 체크아웃 시도
         script_file.write("git checkout $branch\n")
         # 원격에 브랜치가 없는 경우 로컬 브랜치 삭제
         script_file.write("if [ -z \"$(git ls-remote --heads origin $branch)\" ]; then\n")
@@ -330,14 +372,14 @@ def unlock_memory():
             return True
         else:
             update_status("메모리 잠금 해제 실패", "red")
-            show_notification(f"메모리 잠금 해제 실패: {result.stderr}", "red")
+            show_notification(f"메모리 잠금 해제 실패:\n{result.stderr}", "red")
             play_failure_sound()
             update_led(led_error, True)
             update_led(led_error1, True)
             return False
     except Exception as e:
         update_status("오류 발생", "red")
-        show_notification(f"메모리 잠금 해제 중 오류 발생: {str(e)}", "red")
+        show_notification(f"메모리 잠금 해제 중 오류 발생:\n{str(e)}", "red")
         play_failure_sound()
         update_led(led_error, True)
         update_led(led_error1, True)
@@ -365,13 +407,13 @@ def lock_memory_procedure():
             update_led(led_success, True)
         else:
             update_status("메모리 잠금 실패", "red")
-            show_notification(f"메모리 잠금 실패: {result.stderr}", "red")
+            show_notification(f"메모리 잠금 실패:\n{result.stderr}", "red")
             play_failure_sound()
             update_led(led_error, True)
             update_led(led_error1, True)
     except Exception as e:
         update_status("오류 발생", "red")
-        show_notification(f"메모리 잠금 중 오류 발생: {str(e)}", "red")
+        show_notification(f"메모리 잠금 중 오류 발생:\n{str(e)}", "red")
         play_failure_sound()
 
 # 상태 업데이트 및 알림 함수
@@ -443,7 +485,6 @@ def execute_command(command_index):
     finally:
         is_executing = False
 
-# STM32 연결 상태 확인 함수
 def check_stm32_connection():
     global connection_success, connection_failed_since_last_success
     try:
@@ -474,7 +515,6 @@ def check_stm32_connection():
         connection_failed_since_last_success = True
         return False
 
-# 실시간 업데이트 (자동 모드 시 STM32 연결 상태에 따라 명령 실행)
 def realtime_update():
     while True:
         if not is_executing:
@@ -574,5 +614,5 @@ def upload_to_ftp(file_path, filename):
         update_led(led_error, True)
         update_led(led_error1, True)
 
-# Tkinter 메인 루프 시작
+# Tkinter 메인 루프 실행
 root.mainloop()
