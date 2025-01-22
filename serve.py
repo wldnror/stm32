@@ -62,26 +62,26 @@ is_auto_mode = True
 current_command_index = 0
 # 시스템 업데이트 항목은 메뉴에서 제외하고 openocd 관련 명령어만 포함
 commands = [
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
     "-c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
     "-c \"program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
     "-c \"program /home/user/stm32/Program/HMDS-IR.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
     "-c \"program /home/user/stm32/Program/ARF-T.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
     "-c \"program /home/user/stm32/Program/HC100.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
     "-c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg " \
-    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg " \
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
     "-c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\""
 ]
 command_names = ["ORG", "HMDS", "HMDS-IR", "ARF-T", "HC100", "SAT4010", "IPA"]
@@ -369,6 +369,7 @@ def check_for_updates(root):
             remote_branch_info = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', current_branch]).strip().decode()
             remote_commit = remote_branch_info.split()[0] if remote_branch_info else None
             local_commit = subprocess.check_output(['git', 'rev-parse', current_branch]).strip().decode()
+
             if deleted_branches:
                 prune_deleted_branches(root)
                 show_temporary_notification(root, "삭제된 브랜치가 정리되었습니다.")
@@ -410,9 +411,9 @@ def unlock_memory():
     ]
     try:
         result = subprocess.run(openocd_command,
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE,
-                                  text=True)
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True)
         if result.returncode == 0:
             update_status("메모리 잠금 해제 성공!", "green")
             show_notification("메모리 잠금 해제에 성공했습니다.", "green")
@@ -446,9 +447,9 @@ def lock_memory_procedure():
     ]
     try:
         result = subprocess.run(openocd_command,
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE,
-                                  text=True)
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True)
         if result.returncode == 0:
             update_status("메모리 잠금 성공", "green")
             show_notification("메모리 잠금에 성공했습니다.", "green")
@@ -536,9 +537,9 @@ def check_stm32_connection():
             "-c", "exit"
         ]
         result = subprocess.run(command,
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE,
-                                  text=True)
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True)
         if result.returncode == 0:
             if connection_failed_since_last_success:
                 print("STM32 재연결 성공")
@@ -560,6 +561,7 @@ def check_stm32_connection():
 def realtime_update():
     while True:
         if not is_executing:
+            # 자동 모드이면서 STM32 연결이 재성공된 경우만 명령 실행
             if is_auto_mode and check_stm32_connection() and connection_success:
                 execute_command(current_command_index)
         time.sleep(1)
@@ -591,11 +593,10 @@ def extract_file_from_stm32():
     update_led(led_success, False)
     update_led(led_error, False)
     update_led(led_error1, False)
-    memory_address = "0x08000000"
-    memory_size = "256K"
     now = datetime.now()
     filename = now.strftime("%Y%m%d_%H%M%S") + ".bin"
     save_path = f"/home/user/stm32/Download/{filename}"
+
     openocd_command = [
         "sudo", "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
@@ -606,11 +607,12 @@ def extract_file_from_stm32():
         "-c", "reset run",
         "-c", "shutdown",
     ]
+
     try:
         result = subprocess.run(openocd_command,
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE,
-                                  text=True)
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True)
         if result.returncode == 0:
             print("파일 추출 성공!")
             show_notification("파일 추출에 성공했습니다.", "green")
@@ -656,6 +658,83 @@ def upload_to_ftp(file_path, filename):
         play_failure_sound()
         update_led(led_error, True)
         update_led(led_error1, True)
+
+# ----------------------------
+# 로컬-원격 강제 동기화 함수
+# ----------------------------
+def force_sync_with_remote():
+    """
+    원격에 있는 브랜치는 모두 로컬에 만들고,
+    로컬에만 있는 브랜치는 삭제,
+    각 로컬 브랜치는 origin/<branch> 상태로 reset --hard
+    """
+    global is_executing
+    if is_executing:
+        show_notification("현재 명령이 실행 중입니다.", "red")
+        return
+
+    is_executing = True
+    show_notification("모든 브랜치 강제 동기화 중...(로컬 변경 사항이 사라질 수 있음)", "orange", duration=5000)
+
+    try:
+        cwd = "/home/user/stm32"
+        # 1) fetch --all --prune
+        subprocess.check_call(["git", "fetch", "--all", "--prune"], cwd=cwd)
+
+        # 2) 원격 브랜치 목록 가져오기 (HEAD 제외)
+        remote_branches_raw = subprocess.check_output(["git", "branch", "-r"], cwd=cwd, text=True)
+        remote_branches = []
+        for line in remote_branches_raw.splitlines():
+            line = line.strip()
+            if line and "HEAD" not in line:
+                remote_branches.append(line)  # e.g. "origin/master", "origin/용준"
+
+        # 로컬 목록
+        local_list_raw = subprocess.check_output(["git", "branch"], cwd=cwd, text=True)
+        local_list = [x.strip().lstrip("* ").strip() for x in local_list_raw.splitlines()]
+
+        # 3) 원격 브랜치별 로컬에 없으면 생성, 그리고 reset --hard
+        for rb in remote_branches:
+            # rb 예: "origin/master"
+            lb = rb.replace("origin/", "")  # "master"
+
+            if lb not in local_list:
+                # 로컬에 해당 브랜치가 없으면 새로 트래킹
+                try:
+                    subprocess.check_call(["git", "branch", "--track", lb, rb], cwd=cwd)
+                except subprocess.CalledProcessError:
+                    pass  # 이미 tracking 중인 경우 등 에러 무시
+
+            # checkout 후 reset --hard
+            subprocess.check_call(["git", "checkout", lb], cwd=cwd)
+            subprocess.check_call(["git", "reset", "--hard", rb], cwd=cwd)
+
+        # 4) 원격에 없는 로컬 브랜치는 삭제
+        new_local_list_raw = subprocess.check_output(["git", "branch"], cwd=cwd, text=True)
+        new_local_list = [x.strip().lstrip("* ").strip() for x in new_local_list_raw.splitlines()]
+
+        for lb in new_local_list:
+            if f"origin/{lb}" not in remote_branches_raw:
+                # 원격에 없는 로컬 브랜치이므로 삭제
+                subprocess.check_call(["git", "branch", "-D", lb], cwd=cwd)
+
+        show_notification("로컬-원격 브랜치 완전 동기화가 완료되었습니다.", "green", duration=5000)
+        play_success_sound()
+    except subprocess.CalledProcessError as e:
+        show_notification(f"강제 동기화 실패:\n{str(e)}", "red", duration=5000)
+        play_failure_sound()
+    except Exception as e:
+        show_notification(f"오류 발생:\n{str(e)}", "red", duration=5000)
+        play_failure_sound()
+    finally:
+        is_executing = False
+
+# ----------------------------
+# 강제 동기화 버튼 추가
+# ----------------------------
+sync_button = tk.Button(extra_button_frame, text="강제 동기화(주의)", command=force_sync_with_remote,
+                        width=20, height=2, bg="red", fg="white")
+sync_button.pack(pady=5)
 
 # ----------------------------
 # Tkinter 메인 루프 실행
