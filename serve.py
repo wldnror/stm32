@@ -272,7 +272,7 @@ def update_ip_label():
     ip_label.config(text=f"IP 주소: {ip}")
     root.after(5000, update_ip_label)
 
-# Git Pull 함수 (브랜치 삭제/업데이트 반영 및 로컬 트래킹 브랜치 생성)
+# Git Pull 함수 (원격 기준으로 무조건 동기화: 강제 reset 방식)
 def git_pull():
     global selected_branch
     shell_script_path = '/home/user/stm32/git-pull.sh'
@@ -282,30 +282,12 @@ def git_pull():
         script_file.write("cd /home/user/stm32\n")
         # 선택한 브랜치 정보를 변수로 저장
         script_file.write("branch='{}'\n".format(selected_branch))
-        # 원격 업데이트 및 --prune 옵션으로 삭제된 브랜치 제거
-        script_file.write("git remote update\n")
+        # 최신 원격 정보를 가져옴 (prune 옵션 포함)
         script_file.write("git fetch --prune\n")
-        # 원격 브랜치에서 로컬 트래킹 브랜치 생성 (제안하신 명령어)
-        script_file.write("for branch in $(git branch -r | grep -v '\\->'); do ")
-        script_file.write("git branch --track \"${branch#origin/}\" \"$branch\" 2>/dev/null || echo \"Branch ${branch#origin/} already exists.\"; ")
-        script_file.write("done\n")
-        # 선택한 브랜치로 체크아웃 시도
+        # 원격 기준으로 강제 동기화: 체크아웃 후 reset --hard 실행
         script_file.write("git checkout $branch\n")
-        # 원격에 브랜치가 없는 경우 로컬 브랜치 삭제
-        script_file.write("if [ -z \"$(git ls-remote --heads origin $branch)\" ]; then\n")
-        script_file.write("   echo '브랜치 삭제:'$branch\n")
-        script_file.write("   git branch -D $branch\n")
-        script_file.write("   exit 0\n")
-        script_file.write("fi\n")
-        # 로컬 HEAD와 원격 HEAD가 다르면 강제 업데이트 수행
-        script_file.write("if [ \"$(git rev-parse HEAD)\" != \"$(git rev-parse origin/$branch)\" ]; then\n")
-        script_file.write("   git reset --hard origin/$branch\n")
-        script_file.write("   echo '브랜치 업데이트 완료:'$branch\n")
-        script_file.write("else\n")
-        script_file.write("   echo '이미 최신 상태입니다.'\n")
-        script_file.write("fi\n")
-        script_file.flush()
-        os.fsync(script_file.fileno())
+        script_file.write("git reset --hard origin/$branch\n")
+        script_file.write("echo '브랜치 업데이트 완료:'$branch\n")
     os.chmod(shell_script_path, 0o755)
 
     update_status("시스템 업데이트 중...", "orange")
@@ -316,26 +298,10 @@ def git_pull():
                                 text=True)
         stdout = result.stdout.strip()
         if result.returncode == 0:
-            if "이미 최신 상태입니다." in stdout:
-                update_status("이미 최신 상태", "blue")
-                show_notification("시스템이 이미 최신 상태입니다.", "blue")
-            elif "브랜치 삭제" in stdout:
-                branch_name = stdout.split(":", 1)[1] if ":" in stdout else ""
-                update_status(f"삭제된 브랜치({branch_name}) 제거됨", "green")
-                show_notification(f"삭제된 브랜치({branch_name})가 로컬에서 제거되었습니다.", "green")
-                play_success_sound()
-                restart_script()
-            elif "브랜치 업데이트 완료" in stdout:
-                branch_name = stdout.split(":", 1)[1] if ":" in stdout else ""
-                update_status(f"업데이트 완료 ({branch_name})", "green")
-                show_notification(f"브랜치({branch_name})가 원격과 동기화되었습니다.", "green")
-                play_success_sound()
-                restart_script()
-            else:
-                update_status("업데이트 성공!", "green")
-                show_notification("시스템 업데이트에 성공했습니다.", "green")
-                play_success_sound()
-                restart_script()
+            update_status("업데이트 완료", "green")
+            show_notification("브랜치가 원격(깃허브) 상태로 강제 동기화되었습니다.", "green")
+            play_success_sound()
+            restart_script()
         else:
             update_status("업데이트 실패", "red")
             show_notification(f"GitHub 업데이트 실패.\n오류 메시지: {result.stderr}", "red")
