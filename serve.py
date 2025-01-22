@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import ttk, messagebox
 from datetime import datetime
 import threading
 import time
@@ -177,17 +177,27 @@ execute_button.grid(row=0, column=2, padx=10)
 toggle_mode_button = tk.Button(button_frame, text="모드 전환", command=toggle_mode_gui, width=10, height=2, bg="orange")
 toggle_mode_button.grid(row=0, column=3, padx=10)
 
-# --- 브랜치 드롭다운 ---
+# --- 브랜치 드롭다운 (ttk.Combobox 사용) ---
 branch_frame = tk.Frame(root)
 branch_frame.pack(pady=10)
 
 branch_label = tk.Label(branch_frame, text="브랜치 선택:", font=("Helvetica", 12))
 branch_label.grid(row=0, column=0, padx=5)
 
-branch_var = tk.StringVar(value=selected_branch)
-branch_menu = tk.OptionMenu(branch_frame, branch_var, ())
-branch_menu.config(width=20, font=("Helvetica", 12))
-branch_menu.grid(row=0, column=1, padx=5)
+branch_var = tk.StringVar()
+branch_combo = ttk.Combobox(branch_frame, textvariable=branch_var, state="readonly",
+                            font=("Helvetica", 12), width=20)
+branch_combo.grid(row=0, column=1, padx=5)
+
+# 현재 브랜치를 가져오는 함수 (문제가 생길 경우 "master"를 기본값으로 설정)
+def get_current_git_branch():
+    try:
+        output = subprocess.check_output(["git", "branch", "--show-current"],
+                                          cwd="/home/user/stm32", text=True)
+        return output.strip() if output.strip() else "master"
+    except Exception as e:
+        print(f"현재 브랜치 조회 중 오류: {e}")
+        return "master"
 
 def get_git_branches():
     try:
@@ -209,13 +219,20 @@ def get_git_branches():
 
 def refresh_git_branches():
     branches = get_git_branches()
-    menu = branch_menu["menu"]
-    menu.delete(0, "end")
-    for br in branches:
-        menu.add_command(label=br, command=lambda value=br: branch_var.set(value))
-    if branches and branch_var.get() not in branches:
-        branch_var.set(branches[0])
+    if branches:
+        branch_combo['values'] = branches
+        # 현재 브랜치가 목록에 있으면 선택, 없으면 첫번째 항목 선택
+        current_br = get_current_git_branch()
+        if current_br in branches:
+            branch_var.set(current_br)
+        else:
+            branch_var.set(branches[0])
+    else:
+        branch_combo['values'] = []
+        branch_var.set("")
     root.after(10000, refresh_git_branches)
+
+refresh_git_branches()
 
 def change_branch():
     global selected_branch
@@ -244,8 +261,6 @@ def change_branch():
 
 change_branch_button = tk.Button(branch_frame, text="브랜치 변경", command=change_branch, width=15, height=1, bg="lightblue")
 change_branch_button.grid(row=0, column=2, padx=5)
-
-refresh_git_branches()
 
 # --- 파일 추출 및 FTP 업로드 ---
 extra_button_frame = tk.Frame(root)
@@ -343,53 +358,35 @@ def force_sync_with_remote():
     각 로컬 브랜치는 origin/<branch> 기준으로 reset --hard
     """
     global is_executing
-    # 중복 실행 방지
     if is_executing:
         return
 
     is_executing = True
     try:
         cwd = "/home/user/stm32"
-
-        # 1) fetch --all --prune
         subprocess.check_call(["git", "fetch", "--all", "--prune"], cwd=cwd)
-
-        # 2) 원격 브랜치 목록
         remote_branches_raw = subprocess.check_output(["git", "branch", "-r"], cwd=cwd, text=True)
         remote_branches = []
         for line in remote_branches_raw.splitlines():
             line = line.strip()
             if line and "HEAD" not in line:
-                remote_branches.append(line)  # e.g. "origin/master", "origin/용준"
-
-        # 로컬 브랜치 목록
+                remote_branches.append(line)
         local_list_raw = subprocess.check_output(["git", "branch"], cwd=cwd, text=True)
         local_list = [x.strip().lstrip("* ").strip() for x in local_list_raw.splitlines()]
-
-        # 3) 원격 브랜치별로 로컬에 없으면 새로 생성, reset --hard
         for rb in remote_branches:
-            lb = rb.replace("origin/", "")  # 예: "origin/master" -> "master"
-
+            lb = rb.replace("origin/", "")
             if lb not in local_list:
-                # 트래킹 브랜치 생성
                 try:
                     subprocess.check_call(["git", "branch", "--track", lb, rb], cwd=cwd)
                 except subprocess.CalledProcessError:
                     pass
-
-            # checkout + reset --hard
             subprocess.check_call(["git", "checkout", lb], cwd=cwd)
             subprocess.check_call(["git", "reset", "--hard", rb], cwd=cwd)
-
-        # 4) 원격에 없는 로컬 브랜치는 삭제
         new_local_list_raw = subprocess.check_output(["git", "branch"], cwd=cwd, text=True)
         new_local_list = [x.strip().lstrip("* ").strip() for x in new_local_list_raw.splitlines()]
-
         for lb in new_local_list:
             if f"origin/{lb}" not in remote_branches_raw:
-                # 원격에 없는 로컬 브랜치
                 subprocess.check_call(["git", "branch", "-D", lb], cwd=cwd)
-
         show_notification("자동 강제 동기화 완료: 로컬이 원격과 동일해졌습니다.", "green", duration=5000)
         play_success_sound()
     except subprocess.CalledProcessError as e:
@@ -417,24 +414,17 @@ def check_for_updates(root):
             tracked_remote = subprocess.check_output(['git', 'branch', '-r'], cwd=cwd).strip().decode().splitlines()
             tracked_remote = [line.split('/')[-1].strip() for line in tracked_remote]
 
-            # 원격에 사라진 브랜치
             deleted_branches = [b for b in tracked_remote if b not in remote_branches]
-
-            # 새 브랜치(원격에만 존재 & 아직 synced_branches에 없는 것)
             new_branches = [b for b in remote_branches if b not in local_branches and b not in synced_branches]
 
             remote_branch_info = subprocess.check_output(['git', 'ls-remote', '--heads', 'origin', current_branch], cwd=cwd).strip().decode()
             remote_commit = remote_branch_info.split()[0] if remote_branch_info else None
             local_commit = subprocess.check_output(['git', 'rev-parse', current_branch], cwd=cwd).strip().decode()
 
-            # 만약 삭제된 브랜치나 신규 브랜치가 있다면 => 강제 동기화
             if deleted_branches or new_branches:
                 force_sync_with_remote()
-                # 새로 생긴 브랜치는 synced_branches에 등록
                 for branch in new_branches:
                     synced_branches.add(branch)
-
-            # 현재 브랜치 커밋이 원격과 다른데, ignore_commit이 아니면 => 업데이트 안내
             elif local_commit != remote_commit and remote_commit != ignore_commit:
                 show_update_notification(root, remote_commit)
 
