@@ -272,7 +272,7 @@ def update_ip_label():
     ip_label.config(text=f"IP 주소: {ip}")
     root.after(5000, update_ip_label)
 
-# Git Pull 함수 (브랜치 삭제/업데이트 반영)
+# Git Pull 함수 (브랜치 삭제/업데이트 반영 및 로컬 트래킹 브랜치 생성)
 def git_pull():
     global selected_branch
     shell_script_path = '/home/user/stm32/git-pull.sh'
@@ -281,10 +281,14 @@ def git_pull():
         script_file.write("#!/bin/bash\n")
         script_file.write("cd /home/user/stm32\n")
         # 선택한 브랜치 정보를 변수로 저장
-        script_file.write(f"branch='{selected_branch}'\n")
+        script_file.write("branch='{}'\n".format(selected_branch))
         # 원격 업데이트 및 --prune 옵션으로 삭제된 브랜치 제거
         script_file.write("git remote update\n")
         script_file.write("git fetch --prune\n")
+        # 원격 브랜치에서 로컬 트래킹 브랜치 생성 (제안하신 명령어)
+        script_file.write("for branch in $(git branch -r | grep -v '\\->'); do ")
+        script_file.write("git branch --track \"${branch#origin/}\" \"$branch\" 2>/dev/null || echo \"Branch ${branch#origin/} already exists.\"; ")
+        script_file.write("done\n")
         # 선택한 브랜치로 체크아웃 시도
         script_file.write("git checkout $branch\n")
         # 원격에 브랜치가 없는 경우 로컬 브랜치 삭제
