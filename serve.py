@@ -495,7 +495,7 @@ def update_oled_display():
             elif command_names[current_command_index] == "시스템 업데이트":
                 draw.text((0, 51), ip_address, font=font_big, fill=255)
                 draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
-                draw.text((83, 50), 'ver 3.54', font=font_big, fill=255)
+                draw.text((83, 50), 'ver 3.55', font=font_big, fill=255)
                 draw.text((0, -3), current_time, font=font_time, fill=255)
 
             if status_message:
