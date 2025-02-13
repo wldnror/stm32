@@ -16,6 +16,7 @@ display_lock = threading.Lock()
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
+# LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
 LED_ERROR1 = 23
@@ -25,20 +26,25 @@ SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.1  # 최소 작동 전압
 MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 
-# 자동 모드와 수동 모드 상태
+# 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
 
+# GPIO 핀 번호 모드 설정 및 초기 상태 설정
 GPIO.setmode(GPIO.BCM)
 
+# 전역 변수로 마지막으로 눌린 시간을 추적
 last_time_button_next_pressed = 0
 last_time_button_execute_pressed = 0
-button_press_interval = 0.5
+button_press_interval = 0.5  # 두 버튼이 동시에 눌린 것으로 간주되는 최대 시간 차이
 
 need_update = False
 is_command_executing = False
 is_button_pressed = False
 
+# 전역 변수로 마지막 모드 전환 시간을 추적
 last_mode_toggle_time = 0
+
+# 스크립트 시작 부분에 전역 변수 정의
 is_executing = False
 
 def toggle_mode():
@@ -54,19 +60,21 @@ def button_next_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
         is_button_pressed = False
         return
 
+    # EXECUTE 버튼이 최근에 눌렸는지 확인
     if current_time - last_time_button_execute_pressed < button_press_interval:
-        toggle_mode()
+        toggle_mode()  # 모드 전환
         need_update = True
     else:
-        current_command_index = (current_command_index + 1) % len(command_names)
+        current_command_index = (current_command_index + 1) % len(commands)
         need_update = True
 
-    last_time_button_next_pressed = current_time
+    last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
     is_button_pressed = False
+
 
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
@@ -75,31 +83,44 @@ def button_execute_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
         is_button_pressed = False
         return
 
+    # NEXT 버튼이 최근에 눌렸는지 확인
     if current_time - last_time_button_next_pressed < button_press_interval:
-        toggle_mode()
+        toggle_mode()  # 모드 전환
         need_update = True
     else:
+        # EXECUTE 버튼만 눌렸을 때의 로직
         if not is_auto_mode:
             execute_command(current_command_index)
             need_update = True
         else:
             with display_lock:
-                if command_names[current_command_index] == "시스템 업데이트":
+                if current_command_index == command_names.index("시스템 업데이트"):
                     execute_command(current_command_index)
                 else:
                     if is_auto_mode:
-                        current_command_index = (current_command_index - 1) % len(command_names)
+                        current_command_index = (current_command_index - 1) % len(commands)
                     else:
                         execute_command(current_command_index)
             need_update = True
 
-    last_time_button_execute_pressed = current_time
+    last_time_button_execute_pressed = current_time  # EXECUTE 버튼 눌린 시간 갱신
     is_button_pressed = False
 
+# 모드 전환 함수
+def toggle_mode():
+    global is_auto_mode
+    is_auto_mode = not is_auto_mode
+    update_oled_display()  # OLED 화면 업데이트
+    
+# 자동 모드와 수동 모드 아이콘 대신 문자열 사용
+auto_mode_text = 'A'
+manual_mode_text = 'M'
+
+# GPIO 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=800)
@@ -108,14 +129,16 @@ GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
 
+# 연결 상태를 추적하기 위한 변수
 connection_success = False
 connection_failed_since_last_success = False
 
 def check_stm32_connection():
     with display_lock:
         global connection_success, connection_failed_since_last_success, is_command_executing
-        if is_command_executing:
+        if is_command_executing:  # 명령 실행 중에는 STM32 연결 확인을 하지 않음
             return False
+
         try:
             command = [
                 "sudo", "openocd",
@@ -125,24 +148,28 @@ def check_stm32_connection():
                 "-c", "exit"
             ]
             result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
             if result.returncode == 0:
                 if connection_failed_since_last_success:
                     print("STM32 재연결 성공")
                     connection_success = True
-                    connection_failed_since_last_success = False
+                    connection_failed_since_last_success = False  # 성공 후 실패 플래그 초기화
+                    
                 else:
                     print("STM32 연결 성공")
-                    connection_success = False
+                    connection_success = False  # 연속적인 성공을 방지
                 return True
             else:
                 print("STM32 연결 실패:", result.stderr)
-                connection_failed_since_last_success = True
+                connection_failed_since_last_success = True  # 실패 플래그 
                 return False
         except Exception as e:
             print(f"오류 발생: {e}")
-            connection_failed_since_last_success = True
+            connection_failed_since_last_success = True  # 실패 플래그 설정
             return False
 
+
+# 배터리 상태 확인 함수
 def read_ina219_percentage():
     try:
         ina = INA219(SHUNT_OHMS)
@@ -155,6 +182,7 @@ def read_ina219_percentage():
         else:
             return int(((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100)
     except Exception as e:
+        # 예외 발생 시 로그 남기기
         print("INA219 모듈 읽기 실패:", str(e))
         return -1
 
@@ -178,6 +206,7 @@ medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 
+# 배터리 아이콘 선택 함수
 def select_battery_icon(percentage):
     if percentage < 20:
         return low_battery_icon
@@ -228,14 +257,14 @@ def git_pull():
         with open(shell_script_path, 'w') as script_file:
             script_file.write("#!/bin/bash\n")
             script_file.write("cd /home/user/stm32\n")
-            script_file.write("git remote update\n")
+            script_file.write("git remote update\n")  # 원격 저장소 정보 업데이트
             script_file.write("if git status -uno | grep -q 'Your branch is up to date'; then\n")
             script_file.write("   echo '이미 최신 상태입니다.'\n")
             script_file.write("   exit 0\n")
             script_file.write("fi\n")
-            script_file.write("git stash\n")
-            script_file.write("git pull\n")
-            script_file.write("git stash pop\n")
+            script_file.write("git stash\n")  # 임시로 변경사항을 저장
+            script_file.write("git pull\n")  # 원격 저장소의 변경사항을 가져옴
+            script_file.write("git stash pop\n")  # 저장했던 변경사항을 다시 적용
             script_file.flush()
             os.fsync(script_file.fileno())
 
@@ -282,24 +311,29 @@ def git_pull():
 
 def restart_script():
     print("스크립트를 재시작합니다.")
-    display_progress_and_message(25, "재시작 중", message_position=(20, 10), font_size=15)
+    display_status_message("재시작 중",position=(20, 20), font_size=15)
     def restart():
-        time.sleep(1)
+        time.sleep(3)  # 1초 후에 스크립트를 재시작합니다.
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart).start()
 
 def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
     with canvas(device) as draw:
+        # 메시지 표시
         draw.text(message_position, message, font=font, fill=255)
-        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
-        draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")
+        
+        # 진행 상태 바 표시
+        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")  # 상태 바의 외곽선
+        draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")  # 상태 바의 내용
         
 def unlock_memory():
     with display_lock:
         print("메모리 해제 시도...")
 
+    # '메모리 잠금' 및 '해제 중' 메시지와 함께 초기 진행 상태 바 표시
     display_progress_and_message(0, "메모리 잠금\n   해제 중", message_position=(18, 0), font_size=15)
 
+    # 메모리 잠금 해제 로직 구현...
     openocd_command = [
         "sudo", "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
@@ -311,6 +345,7 @@ def unlock_memory():
         "-c", "shutdown"
     ]
     result = subprocess.run(openocd_command)
+
     if result.returncode == 0:
         display_progress_and_message(30, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
         time.sleep(1)
@@ -321,7 +356,17 @@ def unlock_memory():
         update_oled_display()
         return False
 
+def restart_script():
+    print("스크립트를 재시작합니다.")
+    display_progress_and_message(25, "재시작 중", message_position=(20, 10), font_size=15)
+    def restart():
+        time.sleep(1)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    threading.Thread(target=restart).start()   
+
+
 def lock_memory_procedure():
+    
     display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
     openocd_command = [
         "sudo",
@@ -363,22 +408,26 @@ def lock_memory_procedure():
 
 def execute_command(command_index):
     global is_executing, is_command_executing
-    is_executing = True
-    is_command_executing = True
+    is_executing = True  # 작업 시작 전에 상태를 실행 중으로 설정
+    is_command_executing = True  # 명령 실행 중 상태 활성화
 
     print("업데이트 시도...")
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-    # 선택된 메뉴 항목이 시스템 업데이트라면
-    if command_names[command_index] == "시스템 업데이트":
+    if command_index == len(commands) - 1:
         git_pull()
         is_executing = False
         is_command_executing = False
         return
 
-    # 프로그램 파일 플래싱 시, 메모리 해제 후 진행
+    if command_index == 8:   # 메뉴 목록이 늘어나거나 줄어들때 사용!
+        lock_memory_procedure()
+        is_executing = False
+        is_command_executing = False
+        return
+        
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -408,12 +457,12 @@ def execute_command(command_index):
 
     result = process.returncode
     if result == 0:
-        print(f"'{command_names[command_index]}' 업데이트 성공!")
+        print(f"'{commands[command_index]}' 업데이트 성공!")
         display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
         time.sleep(0.5)
         lock_memory_procedure()
     else:
-        print(f"'{command_names[command_index]}' 업데이트 실패!")
+        print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         display_progress_and_message(0, "업데이트 실패", message_position=(7, 10), font_size=15)
@@ -424,6 +473,7 @@ def execute_command(command_index):
     is_executing = False
     is_command_executing = False
 
+        
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -470,6 +520,8 @@ def update_oled_display():
             font_custom = ImageFont.truetype(font_path, message_font_size)
             draw.text(message_position, status_message, font=font_custom, fill=255)
 
+
+# 실시간 업데이트를 위한 스레드 함수
 def realtime_update_display():
     global is_command_executing
     while True:
@@ -477,6 +529,7 @@ def realtime_update_display():
             update_oled_display()
         time.sleep(1)
 
+# 스레드 생성 및 시작
 realtime_update_thread = threading.Thread(target=realtime_update_display)
 realtime_update_thread.daemon = True
 realtime_update_thread.start()
@@ -487,22 +540,29 @@ def shutdown_system():
             draw.text((20, 25), "배터리 부족", font=font, fill=255)
             draw.text((25, 50), "시스템 종료 중...", font=font_st, fill=255)
         time.sleep(5)
+        GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
         os.system('sudo shutdown -h now')
     except Exception as e:
+        # 예외 발생 시 로그 남기기
         print("시스템 종료 중 오류 발생:", str(e))
 
+# 초기 디스플레이 업데이트
 update_oled_display()
 
+# 메인 루프
 try:
     while True:
+        # 배터리 수준을 확인하고 0%면 시스템 종료
         if read_ina219_percentage() == 0:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
 
+        # STM32 연결 상태 확인 및 명령 실행
         if command_names[current_command_index] != "시스템 업데이트":
             if is_auto_mode and check_stm32_connection() and connection_success:
                 execute_command(current_command_index)
 
+        # OLED 디스플레이 업데이트
         if need_update:
             update_oled_display()
             need_update = False
