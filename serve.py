@@ -407,7 +407,7 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    if command_index == 8:   # 메뉴 목록이 늘어나거나 줄어들때 사용!
+    if command_index == 9:   # 메뉴 목록이 늘어나거나 줄어들때 사용!
         lock_memory_procedure()
         is_executing = False
         is_command_executing = False
