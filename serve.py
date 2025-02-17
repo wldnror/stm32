@@ -521,7 +521,7 @@ def update_oled_display():
                 elif command_names[current_command_index] == "V356":
                     draw.text((33, 27), 'v356', font=font_1, fill=255)
                 elif command_names[current_command_index] == "V356_PNP":
-                    draw.text((22, 27), 'v356PNP', font=font_1, fill=255)
+                    draw.text((22, 27), 'v356_PNP', font=font_1, fill=255)
                 elif command_names[current_command_index] == "시스템 업데이트":
                     draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
 
