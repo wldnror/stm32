@@ -231,7 +231,7 @@ commands = [
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
-command_names = ["ORG","HMDS","HMDS-IR","ARF-T","HC100","SAT4010","IPA","V356","V356PNP","시스템 업데이트"]
+command_names = ["ORG","HMDS","HMDS-IR","ARF-T","HC100","SAT4010","IPA","V356","V356_PNP","시스템 업데이트"]
 
 current_command_index = 0
 status_message = ""
