@@ -18,7 +18,6 @@ display_lock = threading.Lock()
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
-# LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
 LED_ERROR1 = 23
@@ -124,10 +123,9 @@ def button_execute_callback(channel):
         else:
             # 패스워드 입력 모드: SET 버튼 누르면 현재 선택한 문자 추가
             password_input += character_set[current_char_index]
-            update_oled_display()  # 즉시 업데이트
-            # 여기서 현재 선택한 문자를 추가한 후 다음 문자 입력 시
-            # 다시 처음(a)부터 선택할 수 있도록 current_char_index를 초기화합니다.
+            # SET 후 현재 선택 문자 초기화하여 다음 입력은 처음(a)부터 시작
             current_char_index = 0
+            update_oled_display()  # 즉시 업데이트
             # 예시로 8자리 이상 입력 시 연결 시도 (필요에 따라 조건 수정)
             if len(password_input) >= 8:
                 connect_to_network(available_networks[current_network_index], password_input)
@@ -543,13 +541,11 @@ def connect_to_network(ssid, password):
         display_progress_and_message(0, "연결 오류", message_position=(10, 10), font_size=15)
 
 def update_oled_display():
-    global current_command_index, status_message, message_position, message_font_size, is_button_pressed
+    global current_command_index, status_message, message_position, message_font_size
     global network_setup_mode, available_networks, current_network_index, password_entry_mode, password_input, current_char_index
 
+    # is_button_pressed 체크를 제거하여 버튼 입력 중에도 갱신되도록 함
     with display_lock:
-        if is_button_pressed:
-            return
-
         ip_address = get_ip_address()
         now = datetime.now()
         current_time = now.strftime('%H시 %M분')
