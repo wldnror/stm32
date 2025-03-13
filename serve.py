@@ -12,12 +12,11 @@ import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
 
-# 스레드 간 디스플레이 업데이트 충돌 방지를 위한 Lock
 display_lock = threading.Lock()
-
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
+# LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
 LED_ERROR1 = 23
@@ -30,10 +29,10 @@ MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
 
-# GPIO 핀 번호 모드 설정 및 초기화
+# GPIO 핀 번호 모드 설정 및 초기 상태 설정
 GPIO.setmode(GPIO.BCM)
 
-# 버튼 마지막 입력 시간
+# 전역 변수로 마지막으로 눌린 시간을 추적
 last_time_button_next_pressed = 0
 last_time_button_execute_pressed = 0
 button_press_interval = 0.5  # 두 버튼이 동시에 눌린 것으로 간주되는 최대 시간 차이
@@ -42,22 +41,11 @@ need_update = False
 is_command_executing = False
 is_button_pressed = False
 
-# 모드 전환 시각 추적
+# 전역 변수로 마지막 모드 전환 시간을 추적
 last_mode_toggle_time = 0
 
-# 스크립트 실행 상태 변수
+# 스크립트 시작 부분에 전역 변수 정의
 is_executing = False
-
-# -------------------------------------------------------------------
-# [네트워크 설정 모드 관련 전역 변수]
-network_setup_mode = False       # 네트워크 설정 화면 활성화 여부
-available_networks = []          # 스캔한 네트워크 목록 (SSID 리스트)
-current_network_index = 0        # 선택 중인 네트워크 인덱스
-password_entry_mode = False      # 패스워드 입력 모드 여부
-password_input = ""              # 입력된 패스워드 문자열
-character_set = "abcdefghijklmnopqrstuvwxyz0123456789@#!"
-current_char_index = 0           # 패스워드 입력 시 선택된 문자 인덱스
-# -------------------------------------------------------------------
 
 def toggle_mode():
     global is_auto_mode, last_mode_toggle_time
@@ -68,93 +56,58 @@ def toggle_mode():
 def button_next_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
     global last_time_button_next_pressed, last_time_button_execute_pressed
-    global network_setup_mode, current_network_index, password_entry_mode, current_char_index
 
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
         is_button_pressed = False
         return
 
-    # 네트워크 설정 모드일 경우
-    if network_setup_mode:
-        if password_entry_mode:
-            # 패스워드 입력 시: NEXT 버튼을 누르면 character_set 내에서 다음 문자 선택
-            current_char_index = (current_char_index + 1) % len(character_set)
-            update_oled_display()  # 즉시 업데이트
-        else:
-            # 네트워크 목록에서 NEXT 버튼을 누르면 다음 네트워크 선택
-            if available_networks:
-                current_network_index = (current_network_index + 1) % len(available_networks)
-                update_oled_display()  # 즉시 업데이트
+    # EXECUTE 버튼이 최근에 눌렸는지 확인
+    if current_time - last_time_button_execute_pressed < button_press_interval:
+        toggle_mode()  # 모드 전환
+        need_update = True
     else:
-        # 기존 버튼 동작: NEXT 버튼 단독 입력 시
-        if current_time - last_time_button_execute_pressed < button_press_interval:
-            toggle_mode()
-            need_update = True
-        else:
-            current_command_index = (current_command_index + 1) % len(commands)
-            need_update = True
+        current_command_index = (current_command_index + 1) % len(commands)
+        need_update = True
 
-    last_time_button_next_pressed = current_time
+    last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
     is_button_pressed = False
+
 
 def button_execute_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
     global last_time_button_next_pressed, last_time_button_execute_pressed
-    global network_setup_mode, password_entry_mode, password_input, current_char_index
 
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
         is_button_pressed = False
         return
 
-    # 네트워크 설정 모드일 경우
-    if network_setup_mode:
-        if not password_entry_mode:
-            # 네트워크 선택 완료: 보안 네트워크로 가정하여 패스워드 입력 모드 전환
-            password_entry_mode = True
-            password_input = ""
-            current_char_index = 0
-            update_oled_display()  # 즉시 업데이트
-        else:
-            # 패스워드 입력 모드: SET 버튼 누르면 현재 선택한 문자 추가
-            password_input += character_set[current_char_index]
-            # SET 후 현재 선택 문자 초기화하여 다음 입력은 처음(a)부터 시작
-            current_char_index = 0
-            update_oled_display()  # 즉시 업데이트
-            # 예시로 8자리 이상 입력 시 연결 시도 (필요에 따라 조건 수정)
-            if len(password_input) >= 8:
-                connect_to_network(available_networks[current_network_index], password_input)
-                # 연결 시도 후 네트워크 모드 초기화
-                network_setup_mode = False
-                password_entry_mode = False
-                available_networks.clear()
+    # NEXT 버튼이 최근에 눌렸는지 확인
+    if current_time - last_time_button_next_pressed < button_press_interval:
+        toggle_mode()  # 모드 전환
         need_update = True
     else:
-        # 기존 버튼 동작: EXECUTE 버튼 단독 입력 시
-        if current_time - last_time_button_next_pressed < button_press_interval:
-            toggle_mode()
+        # EXECUTE 버튼만 눌렸을 때의 로직
+        if not is_auto_mode:
+            execute_command(current_command_index)
             need_update = True
         else:
-            if not is_auto_mode:
-                execute_command(current_command_index)
-                need_update = True
-            else:
-                with display_lock:
-                    if current_command_index == command_names.index("시스템 업데이트"):
-                        execute_command(current_command_index)
+            with display_lock:
+                if current_command_index == command_names.index("시스템 업데이트"):
+                    execute_command(current_command_index)
+                else:
+                    if is_auto_mode:
+                        current_command_index = (current_command_index - 1) % len(commands)
                     else:
-                        if is_auto_mode:
-                            current_command_index = (current_command_index - 1) % len(commands)
-                        else:
-                            execute_command(current_command_index)
-                need_update = True
+                        execute_command(current_command_index)
+            need_update = True
 
-    last_time_button_execute_pressed = current_time
+    last_time_button_execute_pressed = current_time  # EXECUTE 버튼 눌린 시간 갱신
     is_button_pressed = False
 
 # 모드 전환 함수
@@ -176,14 +129,14 @@ GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
 
-# STM32 연결 상태 관련 변수
+# 연결 상태를 추적하기 위한 변수
 connection_success = False
 connection_failed_since_last_success = False
 
 def check_stm32_connection():
     with display_lock:
         global connection_success, connection_failed_since_last_success, is_command_executing
-        if is_command_executing:
+        if is_command_executing:  # 명령 실행 중에는 STM32 연결 확인을 하지 않음
             return False
 
         try:
@@ -200,20 +153,23 @@ def check_stm32_connection():
                 if connection_failed_since_last_success:
                     print("STM32 재연결 성공")
                     connection_success = True
-                    connection_failed_since_last_success = False
+                    connection_failed_since_last_success = False  # 성공 후 실패 플래그 초기화
+                    
                 else:
                     print("STM32 연결 성공")
-                    connection_success = False
+                    connection_success = False  # 연속적인 성공을 방지
                 return True
             else:
                 print("STM32 연결 실패:", result.stderr)
-                connection_failed_since_last_success = True
+                connection_failed_since_last_success = True  # 실패 플래그 
                 return False
         except Exception as e:
             print(f"오류 발생: {e}")
-            connection_failed_since_last_success = True
+            connection_failed_since_last_success = True  # 실패 플래그 설정
             return False
 
+
+# 배터리 상태 확인 함수
 def read_ina219_percentage():
     try:
         ina = INA219(SHUNT_OHMS)
@@ -226,6 +182,7 @@ def read_ina219_percentage():
         else:
             return int(((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100)
     except Exception as e:
+        # 예외 발생 시 로그 남기기
         print("INA219 모듈 읽기 실패:", str(e))
         return -1
 
@@ -233,7 +190,7 @@ def read_ina219_percentage():
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
 
-# 폰트 및 이미지 설정 (폰트 경로는 환경에 맞게 수정)
+# 폰트 및 이미지 설정
 font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
 font_big = ImageFont.truetype(font_path, 12)
 font_s = ImageFont.truetype(font_path, 13)
@@ -243,12 +200,13 @@ font_status = ImageFont.truetype(font_path, 13)
 font_1 = ImageFont.truetype(font_path, 21)
 font_time = ImageFont.truetype(font_path, 12)
 
-# 배터리 아이콘 로드 (실제 파일 경로에 맞게 수정)
+# 배터리 아이콘 로드
 low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 
+# 배터리 아이콘 선택 함수
 def select_battery_icon(percentage):
     if percentage < 20:
         return low_battery_icon
@@ -259,7 +217,7 @@ def select_battery_icon(percentage):
     else:
         return full_battery_icon
 
-# 명령어 목록 (마지막 항목은 시스템 업데이트)
+# 명령어 설정
 commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000\"",
@@ -270,15 +228,13 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/V356.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/V356_PNP.bin verify reset exit 0x08000000\"",
-    "git_pull",  # 시스템 업데이트 시 git_pull 함수 호출
+    "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
-command_names = ["ORG", "HMDS", "HMDS-IR", "ARF-T", "HC100", "SAT4010", "IPA", "V356", "V356_PNP", "시스템 업데이트"]
+command_names = ["ORG","HMDS","HMDS-IR","ARF-T","HC100","SAT4010","IPA","V356","V356_PNP","시스템 업데이트"]
 
 current_command_index = 0
 status_message = ""
-message_position = (0, 0)
-message_font_size = 17
 
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
@@ -286,14 +242,14 @@ def git_pull():
         with open(shell_script_path, 'w') as script_file:
             script_file.write("#!/bin/bash\n")
             script_file.write("cd /home/user/stm32\n")
-            script_file.write("git remote update\n")
+            script_file.write("git remote update\n")  # 원격 저장소 정보 업데이트
             script_file.write("if git status -uno | grep -q 'Your branch is up to date'; then\n")
             script_file.write("   echo '이미 최신 상태입니다.'\n")
             script_file.write("   exit 0\n")
             script_file.write("fi\n")
-            script_file.write("git stash\n")
-            script_file.write("git pull\n")
-            script_file.write("git stash pop\n")
+            script_file.write("git stash\n")  # 임시로 변경사항을 저장
+            script_file.write("git pull\n")  # 원격 저장소의 변경사항을 가져옴
+            script_file.write("git stash pop\n")  # 저장했던 변경사항을 다시 적용
             script_file.flush()
             os.fsync(script_file.fileno())
 
@@ -340,24 +296,29 @@ def git_pull():
 
 def restart_script():
     print("스크립트를 재시작합니다.")
-    display_progress_and_message(25, "재시작 중", message_position=(20, 10), font_size=15)
+    display_status_message("재시작 중",position=(20, 20), font_size=15)
     def restart():
-        time.sleep(1)
+        time.sleep(3)  # 1초 후에 스크립트를 재시작합니다.
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart).start()
 
 def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
     with canvas(device) as draw:
+        # 메시지 표시
         draw.text(message_position, message, font=font, fill=255)
-        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
-        draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")
-
+        
+        # 진행 상태 바 표시
+        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")  # 상태 바의 외곽선
+        draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")  # 상태 바의 내용
+        
 def unlock_memory():
     with display_lock:
         print("메모리 해제 시도...")
 
+    # '메모리 잠금' 및 '해제 중' 메시지와 함께 초기 진행 상태 바 표시
     display_progress_and_message(0, "메모리 잠금\n   해제 중", message_position=(18, 0), font_size=15)
 
+    # 메모리 잠금 해제 로직 구현...
     openocd_command = [
         "sudo", "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
@@ -369,6 +330,7 @@ def unlock_memory():
         "-c", "shutdown"
     ]
     result = subprocess.run(openocd_command)
+
     if result.returncode == 0:
         display_progress_and_message(30, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
         time.sleep(1)
@@ -389,6 +351,7 @@ def restart_script():
 
 
 def lock_memory_procedure():
+    
     display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
     openocd_command = [
         "sudo",
@@ -415,6 +378,7 @@ def lock_memory_procedure():
             GPIO.output(LED_ERROR1, True)
             display_progress_and_message(0,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
             time.sleep(1)
+            update_oled_display()
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
     except Exception as e:
@@ -422,15 +386,15 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         update_oled_display()
-        display_progress_and_message(0,"오류 발생", message_position=(20, 0), font_size=15)
+        display_progress_and_message(0,"오류 발생")
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
 def execute_command(command_index):
     global is_executing, is_command_executing
-    is_executing = True
-    is_command_executing = True
+    is_executing = True  # 작업 시작 전에 상태를 실행 중으로 설정
+    is_command_executing = True  # 명령 실행 중 상태 활성화
 
     print("업데이트 시도...")
     GPIO.output(LED_SUCCESS, False)
@@ -443,7 +407,7 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    if command_index == 9:
+    if command_index == 9:   # 메뉴 목록이 늘어나거나 줄어들때 사용!
         lock_memory_procedure()
         is_executing = False
         is_command_executing = False
@@ -494,6 +458,7 @@ def execute_command(command_index):
     is_executing = False
     is_command_executing = False
 
+        
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -503,130 +468,78 @@ def get_ip_address():
         return ip
     except Exception as e:
         return "0.0.0.0"
-
-# 네트워크 스캔 시 SSID만 출력하도록 수정
-def scan_networks():
-    try:
-        # -t: 탭으로 구분, -f: SSID 필드만 출력
-        result = subprocess.run(["nmcli", "-t", "-f", "SSID", "device", "wifi", "list"], stdout=subprocess.PIPE, text=True)
-        return parse_network_list(result.stdout)
-    except Exception as e:
-        print("네트워크 스캔 실패:", e)
-        return []
-
-def parse_network_list(scan_output):
-    networks = []
-    lines = scan_output.splitlines()
-    for line in lines:
-        ssid = line.strip()
-        if ssid:  # 빈 문자열이 아니면 추가
-            networks.append(ssid)
-    return networks
-
-def connect_to_network(ssid, password):
-    try:
-        # 기존 연결 삭제 (필요시)
-        subprocess.run(["nmcli", "connection", "delete", ssid], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # 새 연결 시도
-        result = subprocess.run(["nmcli", "device", "wifi", "connect", ssid, "password", password],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode == 0:
-            print(f"{ssid} 연결 성공!")
-            display_progress_and_message(100, "네트워크 연결 성공", message_position=(10, 10), font_size=15)
-        else:
-            print(f"{ssid} 연결 실패!")
-            display_progress_and_message(0, "네트워크 연결 실패", message_position=(10, 10), font_size=15)
-    except Exception as e:
-        print("연결 시도 중 오류 발생:", e)
-        display_progress_and_message(0, "연결 오류", message_position=(10, 10), font_size=15)
-
+        
 def update_oled_display():
-    global current_command_index, status_message, message_position, message_font_size
-    global network_setup_mode, available_networks, current_network_index, password_entry_mode, password_input, current_char_index
+    global current_command_index, status_message, message_position, message_font_size, is_button_pressed
+    with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
+        if is_button_pressed:
+            return  # 버튼 입력 모드에서는 화면 업데이트 무시
 
-    # is_button_pressed 체크를 제거하여 버튼 입력 중에도 갱신되도록 함
-    with display_lock:
         ip_address = get_ip_address()
         now = datetime.now()
         current_time = now.strftime('%H시 %M분')
         voltage_percentage = read_ina219_percentage()
 
-        # 시스템 업데이트 메뉴에서 IP가 0.0.0.0이면 네트워크 설정 모드 활성화
-        if command_names[current_command_index] == "시스템 업데이트" and ip_address == "0.0.0.0":
-            network_setup_mode = True
-        else:
-            network_setup_mode = False
-
         with canvas(device) as draw:
-            if network_setup_mode:
-                if not available_networks:
-                    available_networks.extend(scan_networks())
-                if not available_networks:
-                    draw.text((0, 10), "네트워크 없음", font=font, fill=255)
+            if command_names[current_command_index] != "시스템 업데이트":
+                mode_char = 'A' if is_auto_mode else 'M'
+                outer_ellipse_box = (2, 0, 22, 20)
+                text_position = {'A': (8, -3), 'M': (5, -3)}
+                draw.ellipse(outer_ellipse_box, outline="white", fill=None)
+                draw.text(text_position[mode_char], mode_char, font=font, fill=255)
+
+            if command_names[current_command_index] in ["ORG","HMDS","HMDS-IR","ARF-T","HC100","SAT4010","IPA","V356","V356_PNP"]:
+                battery_icon = select_battery_icon(voltage_percentage)
+                draw.bitmap((90, -9), battery_icon, fill=255)
+                draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
+                draw.text((27, 1), current_time, font=font_time, fill=255)
+            elif command_names[current_command_index] == "시스템 업데이트":
+                # IP 주소가 "0.0.0.0"이면 "연결 없음"으로 표시
+                if ip_address == "0.0.0.0":
+                    ip_display = "연결 없음"
                 else:
-                    draw.text((0, 0), "네트워크 선택", font=font, fill=255)
-                    draw.text((0, 20), f"{available_networks[current_network_index]}", font=font, fill=255)
-                    if password_entry_mode:
-                        draw.text((0, 40), f"PW: {password_input}", font=font, fill=255)
-                        draw.text((0, 60), f"현재: {character_set[current_char_index]}", font=font, fill=255)
-                    else:
-                        draw.text((0, 40), "SET: 선택  NEXT: 스크롤", font=font, fill=255)
+                    ip_display = ip_address
+                draw.text((0, 51), ip_display, font=font_big, fill=255)
+                draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
+                draw.text((83, 50), 'ver 3.56', font=font_big, fill=255)
+                draw.text((0, -3), current_time, font=font_time, fill=255)
+
+            if status_message:
+                draw.rectangle(device.bounding_box, outline="white", fill="black")
+                font_custom = ImageFont.truetype(font_path, message_font_size)
+                draw.text(message_position, status_message, font=font_custom, fill=255)
             else:
-                if command_names[current_command_index] != "시스템 업데이트":
-                    mode_char = 'A' if is_auto_mode else 'M'
-                    outer_ellipse_box = (2, 0, 22, 20)
-                    text_position = {'A': (8, -3), 'M': (5, -3)}
-                    draw.ellipse(outer_ellipse_box, outline="white", fill=None)
-                    draw.text(text_position[mode_char], mode_char, font=font, fill=255)
-
-                if command_names[current_command_index] in ["ORG", "HMDS", "HMDS-IR", "ARF-T", "HC100", "SAT4010", "IPA", "V356", "V356_PNP"]:
-                    battery_icon = select_battery_icon(voltage_percentage)
-                    draw.bitmap((90, -9), battery_icon, fill=255)
-                    draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
-                    draw.text((27, 1), current_time, font=font_time, fill=255)
+                if command_names[current_command_index] == "ORG":
+                    draw.text((42, 27), 'ORG', font=font_1, fill=255)
+                elif command_names[current_command_index] == "HMDS":
+                    draw.text((33, 27), 'HMDS', font=font_1, fill=255)
+                elif command_names[current_command_index] == "HMDS-IR":
+                    draw.text((20, 27), 'HMDS-IR', font=font_1, fill=255)
+                elif command_names[current_command_index] == "ARF-T":
+                    draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
+                elif command_names[current_command_index] == "HC100":
+                    draw.text((32, 27), 'HC100', font=font_1, fill=255)
+                elif command_names[current_command_index] == "SAT4010":
+                    draw.text((22, 27), 'SAT4010', font=font_1, fill=255)
+                elif command_names[current_command_index] == "IPA":
+                    draw.text((46, 27), 'IPA', font=font_1, fill=255)
+                elif command_names[current_command_index] == "V356":
+                    draw.text((33, 27), 'v356', font=font_1, fill=255)
+                elif command_names[current_command_index] == "V356_PNP":
+                    draw.text((22, 27), 'v356_PNP', font=font_1, fill=255)
                 elif command_names[current_command_index] == "시스템 업데이트":
-                    if ip_address == "0.0.0.0":
-                        ip_display = "연결 없음"
-                    else:
-                        ip_display = ip_address
-                    draw.text((0, 51), ip_display, font=font_big, fill=255)
-                    draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
-                    draw.text((83, 50), 'ver 3.56', font=font_big, fill=255)
-                    draw.text((0, -3), current_time, font=font_time, fill=255)
+                    draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
 
-                if status_message:
-                    draw.rectangle(device.bounding_box, outline="white", fill="black")
-                    font_custom = ImageFont.truetype(font_path, message_font_size)
-                    draw.text(message_position, status_message, font=font_custom, fill=255)
-                else:
-                    if command_names[current_command_index] == "ORG":
-                        draw.text((42, 27), 'ORG', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "HMDS":
-                        draw.text((33, 27), 'HMDS', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "HMDS-IR":
-                        draw.text((20, 27), 'HMDS-IR', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "ARF-T":
-                        draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "HC100":
-                        draw.text((32, 27), 'HC100', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "SAT4010":
-                        draw.text((22, 27), 'SAT4010', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "IPA":
-                        draw.text((46, 27), 'IPA', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "V356":
-                        draw.text((33, 27), 'v356', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "V356_PNP":
-                        draw.text((22, 27), 'v356_PNP', font=font_1, fill=255)
-                    elif command_names[current_command_index] == "시스템 업데이트":
-                        draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
 
+# 실시간 업데이트를 위한 스레드 함수
 def realtime_update_display():
     global is_command_executing
     while True:
         if not is_button_pressed and not is_command_executing:
             update_oled_display()
-        time.sleep(0.1)  # 갱신 주기를 0.1초로 단축
+        time.sleep(1)
 
+# 스레드 생성 및 시작
 realtime_update_thread = threading.Thread(target=realtime_update_display)
 realtime_update_thread.daemon = True
 realtime_update_thread.start()
@@ -637,26 +550,29 @@ def shutdown_system():
             draw.text((20, 25), "배터리 부족", font=font, fill=255)
             draw.text((25, 50), "시스템 종료 중...", font=font_st, fill=255)
         time.sleep(5)
-        # 실제 DISPLAY 전원 핀 제어 필요시 수정
+        GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
         os.system('sudo shutdown -h now')
     except Exception as e:
+        # 예외 발생 시 로그 남기기
         print("시스템 종료 중 오류 발생:", str(e))
 
 # 초기 디스플레이 업데이트
 update_oled_display()
 
+# 메인 루프
 try:
     while True:
-        # 배터리 0%면 시스템 종료
+        # 배터리 수준을 확인하고 0%면 시스템 종료
         if read_ina219_percentage() == 0:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
 
-        # STM32 연결 상태 확인 후 명령 실행 (시스템 업데이트 메뉴 제외)
+        # STM32 연결 상태 확인 및 명령 실행
         if command_names[current_command_index] != "시스템 업데이트":
             if is_auto_mode and check_stm32_connection() and connection_success:
                 execute_command(current_command_index)
 
+        # OLED 디스플레이 업데이트
         if need_update:
             update_oled_display()
             need_update = False
