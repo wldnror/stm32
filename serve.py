@@ -125,6 +125,9 @@ def button_execute_callback(channel):
             # 패스워드 입력 모드: SET 버튼 누르면 현재 선택한 문자 추가
             password_input += character_set[current_char_index]
             update_oled_display()  # 즉시 업데이트
+            # 여기서 현재 선택한 문자를 추가한 후 다음 문자 입력 시
+            # 다시 처음(a)부터 선택할 수 있도록 current_char_index를 초기화합니다.
+            current_char_index = 0
             # 예시로 8자리 이상 입력 시 연결 시도 (필요에 따라 조건 수정)
             if len(password_input) >= 8:
                 connect_to_network(available_networks[current_network_index], password_input)
