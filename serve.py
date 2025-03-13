@@ -494,7 +494,12 @@ def update_oled_display():
                 draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
                 draw.text((27, 1), current_time, font=font_time, fill=255)
             elif command_names[current_command_index] == "시스템 업데이트":
-                draw.text((0, 51), ip_address, font=font_big, fill=255)
+                # IP 주소가 "0.0.0.0"이면 "연결 없음"으로 표시
+                if ip_address == "0.0.0.0":
+                    ip_display = "연결 없음"
+                else:
+                    ip_display = ip_address
+                draw.text((0, 51), ip_display, font=font_big, fill=255)
                 draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
                 draw.text((83, 50), 'ver 3.56', font=font_big, fill=255)
                 draw.text((0, -3), current_time, font=font_time, fill=255)
