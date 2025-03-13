@@ -83,10 +83,12 @@ def button_next_callback(channel):
         if password_entry_mode:
             # 패스워드 입력 시: NEXT 버튼을 누르면 character_set 내에서 다음 문자 선택
             current_char_index = (current_char_index + 1) % len(character_set)
+            update_oled_display()  # 즉시 업데이트
         else:
             # 네트워크 목록에서 NEXT 버튼을 누르면 다음 네트워크 선택
             if available_networks:
                 current_network_index = (current_network_index + 1) % len(available_networks)
+                update_oled_display()  # 즉시 업데이트
     else:
         # 기존 버튼 동작: NEXT 버튼 단독 입력 시
         if current_time - last_time_button_execute_pressed < button_press_interval:
@@ -118,9 +120,11 @@ def button_execute_callback(channel):
             password_entry_mode = True
             password_input = ""
             current_char_index = 0
+            update_oled_display()  # 즉시 업데이트
         else:
             # 패스워드 입력 모드: SET 버튼 누르면 현재 선택한 문자 추가
             password_input += character_set[current_char_index]
+            update_oled_display()  # 즉시 업데이트
             # 예시로 8자리 이상 입력 시 연결 시도 (필요에 따라 조건 수정)
             if len(password_input) >= 8:
                 connect_to_network(available_networks[current_network_index], password_input)
@@ -410,7 +414,6 @@ def lock_memory_procedure():
             GPIO.output(LED_ERROR1, True)
             display_progress_and_message(0,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
             time.sleep(1)
-            update_oled_display()
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
     except Exception as e:
@@ -500,9 +503,11 @@ def get_ip_address():
     except Exception as e:
         return "0.0.0.0"
 
+# 네트워크 스캔 시 SSID만 출력하도록 수정
 def scan_networks():
     try:
-        result = subprocess.run(["nmcli", "device", "wifi", "list"], stdout=subprocess.PIPE, text=True)
+        # -t: 탭으로 구분, -f: SSID 필드만 출력
+        result = subprocess.run(["nmcli", "-t", "-f", "SSID", "device", "wifi", "list"], stdout=subprocess.PIPE, text=True)
         return parse_network_list(result.stdout)
     except Exception as e:
         print("네트워크 스캔 실패:", e)
@@ -511,13 +516,10 @@ def scan_networks():
 def parse_network_list(scan_output):
     networks = []
     lines = scan_output.splitlines()
-    if len(lines) < 1:
-        return networks
-    # 첫 줄(헤더) 제외 후 각 줄에서 SSID 추출 (포맷에 맞게 수정)
-    for line in lines[1:]:
-        fields = line.split()
-        if fields:
-            networks.append(fields[0])
+    for line in lines:
+        ssid = line.strip()
+        if ssid:  # 빈 문자열이 아니면 추가
+            networks.append(ssid)
     return networks
 
 def connect_to_network(ssid, password):
@@ -624,7 +626,7 @@ def realtime_update_display():
     while True:
         if not is_button_pressed and not is_command_executing:
             update_oled_display()
-        time.sleep(1)
+        time.sleep(0.1)  # 갱신 주기를 0.1초로 단축
 
 realtime_update_thread = threading.Thread(target=realtime_update_display)
 realtime_update_thread.daemon = True
