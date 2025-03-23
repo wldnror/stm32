@@ -573,7 +573,7 @@ def execute_command(command_index):
             update_status("업데이트 성공!", "green")
             show_notification("업데이트에 성공했습니다.", "green")
             update_led(led_success, True)
-            time.sleep(10)  # 대기시간(파일 추출용 등) 필요 시 조절
+            time.sleep(0)  # 대기시간(파일 추출용 등) 필요 시 조절
             lock_memory_procedure()
         else:
             update_status("업데이트 실패", "red")
