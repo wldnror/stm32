@@ -228,10 +228,11 @@ commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
     # "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/V356.bin verify reset exit 0x08000000\"",
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/V356_PNP.bin verify reset exit 0x08000000\"",
+    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000E_Master.bin verify reset exit 0x08000000\"",
     "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
 ]
 
-command_names = ["ORG","HMDS","ARF-T","HC100","SAT4010","IPA","V356_PNP","시스템 업데이트"]
+command_names = ["ORG","HMDS","ARF-T","HC100","SAT4010","IPA","V356_PNP","ASGD3000E_Master","시스템 업데이트"]
 
 current_command_index = 0
 status_message = ""
@@ -407,7 +408,7 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    if command_index == 9:   # 메뉴 목록이 늘어나거나 줄어들때 사용!
+    if command_index == 10:   # 메뉴 목록이 늘어나거나 줄어들때 사용!
         lock_memory_procedure()
         is_executing = False
         is_command_executing = False
@@ -488,7 +489,7 @@ def update_oled_display():
                 draw.ellipse(outer_ellipse_box, outline="white", fill=None)
                 draw.text(text_position[mode_char], mode_char, font=font, fill=255)
 
-            if command_names[current_command_index] in ["ORG","HMDS","ARF-T","HC100","SAT4010","IPA","V356_PNP"]:
+            if command_names[current_command_index] in ["ORG","HMDS","ARF-T","HC100","SAT4010","IPA","V356_PNP","ASGD3000E_Master"]:
                 battery_icon = select_battery_icon(voltage_percentage)
                 draw.bitmap((90, -9), battery_icon, fill=255)
                 draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
@@ -527,6 +528,8 @@ def update_oled_display():
                     # draw.text((33, 27), 'v356', font=font_1, fill=255)
                 elif command_names[current_command_index] == "V356_PNP":
                     draw.text((22, 27), 'v356_PNP', font=font_1, fill=255)
+                elif command_names[current_command_index] == "ASGD3000E_Master":
+                    draw.text((1, 27), 'ASGD3000E_Master', font=font_1, fill=255)
                 elif command_names[current_command_index] == "시스템 업데이트":
                     draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
 
