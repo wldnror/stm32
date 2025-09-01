@@ -216,7 +216,7 @@ def select_battery_icon(percentage):
         return high_battery_icon
     else:
         return full_battery_icon
-
+ 
 # 명령어 설정
 commands = [
     "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
