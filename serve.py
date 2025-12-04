@@ -267,6 +267,7 @@ commands, command_names = load_firmware_commands()
 
 current_command_index = 0
 status_message = ""
+# message_position, message_font_size는 다른 곳에서 설정된다고 가정
 
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
@@ -503,23 +504,28 @@ def update_oled_display():
         current_time = now.strftime('%H시 %M분')
         voltage_percentage = read_ina219_percentage()
 
+        title = command_names[current_command_index]
+        is_update_menu = (title == "시스템 업데이트")
+
         with canvas(device) as draw:
-            # 모드 표시 (시스템 업데이트 메뉴가 아닐 때만)
-            if command_names[current_command_index] != "시스템 업데이트":
+            # -------------------------
+            #  상단 모드/배터리/시간 표시
+            # -------------------------
+            if not is_update_menu:
+                # 모드 표시 (A/M 동그라미)
                 mode_char = 'A' if is_auto_mode else 'M'
                 outer_ellipse_box = (2, 0, 22, 20)
                 text_position = {'A': (8, -3), 'M': (5, -3)}
                 draw.ellipse(outer_ellipse_box, outline="white", fill=None)
                 draw.text(text_position[mode_char], mode_char, font=font, fill=255)
 
-            # 상단 정보 (배터리/시간 or IP/버전)
-            if command_names[current_command_index] != "시스템 업데이트":
+                # 배터리 + 시간
                 battery_icon = select_battery_icon(voltage_percentage)
                 draw.bitmap((90, -9), battery_icon, fill=255)
                 draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
                 draw.text((27, 1), current_time, font=font_time, fill=255)
             else:
-                # IP 주소가 "0.0.0.0"이면 "연결 없음"으로 표시
+                # 시스템 업데이트 메뉴일 때는 IP / 버전 정보
                 if ip_address == "0.0.0.0":
                     ip_display = "연결 없음"
                 else:
@@ -529,23 +535,67 @@ def update_oled_display():
                 draw.text((83, 50), 'ver 3.56', font=font_big, fill=255)
                 draw.text((0, -3), current_time, font=font_time, fill=255)
 
-            # 상태 메시지가 있을 때 전체 메시지 화면
+            # -------------------------
+            #  상태 메시지 (업데이트 중, 오류 등)
+            # -------------------------
             if status_message:
                 draw.rectangle(device.bounding_box, outline="white", fill="black")
                 font_custom = ImageFont.truetype(font_path, message_font_size)
                 draw.text(message_position, status_message, font=font_custom, fill=255)
-            else:
-                # 메뉴 이름을 가운데 정렬로 표시 (bin 파일명 그대로 사용)
-                title = command_names[current_command_index]
+                return  # 상태 메시지 화면이면 여기서 끝
 
+            # -------------------------
+            #  가운데 메뉴(파일명) 표시 (가운데 정렬 + 긴 이름 슬라이드)
+            # -------------------------
+
+            # 텍스트 크기 계산
+            try:
+                w, h = draw.textsize(title, font=font_1)
+            except Exception:
                 try:
-                    w, h = draw.textsize(title, font=font_1)
+                    w, h = font_1.getsize(title)
                 except Exception:
                     w, h = (len(title) * 8, 16)
 
-                x = max(0, int((device.width - w) / 2))
-                y = 27
-                draw.text((x, y), title, font=font_1, fill=255)
+            # 텍스트가 들어갈 수 있는 X 범위
+            if not is_update_menu:
+                # 왼쪽에 모드 동그라미(0~22px)가 있으므로 그 오른쪽부터 사용
+                content_left = 24
+            else:
+                # 시스템 업데이트 메뉴는 전체 폭 사용
+                content_left = 0
+
+            screen_width = device.width
+            content_width = screen_width - content_left
+            max_width = content_width
+
+            # 세로 위치
+            y = 27
+
+            if w <= max_width:
+                # ---- 1) 짧은 파일명: 가운데 정렬 ----
+                x = content_left + int((max_width - w) / 2)
+            else:
+                # ---- 2) 긴 파일명: 좌↔우 슬라이드 ----
+                scroll_range = w - max_width   # 넘치는 길이
+                speed = 20.0                   # px / sec (속도 조절)
+
+                t = time.time()
+                # 0 ~ scroll_range*2 사이를 왕복
+                if scroll_range > 0:
+                    raw = (t * speed) % (scroll_range * 2)
+                    if raw > scroll_range:
+                        offset = 2 * scroll_range - raw
+                    else:
+                        offset = raw
+                    offset = int(offset)
+                else:
+                    offset = 0
+
+                # content_left에서 왼쪽으로 offset만큼 이동
+                x = content_left - offset
+
+            draw.text((x, y), title, font=font_1, fill=255)
 
 
 # 실시간 업데이트를 위한 스레드 함수
