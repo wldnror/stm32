@@ -61,7 +61,7 @@ def button_next_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 일정 시간 동안은 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 일정 시간 동안는 입력 무시
         is_button_pressed = False
         return
 
@@ -84,7 +84,7 @@ def button_execute_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 일정 시간 동안은 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 일정 시간 동안는 입력 무시
         is_button_pressed = False
         return
 
@@ -268,6 +268,8 @@ commands, command_names = load_firmware_commands()
 
 current_command_index = 0
 status_message = ""
+message_position = (0, 0)
+message_font_size = 17
 
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
@@ -435,8 +437,6 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    # 예전 고정 인덱스(10)용 코드는 자동 메뉴 구조와 충돌하므로 제거
-
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -536,17 +536,23 @@ def update_oled_display():
                 font_custom = ImageFont.truetype(font_path, message_font_size)
                 draw.text(message_position, status_message, font=font_custom, fill=255)
             else:
-                # 메뉴 이름을 가운데 정렬로 표시 (bin 파일명 그대로 사용)
+                # ✅ 메뉴 이름을 가운데 정렬로 표시 (anchor="mm" 사용)
                 title = command_names[current_command_index]
+                center_x = device.width // 2 + VISUAL_X_OFFSET
+                center_y = 32  # 메뉴 영역 중앙쯤
 
                 try:
-                    w, h = draw.textsize(title, font=font_1)
-                except Exception:
-                    w, h = (len(title) * 8, 16)
-
-                x = max(0, int((device.width - w) / 2) + VISUAL_X_OFFSET)
-                y = 27
-                draw.text((x, y), title, font=font_1, fill=255)
+                    # Pillow에서 anchor 지원될 때
+                    draw.text((center_x, center_y), title, font=font_1, fill=255, anchor="mm")
+                except TypeError:
+                    # anchor 없으면 수동으로 중앙 계산
+                    try:
+                        w, h = draw.textsize(title, font=font_1)
+                    except Exception:
+                        w, h = (len(title) * 8, 16)
+                    x = int(center_x - w / 2)
+                    y = int(center_y - h / 2)
+                    draw.text((x, y), title, font=font_1, fill=255)
 
 
 # 실시간 업데이트를 위한 스레드 함수
@@ -568,7 +574,8 @@ def shutdown_system():
             draw.text((20, 25), "배터리 부족", font=font, fill=255)
             draw.text((25, 50), "시스템 종료 중...", font=font_st, fill=255)
         time.sleep(5)
-        GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
+        # DISPLAY_POWER_PIN 정의되어 있으면 사용, 아니면 제거하거나 주석 처리
+        # GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
         os.system('sudo shutdown -h now')
     except Exception as e:
         # 예외 발생 시 로그 남기기
