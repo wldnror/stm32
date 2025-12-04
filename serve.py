@@ -12,7 +12,7 @@ import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
 
-VISUAL_X_OFFSET = -1  # 필요에 따라 -3, -4 등으로 조절
+VISUAL_X_OFFSET = 0  # 필요에 따라 -3, -4 등으로 조절
 display_lock = threading.Lock()
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
@@ -541,7 +541,7 @@ def update_oled_display():
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 # center_y = device.height // 2 + 4  # +값이면 아래로 이동, -값이면 위로 이동
                 if title == "시스템 업데이트":
-                    center_y = 37  # 🔥 업데이트만 위로
+                    center_y = 35  # 🔥 업데이트만 위로
                 else:
                     center_y = 42  # 일반 메뉴는 조금 아래로 중앙 근처
 
