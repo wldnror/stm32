@@ -540,7 +540,10 @@ def update_oled_display():
                 title = command_names[current_command_index]
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 # center_y = device.height // 2 + 4  # +값이면 아래로 이동, -값이면 위로 이동
-                center_y = 40  # 메뉴 영역 중앙쯤
+                if title == "시스템 업데이트":
+                    center_y = 22  # 🔥 업데이트만 위로
+                else:
+                    center_y = 42  # 일반 메뉴는 조금 아래로 중앙 근처
 
                 try:
                     # Pillow에서 anchor 지원될 때
