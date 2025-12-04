@@ -12,6 +12,7 @@ import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
 
+VISUAL_X_OFFSET = -6  # 필요에 따라 -3, -4 등으로 조절
 display_lock = threading.Lock()
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
@@ -543,7 +544,7 @@ def update_oled_display():
                 except Exception:
                     w, h = (len(title) * 8, 16)
 
-                x = max(0, int((device.width - w) / 2)) VISUAL_X_OFFSET = -6
+                x = max(0, int((device.width - w) / 2) + VISUAL_X_OFFSET)
                 y = 27
                 draw.text((x, y), title, font=font_1, fill=255)
 
