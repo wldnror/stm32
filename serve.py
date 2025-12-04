@@ -539,6 +539,7 @@ def update_oled_display():
                 # ✅ 메뉴 이름을 가운데 정렬로 표시 (anchor="mm" 사용)
                 title = command_names[current_command_index]
                 center_x = device.width // 2 + VISUAL_X_OFFSET
+                center_y = device.height // 2 + 4  # +값이면 아래로 이동, -값이면 위로 이동
                 center_y = 32  # 메뉴 영역 중앙쯤
 
                 try:
