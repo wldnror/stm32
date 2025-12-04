@@ -1,5 +1,3 @@
-프로그램 디버그 장비 백업
-
 from datetime import datetime
 import RPi.GPIO as GPIO
 import time
