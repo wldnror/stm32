@@ -12,6 +12,7 @@ import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
 
+VISUAL_X_OFFSET = -6  # 필요에 따라 -3, -4 등으로 조절
 display_lock = threading.Lock()
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
@@ -60,7 +61,7 @@ def button_next_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 일정 시간 동안는 입력 무시
         is_button_pressed = False
         return
 
@@ -83,7 +84,7 @@ def button_execute_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 0.3초 동안은 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 일정 시간 동안는 입력 무시
         is_button_pressed = False
         return
 
@@ -110,7 +111,7 @@ def button_execute_callback(channel):
     last_time_button_execute_pressed = current_time  # EXECUTE 버튼 눌린 시간 갱신
     is_button_pressed = False
 
-# 모드 전환 함수
+# 모드 전환 함수 (위에서 한 번 더 정의되어 있지만, 최종 정의는 이걸로 사용됨)
 def toggle_mode():
     global is_auto_mode
     is_auto_mode = not is_auto_mode
@@ -216,26 +217,59 @@ def select_battery_icon(percentage):
         return high_battery_icon
     else:
         return full_battery_icon
- 
-# 명령어 설정
-commands = [
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ORG.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/HMDS.bin verify reset exit 0x08000000\"",
-    # "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/HMDS-IR.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ARF-T.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/HC100.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/SAT4010.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/IPA.bin verify reset exit 0x08000000\"",
-    # "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/V356.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/V356_PNP.bin verify reset exit 0x08000000\"",
-    "sudo openocd -f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg -f /usr/local/share/openocd/scripts/target/stm32f1x.cfg -c \"program /home/user/stm32/Program/ASGD3000E_Master.bin verify reset exit 0x08000000\"",
-    "git_pull",  # 이 함수는 나중에 execute_command 함수에서 호출됩니다.
-]
 
-command_names = ["ORG","HMDS","ARF-T","HC100","SAT4010","IPA","V356_PNP","ASGD3000E_Master","시스템 업데이트"]
+# -------------------------------
+#  펌웨어 폴더 자동 스캔 부분 추가
+# -------------------------------
+FIRMWARE_DIR = "/home/user/stm32/Program"
+
+def load_firmware_commands():
+    """
+    FIRMWARE_DIR 안의 .bin 파일을 모두 찾아서
+    - 파일명(확장자 제외)을 메뉴 이름으로 사용
+    - openocd program 명령을 자동 생성
+    마지막에는 'git_pull' / '시스템 업데이트'를 추가
+    """
+    cmds = []
+    names = []
+
+    try:
+        bin_files = sorted(
+            f for f in os.listdir(FIRMWARE_DIR)
+            if f.lower().endswith(".bin")
+        )
+    except FileNotFoundError:
+        print("펌웨어 폴더를 찾을 수 없습니다:", FIRMWARE_DIR)
+        bin_files = []
+
+    for fname in bin_files:
+        base_name = os.path.splitext(fname)[0]  # 확장자 제거 후 메뉴 이름으로 사용
+        full_path = os.path.join(FIRMWARE_DIR, fname)
+
+        openocd_cmd = (
+            "sudo openocd "
+            "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+            "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+            f"-c \"program {full_path} verify reset exit 0x08000000\""
+        )
+
+        cmds.append(openocd_cmd)
+        names.append(base_name)
+
+    # 마지막 메뉴는 시스템 업데이트(git_pull)
+    cmds.append("git_pull")
+    names.append("시스템 업데이트")
+
+    print("로딩된 펌웨어 목록:", names)
+    return cmds, names
+ 
+# 명령어 자동 로딩
+commands, command_names = load_firmware_commands()
 
 current_command_index = 0
 status_message = ""
+message_position = (0, 0)
+message_font_size = 17
 
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
@@ -295,13 +329,6 @@ def git_pull():
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
-def restart_script():
-    print("스크립트를 재시작합니다.")
-    display_status_message("재시작 중",position=(20, 20), font_size=15)
-    def restart():
-        time.sleep(3)  # 1초 후에 스크립트를 재시작합니다.
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-    threading.Thread(target=restart).start()
 
 def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
     with canvas(device) as draw:
@@ -312,6 +339,7 @@ def display_progress_and_message(percentage, message, message_position=(0, 0), f
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")  # 상태 바의 외곽선
         draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")  # 상태 바의 내용
         
+
 def unlock_memory():
     with display_lock:
         print("메모리 해제 시도...")
@@ -402,18 +430,13 @@ def execute_command(command_index):
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
+    # 마지막 메뉴는 항상 '시스템 업데이트'
     if command_index == len(commands) - 1:
         git_pull()
         is_executing = False
         is_command_executing = False
         return
 
-    if command_index == 10:   # 메뉴 목록이 늘어나거나 줄어들때 사용!
-        lock_memory_procedure()
-        is_executing = False
-        is_command_executing = False
-        return
-        
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -482,6 +505,7 @@ def update_oled_display():
         voltage_percentage = read_ina219_percentage()
 
         with canvas(device) as draw:
+            # 모드 표시 (시스템 업데이트 메뉴가 아닐 때만)
             if command_names[current_command_index] != "시스템 업데이트":
                 mode_char = 'A' if is_auto_mode else 'M'
                 outer_ellipse_box = (2, 0, 22, 20)
@@ -489,12 +513,13 @@ def update_oled_display():
                 draw.ellipse(outer_ellipse_box, outline="white", fill=None)
                 draw.text(text_position[mode_char], mode_char, font=font, fill=255)
 
-            if command_names[current_command_index] in ["ORG","HMDS","ARF-T","HC100","SAT4010","IPA","V356_PNP","ASGD3000E_Master"]:
+            # 상단 정보 (배터리/시간 or IP/버전)
+            if command_names[current_command_index] != "시스템 업데이트":
                 battery_icon = select_battery_icon(voltage_percentage)
                 draw.bitmap((90, -9), battery_icon, fill=255)
                 draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
                 draw.text((27, 1), current_time, font=font_time, fill=255)
-            elif command_names[current_command_index] == "시스템 업데이트":
+            else:
                 # IP 주소가 "0.0.0.0"이면 "연결 없음"으로 표시
                 if ip_address == "0.0.0.0":
                     ip_display = "연결 없음"
@@ -505,33 +530,29 @@ def update_oled_display():
                 draw.text((83, 50), 'ver 3.56', font=font_big, fill=255)
                 draw.text((0, -3), current_time, font=font_time, fill=255)
 
+            # 상태 메시지가 있을 때 전체 메시지 화면
             if status_message:
                 draw.rectangle(device.bounding_box, outline="white", fill="black")
                 font_custom = ImageFont.truetype(font_path, message_font_size)
                 draw.text(message_position, status_message, font=font_custom, fill=255)
             else:
-                if command_names[current_command_index] == "ORG":
-                    draw.text((42, 27), 'ORG', font=font_1, fill=255)
-                elif command_names[current_command_index] == "HMDS":
-                    draw.text((33, 27), 'HMDS', font=font_1, fill=255)
-                # elif command_names[current_command_index] == "HMDS-IR":
-                    # draw.text((20, 27), 'HMDS-IR', font=font_1, fill=255)
-                elif command_names[current_command_index] == "ARF-T":
-                    draw.text((34, 27), 'ARF-T', font=font_1, fill=255)
-                elif command_names[current_command_index] == "HC100":
-                    draw.text((32, 27), 'HC100', font=font_1, fill=255)
-                elif command_names[current_command_index] == "SAT4010":
-                    draw.text((22, 27), 'SAT4010', font=font_1, fill=255)
-                elif command_names[current_command_index] == "IPA":
-                    draw.text((46, 27), 'IPA', font=font_1, fill=255)
-                # elif command_names[current_command_index] == "V356":
-                    # draw.text((33, 27), 'v356', font=font_1, fill=255)
-                elif command_names[current_command_index] == "V356_PNP":
-                    draw.text((22, 27), 'v356_PNP', font=font_1, fill=255)
-                elif command_names[current_command_index] == "ASGD3000E_Master":
-                    draw.text((1, 27), 'ASGD3000E_Master', font=font_1, fill=255)
-                elif command_names[current_command_index] == "시스템 업데이트":
-                    draw.text((1, 20), '시스템 업데이트', font=font, fill=255)
+                # ✅ 메뉴 이름을 가운데 정렬로 표시 (anchor="mm" 사용)
+                title = command_names[current_command_index]
+                center_x = device.width // 2 + VISUAL_X_OFFSET
+                center_y = 32  # 메뉴 영역 중앙쯤
+
+                try:
+                    # Pillow에서 anchor 지원될 때
+                    draw.text((center_x, center_y), title, font=font_1, fill=255, anchor="mm")
+                except TypeError:
+                    # anchor 없으면 수동으로 중앙 계산
+                    try:
+                        w, h = draw.textsize(title, font=font_1)
+                    except Exception:
+                        w, h = (len(title) * 8, 16)
+                    x = int(center_x - w / 2)
+                    y = int(center_y - h / 2)
+                    draw.text((x, y), title, font=font_1, fill=255)
 
 
 # 실시간 업데이트를 위한 스레드 함수
@@ -553,7 +574,8 @@ def shutdown_system():
             draw.text((20, 25), "배터리 부족", font=font, fill=255)
             draw.text((25, 50), "시스템 종료 중...", font=font_st, fill=255)
         time.sleep(5)
-        GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
+        # DISPLAY_POWER_PIN 정의되어 있으면 사용, 아니면 제거하거나 주석 처리
+        # GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
         os.system('sudo shutdown -h now')
     except Exception as e:
         # 예외 발생 시 로그 남기기
