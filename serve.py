@@ -12,7 +12,7 @@ import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
 
-VISUAL_X_OFFSET = -4  # 필요에 따라 -3, -4 등으로 조절
+VISUAL_X_OFFSET = -2  # 필요에 따라 -3, -4 등으로 조절
 display_lock = threading.Lock()
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
