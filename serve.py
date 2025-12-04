@@ -543,7 +543,7 @@ def update_oled_display():
                 except Exception:
                     w, h = (len(title) * 8, 16)
 
-                x = max(0, int((device.width - w) / 2))
+                x = max(0, int((device.width - w) / 2)) VISUAL_X_OFFSET = -6
                 y = 27
                 draw.text((x, y), title, font=font_1, fill=255)
 
