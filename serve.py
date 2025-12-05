@@ -48,11 +48,13 @@ last_mode_toggle_time = 0
 # 스크립트 시작 부분에 전역 변수 정의
 is_executing = False
 
+
 def toggle_mode():
     global is_auto_mode, last_mode_toggle_time
     is_auto_mode = not is_auto_mode
     last_mode_toggle_time = time.time()
     update_oled_display()
+
 
 def button_next_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
@@ -111,12 +113,14 @@ def button_execute_callback(channel):
     last_time_button_execute_pressed = current_time  # EXECUTE 버튼 눌린 시간 갱신
     is_button_pressed = False
 
-# 모드 전환 함수 (위에서 한 번 더 정의되어 있지만, 최종 정의는 이걸로 사용됨)
+
+# 모드 전환 함수 (최종 정의)
 def toggle_mode():
     global is_auto_mode
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
-    
+
+
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
 auto_mode_text = 'A'
 manual_mode_text = 'M'
@@ -133,6 +137,7 @@ GPIO.setup(LED_ERROR1, GPIO.OUT)
 # 연결 상태를 추적하기 위한 변수
 connection_success = False
 connection_failed_since_last_success = False
+
 
 def check_stm32_connection():
     with display_lock:
@@ -161,7 +166,7 @@ def check_stm32_connection():
                 return True
             else:
                 print("STM32 연결 실패:", result.stderr)
-                connection_failed_since_last_success = True  # 실패 플래그 
+                connection_failed_since_last_success = True  # 실패 플래그
                 return False
         except Exception as e:
             print(f"오류 발생: {e}")
@@ -186,6 +191,7 @@ def read_ina219_percentage():
         print("INA219 모듈 읽기 실패:", str(e))
         return -1
 
+
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
@@ -206,6 +212,7 @@ medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 
+
 # 배터리 아이콘 선택 함수
 def select_battery_icon(percentage):
     if percentage < 20:
@@ -217,10 +224,12 @@ def select_battery_icon(percentage):
     else:
         return full_battery_icon
 
+
 # -------------------------------
 #  펌웨어 폴더 자동 스캔 부분 추가
 # -------------------------------
 FIRMWARE_DIR = "/home/user/stm32/Program"
+
 
 def load_firmware_commands():
     """
@@ -261,7 +270,8 @@ def load_firmware_commands():
 
     print("로딩된 펌웨어 목록:", names)
     return cmds, names
- 
+
+
 # 명령어 자동 로딩
 commands, command_names = load_firmware_commands()
 
@@ -270,15 +280,14 @@ status_message = ""
 message_position = (0, 0)
 message_font_size = 17
 
-# --- 메뉴 텍스트 스크롤 설정 ---
-SCROLL_THRESHOLD_CHARS = 7   # 이 글자 수 초과하면 슬라이드 효과
-SCROLL_SPEED = 60.0 
-# SCROLL_INTERVAL = 0.15       # 몇 초마다 한 칸씩 움직일지 (초)
-# SCROLL_STEP = 2              # 한 번에 이동하는 픽셀 수
+# --- 메뉴 텍스트 스크롤 설정 (시간 기반 부드러운 슬라이드) ---
+SCROLL_THRESHOLD_CHARS = 7    # 이 글자 수 초과하면 슬라이드 효과
+SCROLL_SPEED = 60.0           # 초당 이동 픽셀 수 (값 키우면 더 빠르게)
 
-scroll_offset = 0.0            # 현재 스크롤 위치 (픽셀 단위)
-scroll_direction = 1         # 1 = 오른쪽→왼쪽, -1 = 왼쪽→오른쪽
-last_scroll_time = 0.0         # 마지막으로 스크롤한 시간
+scroll_offset = 0.0           # 현재 스크롤 위치 (픽셀 단위, float)
+scroll_direction = 1          # 1 = 오른쪽→왼쪽, -1 = 왼쪽→오른쪽
+last_scroll_time = 0.0        # 마지막으로 스크롤한 시간
+
 
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
@@ -298,7 +307,7 @@ def git_pull():
             os.fsync(script_file.fileno())
 
     os.chmod(shell_script_path, 0o755)
-    
+
     with canvas(device) as draw:
         draw.text((36, 8), "시스템", font=font, fill=255)
         draw.text((17, 27), "업데이트 중", font=font, fill=255)
@@ -308,7 +317,7 @@ def git_pull():
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
-        
+
         if result.returncode == 0:
             if "이미 최신 상태" in result.stdout:
                 display_progress_and_message(100, "이미 최신 상태", message_position=(10, 10), font_size=15)
@@ -341,22 +350,17 @@ def git_pull():
 
 def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
     with canvas(device) as draw:
-        # 메시지 표시
         draw.text(message_position, message, font=font, fill=255)
-        
-        # 진행 상태 바 표시
-        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")  # 상태 바의 외곽선
-        draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")  # 상태 바의 내용
-        
+        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
+        draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")
+
 
 def unlock_memory():
     with display_lock:
         print("메모리 해제 시도...")
 
-    # '메모리 잠금' 및 '해제 중' 메시지와 함께 초기 진행 상태 바 표시
     display_progress_and_message(0, "메모리 잠금\n   해제 중", message_position=(18, 0), font_size=15)
 
-    # 메모리 잠금 해제 로직 구현...
     openocd_command = [
         "sudo", "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
@@ -379,17 +383,19 @@ def unlock_memory():
         update_oled_display()
         return False
 
+
 def restart_script():
     print("스크립트를 재시작합니다.")
     display_progress_and_message(25, "재시작 중", message_position=(20, 10), font_size=15)
+
     def restart():
         time.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
-    threading.Thread(target=restart).start()   
+
+    threading.Thread(target=restart).start()
 
 
 def lock_memory_procedure():
-    
     display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
     openocd_command = [
         "sudo",
@@ -407,14 +413,14 @@ def lock_memory_procedure():
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
-            display_progress_and_message(100,"메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
+            display_progress_and_message(100, "메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            display_progress_and_message(0,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
+            display_progress_and_message(0, "메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
             time.sleep(1)
             update_oled_display()
             GPIO.output(LED_ERROR, False)
@@ -424,22 +430,22 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         update_oled_display()
-        display_progress_and_message(0,"오류 발생")
+        display_progress_and_message(0, "오류 발생")
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
+
 def execute_command(command_index):
     global is_executing, is_command_executing
-    is_executing = True  # 작업 시작 전에 상태를 실행 중으로 설정
-    is_command_executing = True  # 명령 실행 중 상태 활성화
+    is_executing = True
+    is_command_executing = True
 
     print("업데이트 시도...")
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-    # 마지막 메뉴는 항상 '시스템 업데이트'
     if command_index == len(commands) - 1:
         git_pull()
         is_executing = False
@@ -461,11 +467,11 @@ def execute_command(command_index):
 
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
-    
+
     start_time = time.time()
     max_duration = 6
     progress_increment = 20 / max_duration
-    
+
     while process.poll() is None:
         elapsed = time.time() - start_time
         current_progress = 30 + (elapsed * progress_increment)
@@ -491,7 +497,7 @@ def execute_command(command_index):
     is_executing = False
     is_command_executing = False
 
-        
+
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -499,16 +505,17 @@ def get_ip_address():
         ip = s.getsockname()[0]
         s.close()
         return ip
-    except Exception as e:
+    except Exception:
         return "0.0.0.0"
-        
+
+
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size, is_button_pressed
     global scroll_offset, scroll_direction, last_scroll_time
 
-    with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
+    with display_lock:
         if is_button_pressed:
-            return  # 버튼 입력 모드에서는 화면 업데이트 무시
+            return
 
         ip_address = get_ip_address()
         now = datetime.now()
@@ -531,7 +538,6 @@ def update_oled_display():
                 draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
                 draw.text((27, 1), current_time, font=font_time, fill=255)
             else:
-                # IP 주소가 "0.0.0.0"이면 "연결 없음"으로 표시
                 if ip_address == "0.0.0.0":
                     ip_display = "연결 없음"
                 else:
@@ -547,26 +553,24 @@ def update_oled_display():
                 font_custom = ImageFont.truetype(font_path, message_font_size)
                 draw.text(message_position, status_message, font=font_custom, fill=255)
             else:
-                # ✅ 메뉴 이름 표시 (7자 이하 → 가운데 / 7자 초과 → 슬라이드)
+                # 메뉴 이름 표시 (7자 이하 → 가운데 / 7자 초과 → 부드러운 슬라이드)
                 title = command_names[current_command_index]
 
-                # Y 위치는 기존 로직 유지
                 if title == "시스템 업데이트":
-                    center_y = 35  # 🔥 업데이트만 위로
+                    center_y = 35
                 else:
-                    center_y = 42  # 일반 메뉴는 조금 아래로 중앙 근처
+                    center_y = 42
 
-                # 글자 실제 픽셀 폭 계산
                 try:
                     title_width, title_height = draw.textsize(title, font=font_1)
                 except Exception:
                     title_width, title_height = (len(title) * 12, 20)
 
                 screen_width = device.width
-                margin = 2  # 좌우 여백
+                margin = 2
                 view_width = screen_width - margin * 2
 
-                # 👉 짧은 메뉴(7자 이하 or 화면에 다 들어가는 경우): 그냥 가운데 정렬
+                # 짧은 메뉴: 그냥 가운데 정렬
                 if len(title) <= SCROLL_THRESHOLD_CHARS or title_width <= view_width:
                     center_x = screen_width // 2 + VISUAL_X_OFFSET
                     try:
@@ -577,30 +581,36 @@ def update_oled_display():
                         draw.text((x, y), title, font=font_1, fill=255)
 
                     # 짧은 메뉴일 땐 스크롤 상태 초기화
-                    scroll_offset = 0
+                    scroll_offset = 0.0
                     scroll_direction = 1
+                    last_scroll_time = 0.0
 
                 else:
-                    # 👉 긴 메뉴(7자 초과): 좌우 슬라이드
+                    # 긴 메뉴: 시간 기반으로 부드럽게 좌우 슬라이드
                     now_t = time.time()
                     max_offset = max(0, title_width - view_width)
 
-                    # 일정 시간마다 offset 갱신
-                    if now_t - last_scroll_time > SCROLL_INTERVAL:
+                    if last_scroll_time == 0.0:
+                        # 첫 프레임은 위치만 세팅하고 이동 없음
                         last_scroll_time = now_t
-                        scroll_offset += scroll_direction * SCROLL_STEP
+                        dt = 0.0
+                    else:
+                        dt = now_t - last_scroll_time
+                        last_scroll_time = now_t
 
-                        # 끝까지 갔으면 반대 방향으로
-                        if scroll_offset <= 0:
-                            scroll_offset = 0
-                            scroll_direction = 1
-                        elif scroll_offset >= max_offset:
-                            scroll_offset = max_offset
-                            scroll_direction = -1
+                    # 시간 * 속도만큼 이동
+                    scroll_offset += scroll_direction * SCROLL_SPEED * dt
 
-                    # 실제 그리는 X 위치 (offset만큼 왼쪽으로 밀기)
+                    # 끝까지 갔으면 반대 방향으로 튕기기
+                    if scroll_offset <= 0:
+                        scroll_offset = 0
+                        scroll_direction = 1
+                    elif scroll_offset >= max_offset:
+                        scroll_offset = max_offset
+                        scroll_direction = -1
+
                     text_x = margin + VISUAL_X_OFFSET - scroll_offset
-                    draw.text((text_x, center_y), title, font=font_1, fill=255)
+                    draw.text((int(text_x), center_y), title, font=font_1, fill=255)
 
 
 # 실시간 업데이트를 위한 스레드 함수
@@ -609,12 +619,14 @@ def realtime_update_display():
     while True:
         if not is_button_pressed and not is_command_executing:
             update_oled_display()
-        time.sleep(0.1)  # 슬라이드가 부드럽게 보이도록 0.1초 정도로 줄임
+        time.sleep(0.03)  # 약 30fps로 부드러운 슬라이드
+
 
 # 스레드 생성 및 시작
 realtime_update_thread = threading.Thread(target=realtime_update_display)
 realtime_update_thread.daemon = True
 realtime_update_thread.start()
+
 
 def shutdown_system():
     try:
@@ -622,12 +634,10 @@ def shutdown_system():
             draw.text((20, 25), "배터리 부족", font=font, fill=255)
             draw.text((25, 50), "시스템 종료 중...", font=font_st, fill=255)
         time.sleep(5)
-        # DISPLAY_POWER_PIN 정의되어 있으면 사용, 아니면 제거하거나 주석 처리
-        # GPIO.output(DISPLAY_POWER_PIN, GPIO.LOW)
         os.system('sudo shutdown -h now')
     except Exception as e:
-        # 예외 발생 시 로그 남기기
         print("시스템 종료 중 오류 발생:", str(e))
+
 
 # 초기 디스플레이 업데이트
 update_oled_display()
@@ -635,17 +645,14 @@ update_oled_display()
 # 메인 루프
 try:
     while True:
-        # 배터리 수준을 확인하고 0%면 시스템 종료
         if read_ina219_percentage() == 0:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
 
-        # STM32 연결 상태 확인 및 명령 실행
         if command_names[current_command_index] != "시스템 업데이트":
             if is_auto_mode and check_stm32_connection() and connection_success:
                 execute_command(current_command_index)
 
-        # OLED 디스플레이 업데이트
         if need_update:
             update_oled_display()
             need_update = False
