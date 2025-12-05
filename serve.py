@@ -297,7 +297,7 @@ def build_menu_for_dir(dir_path, is_root=False):
             if os.path.isdir(full_path):
                 order, display_name = parse_order_and_name(fname, is_dir=True)
                 # 폴더 표시: ► 폴더명
-                display_name = "L " + display_name
+                display_name = "+ " + display_name
                 entries.append((order, 0, display_name, "dir", full_path))
 
             # 2) .bin 파일인 경우
