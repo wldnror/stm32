@@ -50,7 +50,8 @@ last_mode_toggle_time = 0
 is_executing = False
 
 # ---------------- 메뉴 스택 관련 전역 ----------------
-menu_stack = []  # 이전 디렉토리들의 메뉴를 쌓아두는 스택
+# (menu, selected_index) 튜플을 저장
+menu_stack = []  # 이전 디렉토리 메뉴와 그때 선택 인덱스를 쌓아두는 스택
 
 current_menu = None          # {'dir': ..., 'commands': [...], 'names': [...], 'types': [...], 'extras': [...]}
 commands = []
@@ -539,12 +540,15 @@ def execute_command(command_index):
     if item_type == "dir":
         subdir = menu_extras[command_index]
         if subdir and os.path.isdir(subdir):
-            menu_stack.append(current_menu)
+            # ✅ 현재 메뉴와 선택 인덱스를 함께 스택에 저장
+            menu_stack.append((current_menu, current_command_index))
+
             current_menu = build_menu_for_dir(subdir, is_root=False)
             commands = current_menu["commands"]
             command_names = current_menu["names"]
             command_types = current_menu["types"]
             menu_extras = current_menu["extras"]
+            # 서브 폴더 안에서는 맨 위부터 시작
             current_command_index = 0
             need_update = True
 
@@ -555,12 +559,21 @@ def execute_command(command_index):
     # 2) 이전으로 (back)
     if item_type == "back":
         if menu_stack:
-            current_menu = menu_stack.pop()
+            # ✅ 저장해 둔 (메뉴, 인덱스) 튜플을 꺼냄
+            prev_menu, prev_index = menu_stack.pop()
+
+            current_menu = prev_menu
             commands = current_menu["commands"]
             command_names = current_menu["names"]
             command_types = current_menu["types"]
             menu_extras = current_menu["extras"]
-            current_command_index = 0
+
+            # ✅ 원래 선택하던 인덱스로 복원 (범위 체크 포함)
+            if 0 <= prev_index < len(commands):
+                current_command_index = prev_index
+            else:
+                current_command_index = 0
+
             need_update = True
 
         is_executing = False
