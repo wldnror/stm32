@@ -296,8 +296,8 @@ def build_menu_for_dir(dir_path, is_root=False):
             # 1) 디렉토리인 경우
             if os.path.isdir(full_path):
                 order, display_name = parse_order_and_name(fname, is_dir=True)
-                # 폴더 아이콘 (📁 깨지면 여기만 '▶ '로 바꿔도 됨)
-                display_name = "📁 " + display_name
+                # 폴더 표시: ► 폴더명
+                display_name = "► " + display_name
                 entries.append((order, 0, display_name, "dir", full_path))
 
             # 2) .bin 파일인 경우
