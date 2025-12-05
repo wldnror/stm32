@@ -38,7 +38,7 @@ GPIO.setmode(GPIO.BCM)
 last_time_button_next_pressed = 0
 last_time_button_execute_pressed = 0
 button_press_interval = 0.5  # 두 버튼이 동시에 눌린 것으로 간주되는 최대 시간 차이
-LONG_PRESS_THRESHOLD = 0.7   # EXECUTE 길게 누르는 기준 시간(초)
+LONG_PRESS_THRESHOLD = 0.5   # EXECUTE 길게 누르는 기준 시간(초)
 
 need_update = False
 is_command_executing = False
