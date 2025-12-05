@@ -121,11 +121,11 @@ def button_execute_callback(channel):
 
                 item_type = command_types[current_command_index]
 
-                # 자동 모드에서 '시스템 업데이트' 항목이면 실행
-                if item_type == "system":
+                # 자동 모드에서도 폴더/이전/시스템은 선택(실행) 가능하게
+                if item_type in ("system", "dir", "back"):
                     execute_command(current_command_index)
                 else:
-                    # 그 외에는 기존 동작처럼 한 칸 위로 이동
+                    # bin 타입일 때는 기존처럼 한 칸 위로 이동 (자동 실행은 메인 루프에서)
                     current_command_index = (current_command_index - 1) % len(commands)
 
                 need_update = True
@@ -276,8 +276,10 @@ def build_menu_for_dir(dir_path, is_root=False):
     - .bin  → type: "bin"
     - 루트   → 마지막에 "시스템 업데이트" (type: "system")
     - 서브폴더 → 마지막에 "◀ 이전으로" (type: "back")
+    정렬 순서:
+    - 번호(order) → 타입(폴더/파일) → 이름
     """
-    entries = []  # (type_pri, order, display, type, extra) 로 정렬용 튜플 저장
+    entries = []  # (order, type_pri, display, type, extra) 로 정렬용 튜플 저장
 
     try:
         for fname in os.listdir(dir_path):
@@ -286,8 +288,8 @@ def build_menu_for_dir(dir_path, is_root=False):
             # 1) 디렉토리인 경우
             if os.path.isdir(full_path):
                 order, display_name = parse_order_and_name(fname)
-                # type_pri = 0 으로 해서 폴더를 위쪽에 먼저 배치
-                entries.append((0, order, display_name, "dir", full_path))
+                # type_pri = 0 (폴더), bin보다는 먼저지만, 같은 order 안에서만 의미
+                entries.append((order, 0, display_name, "dir", full_path))
 
             # 2) .bin 파일인 경우
             elif fname.lower().endswith(".bin"):
@@ -298,14 +300,14 @@ def build_menu_for_dir(dir_path, is_root=False):
                     "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
                     f"-c \"program {full_path} verify reset exit 0x08000000\""
                 )
-                # type_pri = 1 로 해서 폴더 다음에 오도록
-                entries.append((1, order, display_name, "bin", openocd_cmd))
+                # type_pri = 1 (bin)
+                entries.append((order, 1, display_name, "bin", openocd_cmd))
 
     except FileNotFoundError:
         print("펌웨어 폴더를 찾을 수 없습니다:", dir_path)
         entries = []
 
-    # 정렬: (폴더/파일 우선순위, 번호, 이름)
+    # 정렬: 번호(order) → 타입(폴더/파일) → 이름
     entries.sort(key=lambda x: (x[0], x[1], x[2]))
 
     commands_local = []
@@ -313,7 +315,7 @@ def build_menu_for_dir(dir_path, is_root=False):
     types_local = []
     extras_local = []
 
-    for type_pri, order, display_name, item_type, extra in entries:
+    for order, type_pri, display_name, item_type, extra in entries:
         if item_type == "dir":
             commands_local.append(None)         # 폴더는 실제 실행 명령 없음
             names_local.append(display_name)
