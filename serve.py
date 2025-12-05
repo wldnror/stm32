@@ -272,12 +272,13 @@ message_font_size = 17
 
 # --- 메뉴 텍스트 스크롤 설정 ---
 SCROLL_THRESHOLD_CHARS = 7   # 이 글자 수 초과하면 슬라이드 효과
-SCROLL_INTERVAL = 0.15       # 몇 초마다 한 칸씩 움직일지 (초)
-SCROLL_STEP = 2              # 한 번에 이동하는 픽셀 수
+SCROLL_SPEED = 60.0 
+# SCROLL_INTERVAL = 0.15       # 몇 초마다 한 칸씩 움직일지 (초)
+# SCROLL_STEP = 2              # 한 번에 이동하는 픽셀 수
 
-scroll_offset = 0            # 현재 스크롤 위치 (픽셀 단위)
+scroll_offset = 0.0            # 현재 스크롤 위치 (픽셀 단위)
 scroll_direction = 1         # 1 = 오른쪽→왼쪽, -1 = 왼쪽→오른쪽
-last_scroll_time = 0         # 마지막으로 스크롤한 시간
+last_scroll_time = 0.0         # 마지막으로 스크롤한 시간
 
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
