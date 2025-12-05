@@ -49,11 +49,22 @@ last_mode_toggle_time = 0
 # 스크립트 시작 부분에 전역 변수 정의
 is_executing = False
 
+# ---------------- 메뉴 스택 관련 전역 ----------------
+menu_stack = []  # 이전 디렉토리들의 메뉴를 쌓아두는 스택
+
+current_menu = None          # {'dir': ..., 'commands': [...], 'names': [...], 'types': [...], 'extras': [...]}
+commands = []
+command_names = []
+command_types = []           # "bin", "dir", "system", "back"
+menu_extras = []             # type이 "dir"일 때 하위 디렉토리 경로 저장
+
+
 def toggle_mode():
     global is_auto_mode, last_mode_toggle_time
     is_auto_mode = not is_auto_mode
     last_mode_toggle_time = time.time()
     update_oled_display()
+
 
 def button_next_callback(channel):
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
@@ -71,8 +82,9 @@ def button_next_callback(channel):
         toggle_mode()  # 모드 전환
         need_update = True
     else:
-        current_command_index = (current_command_index + 1) % len(commands)
-        need_update = True
+        if commands:  # 명령 목록이 비어있지 않을 때만 인덱스 변경
+            current_command_index = (current_command_index + 1) % len(commands)
+            need_update = True
 
     last_time_button_next_pressed = current_time  # NEXT 버튼 눌린 시간 갱신
     is_button_pressed = False
@@ -96,28 +108,39 @@ def button_execute_callback(channel):
     else:
         # EXECUTE 버튼만 눌렸을 때의 로직
         if not is_auto_mode:
-            execute_command(current_command_index)
-            need_update = True
+            # 수동 모드에서는 현재 메뉴 항목을 실행 (dir/back/system/bin 모두 포함)
+            if commands:
+                execute_command(current_command_index)
+                need_update = True
         else:
+            # 자동 모드
             with display_lock:
-                if current_command_index == command_names.index("시스템 업데이트"):
+                if not commands:
+                    is_button_pressed = False
+                    return
+
+                item_type = command_types[current_command_index]
+
+                # 자동 모드에서 '시스템 업데이트' 항목이면 실행
+                if item_type == "system":
                     execute_command(current_command_index)
                 else:
-                    if is_auto_mode:
-                        current_command_index = (current_command_index - 1) % len(commands)
-                    else:
-                        execute_command(current_command_index)
-            need_update = True
+                    # 그 외에는 기존 동작처럼 한 칸 위로 이동
+                    current_command_index = (current_command_index - 1) % len(commands)
+
+                need_update = True
 
     last_time_button_execute_pressed = current_time  # EXECUTE 버튼 눌린 시간 갱신
     is_button_pressed = False
 
-# 모드 전환 함수 (위에서 한 번 더 정의되어 있지만, 최종 정의는 이걸로 사용됨)
+
+# (주의) 위에서 한 번 정의했지만, 아래 정의가 최종으로 사용됨
 def toggle_mode():
     global is_auto_mode
     is_auto_mode = not is_auto_mode
     update_oled_display()  # OLED 화면 업데이트
-    
+
+
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
 auto_mode_text = 'A'
 manual_mode_text = 'M'
@@ -134,6 +157,7 @@ GPIO.setup(LED_ERROR1, GPIO.OUT)
 # 연결 상태를 추적하기 위한 변수
 connection_success = False
 connection_failed_since_last_success = False
+
 
 def check_stm32_connection():
     with display_lock:
@@ -156,14 +180,13 @@ def check_stm32_connection():
                     print("STM32 재연결 성공")
                     connection_success = True
                     connection_failed_since_last_success = False  # 성공 후 실패 플래그 초기화
-                    
                 else:
                     print("STM32 연결 성공")
                     connection_success = False  # 연속적인 성공을 방지
                 return True
             else:
                 print("STM32 연결 실패:", result.stderr)
-                connection_failed_since_last_success = True  # 실패 플래그 
+                connection_failed_since_last_success = True  # 실패 플래그
                 return False
         except Exception as e:
             print(f"오류 발생: {e}")
@@ -188,6 +211,7 @@ def read_ina219_percentage():
         print("INA219 모듈 읽기 실패:", str(e))
         return -1
 
+
 # OLED 설정
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
@@ -209,6 +233,7 @@ medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 
+
 # 배터리 아이콘 선택 함수
 def select_battery_icon(percentage):
     if percentage < 20:
@@ -220,76 +245,122 @@ def select_battery_icon(percentage):
     else:
         return full_battery_icon
 
+
 # -------------------------------
-#  펌웨어 폴더 자동 스캔 부분
+#  펌웨어 폴더 자동 스캔 + 폴더 메뉴
 # -------------------------------
 FIRMWARE_DIR = "/home/user/stm32/Program"
 
-def load_firmware_commands():
+
+def parse_order_and_name(name: str):
     """
-    FIRMWARE_DIR 안의 .bin 파일을 모두 찾아서
-    - 파일명 앞의 "숫자." 는 메뉴 순서를 위한 번호로 사용
-      예) 1.부트로더.bin  -> 번호: 1, 표시명: '부트로더'
-    - 번호가 없는 경우는 맨 뒤쪽에 정렬 (번호 9999 취급)
-    - 확장자(.bin)는 제거
-    - openocd program 명령을 자동 생성
-    마지막에는 'git_pull' / '시스템 업데이트'를 추가
+    '1.부트로더.bin' 또는 '2. 테스트' 같은 이름에서
+    앞의 숫자와 표시 이름을 분리해준다.
+    숫자가 없으면 order=9999로 뒤에 정렬.
     """
-    cmds = []
-    names = []
-    entries = []   # (order_num, filename, display_name) 튜플 리스트
+    base = os.path.splitext(name)[0]  # 확장자 제거
+    m = re.match(r'^(\d+)\.(.*)$', base)
+    if m:
+        order = int(m.group(1))
+        display = m.group(2).lstrip()
+    else:
+        order = 9999
+        display = base
+    return order, display
+
+
+def build_menu_for_dir(dir_path, is_root=False):
+    """
+    dir_path 안의 폴더와 .bin 파일을 읽어서 메뉴를 구성한다.
+    - 폴더   → type: "dir"
+    - .bin  → type: "bin"
+    - 루트   → 마지막에 "시스템 업데이트" (type: "system")
+    - 서브폴더 → 마지막에 "◀ 이전으로" (type: "back")
+    """
+    entries = []  # (type_pri, order, display, type, extra) 로 정렬용 튜플 저장
 
     try:
-        for fname in os.listdir(FIRMWARE_DIR):
-            if not fname.lower().endswith(".bin"):
-                continue
+        for fname in os.listdir(dir_path):
+            full_path = os.path.join(dir_path, fname)
 
-            base_name = os.path.splitext(fname)[0]  # "1.부트로더" 또는 "펌웨어이름"
-            # 앞에 "숫자." 패턴이 있으면 메뉴 순서로 사용
-            m = re.match(r'^(\d+)\.(.*)$', base_name)
-            if m:
-                order_num = int(m.group(1))          # 1, 2, 10 ...
-                display_name = m.group(2).lstrip()   # "부트로더" (앞 공백 제거)
-            else:
-                order_num = 9999                     # 번호 없으면 뒤쪽으로
-                display_name = base_name
+            # 1) 디렉토리인 경우
+            if os.path.isdir(full_path):
+                order, display_name = parse_order_and_name(fname)
+                # type_pri = 0 으로 해서 폴더를 위쪽에 먼저 배치
+                entries.append((0, order, display_name, "dir", full_path))
 
-            entries.append((order_num, fname, display_name))
+            # 2) .bin 파일인 경우
+            elif fname.lower().endswith(".bin"):
+                order, display_name = parse_order_and_name(fname)
+                openocd_cmd = (
+                    "sudo openocd "
+                    "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+                    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+                    f"-c \"program {full_path} verify reset exit 0x08000000\""
+                )
+                # type_pri = 1 로 해서 폴더 다음에 오도록
+                entries.append((1, order, display_name, "bin", openocd_cmd))
+
     except FileNotFoundError:
-        print("펌웨어 폴더를 찾을 수 없습니다:", FIRMWARE_DIR)
+        print("펌웨어 폴더를 찾을 수 없습니다:", dir_path)
         entries = []
 
-    # 번호 → 이름 순으로 정렬
-    entries.sort(key=lambda x: (x[0], x[2]))
+    # 정렬: (폴더/파일 우선순위, 번호, 이름)
+    entries.sort(key=lambda x: (x[0], x[1], x[2]))
 
-    # 정렬된 순서대로 openocd 명령/메뉴 이름 생성
-    for order_num, fname, display_name in entries:
-        full_path = os.path.join(FIRMWARE_DIR, fname)
+    commands_local = []
+    names_local = []
+    types_local = []
+    extras_local = []
 
-        openocd_cmd = (
-            "sudo openocd "
-            "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-            "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
-            f"-c \"program {full_path} verify reset exit 0x08000000\""
-        )
+    for type_pri, order, display_name, item_type, extra in entries:
+        if item_type == "dir":
+            commands_local.append(None)         # 폴더는 실제 실행 명령 없음
+            names_local.append(display_name)
+            types_local.append("dir")
+            extras_local.append(extra)         # extra 에 하위 디렉토리 경로 저장
+        elif item_type == "bin":
+            commands_local.append(extra)       # openocd_cmd
+            names_local.append(display_name)
+            types_local.append("bin")
+            extras_local.append(None)
 
-        cmds.append(openocd_cmd)
-        names.append(display_name)   # ✅ 번호 제거된 이름만 메뉴에 사용
+    # 루트 / 서브에 따라 마지막 항목 추가
+    if is_root:
+        commands_local.append("git_pull")
+        names_local.append("시스템 업데이트")
+        types_local.append("system")
+        extras_local.append(None)
+    else:
+        commands_local.append(None)
+        names_local.append("◀ 이전으로")
+        types_local.append("back")
+        extras_local.append(None)
 
-    # 마지막 메뉴는 시스템 업데이트(git_pull)
-    cmds.append("git_pull")
-    names.append("시스템 업데이트")
+    menu = {
+        "dir": dir_path,
+        "commands": commands_local,
+        "names": names_local,
+        "types": types_local,
+        "extras": extras_local,
+    }
 
-    print("로딩된 펌웨어 목록:", names)
-    return cmds, names
- 
-# 명령어 자동 로딩
-commands, command_names = load_firmware_commands()
+    print(f"로딩된 메뉴 ({dir_path}):", names_local)
+    return menu
 
+
+# 초기 메뉴 로딩 (루트)
+current_menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
+commands = current_menu["commands"]
+command_names = current_menu["names"]
+command_types = current_menu["types"]
+menu_extras = current_menu["extras"]
 current_command_index = 0
+
 status_message = ""
 message_position = (0, 0)
 message_font_size = 17
+
 
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
@@ -309,7 +380,7 @@ def git_pull():
             os.fsync(script_file.fileno())
 
     os.chmod(shell_script_path, 0o755)
-    
+
     with canvas(device) as draw:
         draw.text((36, 8), "시스템", font=font, fill=255)
         draw.text((17, 27), "업데이트 중", font=font, fill=255)
@@ -319,7 +390,7 @@ def git_pull():
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
-        
+
         if result.returncode == 0:
             if "이미 최신 상태" in result.stdout:
                 display_progress_and_message(100, "이미 최신 상태", message_position=(10, 10), font_size=15)
@@ -354,11 +425,11 @@ def display_progress_and_message(percentage, message, message_position=(0, 0), f
     with canvas(device) as draw:
         # 메시지 표시
         draw.text(message_position, message, font=font, fill=255)
-        
+
         # 진행 상태 바 표시
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")  # 상태 바의 외곽선
         draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")  # 상태 바의 내용
-        
+
 
 def unlock_memory():
     with display_lock:
@@ -390,17 +461,19 @@ def unlock_memory():
         update_oled_display()
         return False
 
+
 def restart_script():
     print("스크립트를 재시작합니다.")
     display_progress_and_message(25, "재시작 중", message_position=(20, 10), font_size=15)
+
     def restart():
         time.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
-    threading.Thread(target=restart).start()   
+
+    threading.Thread(target=restart).start()
 
 
 def lock_memory_procedure():
-    
     display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
     openocd_command = [
         "sudo",
@@ -418,14 +491,14 @@ def lock_memory_procedure():
         if result.returncode == 0:
             print("성공적으로 메모리를 잠갔습니다.")
             GPIO.output(LED_SUCCESS, True)
-            display_progress_and_message(100,"메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
+            display_progress_and_message(100, "메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
             print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            display_progress_and_message(0,"메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
+            display_progress_and_message(0, "메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
             time.sleep(1)
             update_oled_display()
             GPIO.output(LED_ERROR, False)
@@ -435,27 +508,74 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         update_oled_display()
-        display_progress_and_message(0,"오류 발생")
+        display_progress_and_message(0, "오류 발생")
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
+
 def execute_command(command_index):
     global is_executing, is_command_executing
+    global current_menu, commands, command_names, command_types, menu_extras
+    global current_command_index, menu_stack
+
     is_executing = True  # 작업 시작 전에 상태를 실행 중으로 설정
     is_command_executing = True  # 명령 실행 중 상태 활성화
 
-    print("업데이트 시도...")
-    GPIO.output(LED_SUCCESS, False)
-    GPIO.output(LED_ERROR, False)
-    GPIO.output(LED_ERROR1, False)
+    if not commands:
+        is_executing = False
+        is_command_executing = False
+        return
 
-    # 마지막 메뉴는 항상 '시스템 업데이트'
-    if command_index == len(commands) - 1:
+    item_type = command_types[command_index]
+
+    # 1) 폴더 진입
+    if item_type == "dir":
+        subdir = menu_extras[command_index]
+        if subdir and os.path.isdir(subdir):
+            # 현재 메뉴를 스택에 저장
+            menu_stack.append(current_menu)
+
+            # 하위 디렉토리 메뉴 생성
+            current_menu = build_menu_for_dir(subdir, is_root=False)
+            commands = current_menu["commands"]
+            command_names = current_menu["names"]
+            command_types = current_menu["types"]
+            menu_extras = current_menu["extras"]
+            current_command_index = 0
+            update_oled_display()
+
+        is_executing = False
+        is_command_executing = False
+        return
+
+    # 2) 이전으로 (back)
+    if item_type == "back":
+        if menu_stack:
+            current_menu = menu_stack.pop()
+            commands = current_menu["commands"]
+            command_names = current_menu["names"]
+            command_types = current_menu["types"]
+            menu_extras = current_menu["extras"]
+            current_command_index = 0
+            update_oled_display()
+
+        is_executing = False
+        is_command_executing = False
+        return
+
+    # 3) 시스템 업데이트
+    if item_type == "system":
         git_pull()
         is_executing = False
         is_command_executing = False
         return
+
+    # 4) 일반 bin 실행
+    print("업데이트 시도...")
+    GPIO.output(LED_SUCCESS, False)
+    GPIO.output(LED_ERROR, False)
+    GPIO.output(LED_ERROR1, False)
 
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
@@ -472,11 +592,11 @@ def execute_command(command_index):
 
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
-    
+
     start_time = time.time()
     max_duration = 6
     progress_increment = 20 / max_duration
-    
+
     while process.poll() is None:
         elapsed = time.time() - start_time
         current_progress = 30 + (elapsed * progress_increment)
@@ -502,7 +622,7 @@ def execute_command(command_index):
     is_executing = False
     is_command_executing = False
 
-        
+
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -512,12 +632,16 @@ def get_ip_address():
         return ip
     except Exception as e:
         return "0.0.0.0"
-        
+
+
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size, is_button_pressed
     with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
         if is_button_pressed:
             return  # 버튼 입력 모드에서는 화면 업데이트 무시
+
+        if not commands:
+            return
 
         ip_address = get_ip_address()
         now = datetime.now()
@@ -525,8 +649,11 @@ def update_oled_display():
         voltage_percentage = read_ina219_percentage()
 
         with canvas(device) as draw:
+            item_type = command_types[current_command_index]
+            title = command_names[current_command_index]
+
             # 모드 표시 (시스템 업데이트 메뉴가 아닐 때만)
-            if command_names[current_command_index] != "시스템 업데이트":
+            if item_type != "system":
                 mode_char = 'A' if is_auto_mode else 'M'
                 outer_ellipse_box = (2, 0, 22, 20)
                 text_position = {'A': (8, -3), 'M': (5, -3)}
@@ -534,7 +661,7 @@ def update_oled_display():
                 draw.text(text_position[mode_char], mode_char, font=font, fill=255)
 
             # 상단 정보 (배터리/시간 or IP/버전)
-            if command_names[current_command_index] != "시스템 업데이트":
+            if item_type != "system":
                 battery_icon = select_battery_icon(voltage_percentage)
                 draw.bitmap((90, -9), battery_icon, fill=255)
                 draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
@@ -557,11 +684,10 @@ def update_oled_display():
                 draw.text(message_position, status_message, font=font_custom, fill=255)
             else:
                 # ✅ 메뉴 이름을 가운데 정렬로 표시 (anchor="mm" 사용)
-                title = command_names[current_command_index]
                 center_x = device.width // 2 + VISUAL_X_OFFSET
 
                 # 시스템 업데이트만 약간 위로 + 작은 폰트
-                if title == "시스템 업데이트":
+                if item_type == "system":
                     center_y = 33  # 🔥 업데이트만 위로
                     use_font = font_sysupdate
                 else:
@@ -590,10 +716,12 @@ def realtime_update_display():
             update_oled_display()
         time.sleep(1)
 
+
 # 스레드 생성 및 시작
 realtime_update_thread = threading.Thread(target=realtime_update_display)
 realtime_update_thread.daemon = True
 realtime_update_thread.start()
+
 
 def shutdown_system():
     try:
@@ -608,6 +736,7 @@ def shutdown_system():
         # 예외 발생 시 로그 남기기
         print("시스템 종료 중 오류 발생:", str(e))
 
+
 # 초기 디스플레이 업데이트
 update_oled_display()
 
@@ -620,8 +749,10 @@ try:
             shutdown_system()
 
         # STM32 연결 상태 확인 및 명령 실행
-        if command_names[current_command_index] != "시스템 업데이트":
-            if is_auto_mode and check_stm32_connection() and connection_success:
+        if commands:
+            # 자동 모드에서 bin 타입만 자동 실행
+            if is_auto_mode and command_types[current_command_index] == "bin" \
+               and check_stm32_connection() and connection_success:
                 execute_command(current_command_index)
 
         # OLED 디스플레이 업데이트
