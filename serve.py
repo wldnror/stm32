@@ -309,7 +309,7 @@ def git_pull():
                 print("업데이트 성공!")
                 GPIO.output(LED_SUCCESS, True)
                 display_progress_and_message(100, "업데이트 성공!", message_position=(10, 10), font_size=15)
-                time.sleep(10)
+                time.sleep(1)
                 GPIO.output(LED_SUCCESS, False)
                 restart_script()
         else:
@@ -469,8 +469,7 @@ def execute_command(command_index):
     if result == 0:
         print(f"'{commands[command_index]}' 업데이트 성공!")
         display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
-        time.sleep(0.5)
-        time.sleep(3)
+        time.sleep(10)
         lock_memory_procedure()
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
