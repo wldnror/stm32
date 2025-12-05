@@ -14,10 +14,10 @@ import threading
 
 VISUAL_X_OFFSET = 0  # 필요에 따라 -3, -4 등으로 조절
 display_lock = threading.Lock()
+
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
-# LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
 LED_ERROR1 = 23
@@ -155,7 +155,6 @@ def check_stm32_connection():
                     print("STM32 재연결 성공")
                     connection_success = True
                     connection_failed_since_last_success = False  # 성공 후 실패 플래그 초기화
-                    
                 else:
                     print("STM32 연결 성공")
                     connection_success = False  # 연속적인 성공을 방지
@@ -270,6 +269,15 @@ current_command_index = 0
 status_message = ""
 message_position = (0, 0)
 message_font_size = 17
+
+# --- 메뉴 텍스트 스크롤 설정 ---
+SCROLL_THRESHOLD_CHARS = 7   # 이 글자 수 초과하면 슬라이드 효과
+SCROLL_INTERVAL = 0.15       # 몇 초마다 한 칸씩 움직일지 (초)
+SCROLL_STEP = 2              # 한 번에 이동하는 픽셀 수
+
+scroll_offset = 0            # 현재 스크롤 위치 (픽셀 단위)
+scroll_direction = 1         # 1 = 오른쪽→왼쪽, -1 = 왼쪽→오른쪽
+last_scroll_time = 0         # 마지막으로 스크롤한 시간
 
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
@@ -495,6 +503,8 @@ def get_ip_address():
         
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size, is_button_pressed
+    global scroll_offset, scroll_direction, last_scroll_time
+
     with display_lock:  # 스레드 간 충돌 방지를 위해 display_lock 사용
         if is_button_pressed:
             return  # 버튼 입력 모드에서는 화면 업데이트 무시
@@ -536,27 +546,60 @@ def update_oled_display():
                 font_custom = ImageFont.truetype(font_path, message_font_size)
                 draw.text(message_position, status_message, font=font_custom, fill=255)
             else:
-                # ✅ 메뉴 이름을 가운데 정렬로 표시 (anchor="mm" 사용)
+                # ✅ 메뉴 이름 표시 (7자 이하 → 가운데 / 7자 초과 → 슬라이드)
                 title = command_names[current_command_index]
-                center_x = device.width // 2 + VISUAL_X_OFFSET
-                # center_y = device.height // 2 + 4  # +값이면 아래로 이동, -값이면 위로 이동
+
+                # Y 위치는 기존 로직 유지
                 if title == "시스템 업데이트":
                     center_y = 35  # 🔥 업데이트만 위로
                 else:
                     center_y = 42  # 일반 메뉴는 조금 아래로 중앙 근처
 
+                # 글자 실제 픽셀 폭 계산
                 try:
-                    # Pillow에서 anchor 지원될 때
-                    draw.text((center_x, center_y), title, font=font_1, fill=255, anchor="mm")
-                except TypeError:
-                    # anchor 없으면 수동으로 중앙 계산
+                    title_width, title_height = draw.textsize(title, font=font_1)
+                except Exception:
+                    title_width, title_height = (len(title) * 12, 20)
+
+                screen_width = device.width
+                margin = 2  # 좌우 여백
+                view_width = screen_width - margin * 2
+
+                # 👉 짧은 메뉴(7자 이하 or 화면에 다 들어가는 경우): 그냥 가운데 정렬
+                if len(title) <= SCROLL_THRESHOLD_CHARS or title_width <= view_width:
+                    center_x = screen_width // 2 + VISUAL_X_OFFSET
                     try:
-                        w, h = draw.textsize(title, font=font_1)
-                    except Exception:
-                        w, h = (len(title) * 8, 16)
-                    x = int(center_x - w / 2)
-                    y = int(center_y - h / 2)
-                    draw.text((x, y), title, font=font_1, fill=255)
+                        draw.text((center_x, center_y), title, font=font_1, fill=255, anchor="mm")
+                    except TypeError:
+                        x = int(center_x - title_width / 2)
+                        y = int(center_y - title_height / 2)
+                        draw.text((x, y), title, font=font_1, fill=255)
+
+                    # 짧은 메뉴일 땐 스크롤 상태 초기화
+                    scroll_offset = 0
+                    scroll_direction = 1
+
+                else:
+                    # 👉 긴 메뉴(7자 초과): 좌우 슬라이드
+                    now_t = time.time()
+                    max_offset = max(0, title_width - view_width)
+
+                    # 일정 시간마다 offset 갱신
+                    if now_t - last_scroll_time > SCROLL_INTERVAL:
+                        last_scroll_time = now_t
+                        scroll_offset += scroll_direction * SCROLL_STEP
+
+                        # 끝까지 갔으면 반대 방향으로
+                        if scroll_offset <= 0:
+                            scroll_offset = 0
+                            scroll_direction = 1
+                        elif scroll_offset >= max_offset:
+                            scroll_offset = max_offset
+                            scroll_direction = -1
+
+                    # 실제 그리는 X 위치 (offset만큼 왼쪽으로 밀기)
+                    text_x = margin + VISUAL_X_OFFSET - scroll_offset
+                    draw.text((text_x, center_y), title, font=font_1, fill=255)
 
 
 # 실시간 업데이트를 위한 스레드 함수
@@ -565,7 +608,7 @@ def realtime_update_display():
     while True:
         if not is_button_pressed and not is_command_executing:
             update_oled_display()
-        time.sleep(1)
+        time.sleep(0.1)  # 슬라이드가 부드럽게 보이도록 0.1초 정도로 줄임
 
 # 스레드 생성 및 시작
 realtime_update_thread = threading.Thread(target=realtime_update_display)
