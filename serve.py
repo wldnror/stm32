@@ -58,6 +58,7 @@ command_names = []
 command_types = []           # "bin", "dir", "system", "back"
 menu_extras = []             # type이 "dir"일 때 하위 디렉토리 경로 저장
 
+# ---------------- 공통 함수 ----------------
 
 def toggle_mode():
     global is_auto_mode, last_mode_toggle_time
@@ -110,6 +111,8 @@ def button_execute_callback(channel):
         if not is_auto_mode:
             # 수동 모드에서는 현재 메뉴 항목을 실행 (dir/back/system/bin 모두 포함)
             if commands:
+                print("[MANUAL] EXECUTE on index", current_command_index,
+                      "type:", command_types[current_command_index])
                 execute_command(current_command_index)
                 need_update = True
         else:
@@ -120,12 +123,15 @@ def button_execute_callback(channel):
                     return
 
                 item_type = command_types[current_command_index]
+                print("[AUTO] EXECUTE on index", current_command_index,
+                      "type:", item_type)
 
                 # 자동 모드에서도 폴더/이전/시스템은 선택(실행) 가능하게
                 if item_type in ("system", "dir", "back"):
                     execute_command(current_command_index)
                 else:
-                    # bin 타입일 때는 기존처럼 한 칸 위로 이동 (자동 실행은 메인 루프에서)
+                    # bin 타입일 때는 기존처럼 한 칸 위로 이동
+                    # (실제 실행은 메인 루프에서 자동으로)
                     current_command_index = (current_command_index - 1) % len(commands)
 
                 need_update = True
@@ -252,20 +258,28 @@ def select_battery_icon(percentage):
 FIRMWARE_DIR = "/home/user/stm32/Program"
 
 
-def parse_order_and_name(name: str):
+def parse_order_and_name(name: str, is_dir: bool):
     """
-    '1.부트로더.bin' 또는 '2. 테스트' 같은 이름에서
+    '1.부트로더.bin' / '1.ORG.bin' / '2.HMDS' (폴더) 같은 이름에서
     앞의 숫자와 표시 이름을 분리해준다.
+
+    - 파일(bin)  : 확장자(.bin) 제거 후 번호/이름 파싱
+    - 폴더(dir)  : 전체 이름 그대로 번호/이름 파싱
     숫자가 없으면 order=9999로 뒤에 정렬.
     """
-    base = os.path.splitext(name)[0]  # 확장자 제거
-    m = re.match(r'^(\d+)\.(.*)$', base)
+    if is_dir:
+        raw = name  # 예: '2.HMDS' → 그대로 사용
+    else:
+        # 파일의 경우 .bin 제거 후 사용
+        raw = os.path.splitext(name)[0]  # '1.ORG.bin' → '1.ORG'
+
+    m = re.match(r'^(\d+)\.(.*)$', raw)
     if m:
         order = int(m.group(1))
         display = m.group(2).lstrip()
     else:
         order = 9999
-        display = base
+        display = raw
     return order, display
 
 
@@ -287,13 +301,15 @@ def build_menu_for_dir(dir_path, is_root=False):
 
             # 1) 디렉토리인 경우
             if os.path.isdir(full_path):
-                order, display_name = parse_order_and_name(fname)
-                # type_pri = 0 (폴더), bin보다는 먼저지만, 같은 order 안에서만 의미
+                order, display_name = parse_order_and_name(fname, is_dir=True)
+                # 폴더 아이콘/표시 (이모지 안 나오면 나중에 '▶ ' 로 바꿔도 됨)
+                display_name = "📁 " + display_name
+                # type_pri = 0 (폴더)
                 entries.append((order, 0, display_name, "dir", full_path))
 
             # 2) .bin 파일인 경우
             elif fname.lower().endswith(".bin"):
-                order, display_name = parse_order_and_name(fname)
+                order, display_name = parse_order_and_name(fname, is_dir=False)
                 openocd_cmd = (
                     "sudo openocd "
                     "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
@@ -530,6 +546,8 @@ def execute_command(command_index):
         return
 
     item_type = command_types[command_index]
+    print("[EXECUTE] index:", command_index, "type:", item_type,
+          "name:", command_names[command_index])
 
     # 1) 폴더 진입
     if item_type == "dir":
