@@ -11,6 +11,7 @@ from luma.oled.device import sh1107
 import subprocess
 from ina219 import INA219, DeviceRangeError
 import threading
+import re  # ← 번호 파싱용
 
 VISUAL_X_OFFSET = 0  # 필요에 따라 -3, -4 등으로 조절
 display_lock = threading.Lock()
@@ -220,31 +221,49 @@ def select_battery_icon(percentage):
         return full_battery_icon
 
 # -------------------------------
-#  펌웨어 폴더 자동 스캔 부분 추가
+#  펌웨어 폴더 자동 스캔 부분
 # -------------------------------
 FIRMWARE_DIR = "/home/user/stm32/Program"
 
 def load_firmware_commands():
     """
     FIRMWARE_DIR 안의 .bin 파일을 모두 찾아서
-    - 파일명(확장자 제외)을 메뉴 이름으로 사용
+    - 파일명 앞의 "숫자." 는 메뉴 순서를 위한 번호로 사용
+      예) 1.부트로더.bin  -> 번호: 1, 표시명: '부트로더'
+    - 번호가 없는 경우는 맨 뒤쪽에 정렬 (번호 9999 취급)
+    - 확장자(.bin)는 제거
     - openocd program 명령을 자동 생성
     마지막에는 'git_pull' / '시스템 업데이트'를 추가
     """
     cmds = []
     names = []
+    entries = []   # (order_num, filename, display_name) 튜플 리스트
 
     try:
-        bin_files = sorted(
-            f for f in os.listdir(FIRMWARE_DIR)
-            if f.lower().endswith(".bin")
-        )
+        for fname in os.listdir(FIRMWARE_DIR):
+            if not fname.lower().endswith(".bin"):
+                continue
+
+            base_name = os.path.splitext(fname)[0]  # "1.부트로더" 또는 "펌웨어이름"
+            # 앞에 "숫자." 패턴이 있으면 메뉴 순서로 사용
+            m = re.match(r'^(\d+)\.(.*)$', base_name)
+            if m:
+                order_num = int(m.group(1))          # 1, 2, 10 ...
+                display_name = m.group(2).lstrip()   # "부트로더" (앞 공백 제거)
+            else:
+                order_num = 9999                     # 번호 없으면 뒤쪽으로
+                display_name = base_name
+
+            entries.append((order_num, fname, display_name))
     except FileNotFoundError:
         print("펌웨어 폴더를 찾을 수 없습니다:", FIRMWARE_DIR)
-        bin_files = []
+        entries = []
 
-    for fname in bin_files:
-        base_name = os.path.splitext(fname)[0]  # 확장자 제거 후 메뉴 이름으로 사용
+    # 번호 → 이름 순으로 정렬
+    entries.sort(key=lambda x: (x[0], x[2]))
+
+    # 정렬된 순서대로 openocd 명령/메뉴 이름 생성
+    for order_num, fname, display_name in entries:
         full_path = os.path.join(FIRMWARE_DIR, fname)
 
         openocd_cmd = (
@@ -255,7 +274,7 @@ def load_firmware_commands():
         )
 
         cmds.append(openocd_cmd)
-        names.append(base_name)
+        names.append(display_name)   # ✅ 번호 제거된 이름만 메뉴에 사용
 
     # 마지막 메뉴는 시스템 업데이트(git_pull)
     cmds.append("git_pull")
