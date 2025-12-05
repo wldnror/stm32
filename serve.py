@@ -105,11 +105,9 @@ def button_execute_callback(channel):
     """
     AUTO 모드:
       - NEXT와 거의 동시에 → 모드 전환
-      - EXECUTE 단독 짧게: 메뉴 한 칸 아래로 이동 (NEXT처럼)
-      - EXECUTE 단독 길게: 현재 선택 항목 실행
-          * dir/system/back: 실제 진입/실행
-          * bin: 한 칸 위로 이동 (자동 실행 대상 변경)
-        길게 누르고 있는 동안 LONG_PRESS_THRESHOLD를 넘는 시점에 바로 실행됨
+      - EXECUTE 단독 '짧게': 이전 항목으로 이동 (index - 1)
+      - EXECUTE 단독 '길게 누르고 있음': 폴더/시스템/◀ 이전으로 진입(실행)
+        * bin 항목에서는 별도 실행 없이 그대로 둠 (자동 실행은 메인 루프에서)
     MANUAL 모드:
       - EXECUTE = 현재 항목 실행 (기존과 동일)
     """
@@ -136,21 +134,24 @@ def button_execute_callback(channel):
     if is_auto_mode:
         # --- AUTO 모드: 길게/짧게 구분 ---
         press_start = time.time()
+        long_handled = False
 
-        # 버튼 상태를 보면서 "길게 누르고 있는지" 감지
         while True:
+            # 버튼이 올라갔는지 먼저 확인
             if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.HIGH:
-                # 버튼이 기준 시간 전에 떼어졌으면 → 짧게 누른 것
-                press_duration = time.time() - press_start
-                print(f"[AUTO] EXECUTE short press ({press_duration:.3f}s)")
-                # 짧게: 메뉴 한 칸 아래로 이동 (NEXT처럼)
-                if commands:
-                    current_command_index = (current_command_index + 1) % len(commands)
-                    need_update = True
+                # 아직 LONG_PRESS_THRESHOLD를 넘지 않았으면 → 짧게 눌렀다가 뗀 것
+                if not long_handled:
+                    press_duration = time.time() - press_start
+                    print(f"[AUTO] EXECUTE short press ({press_duration:.3f}s)")
+                    # 짧게: '이전 항목'으로 이동 (index - 1)
+                    if commands:
+                        current_command_index = (current_command_index - 1) % len(commands)
+                        need_update = True
                 break
 
-            if time.time() - press_start >= LONG_PRESS_THRESHOLD:
-                # 기준 시간을 넘도록 계속 누르고 있으면 → 길게 누르는 중으로 판단
+            # 길게 누르는 중: 기준 시간 넘었는지 확인
+            if not long_handled and (time.time() - press_start >= LONG_PRESS_THRESHOLD):
+                long_handled = True
                 print(f"[AUTO] EXECUTE long press detected (>{LONG_PRESS_THRESHOLD}s)")
 
                 with display_lock:
@@ -162,13 +163,14 @@ def button_execute_callback(channel):
                           "type:", item_type)
 
                     if item_type in ("system", "dir", "back"):
-                        # 폴더/시스템/이전으로는 실제 실행(진입)
+                        # 폴더/시스템/이전으로는 실제 진입/실행
                         execute_command(current_command_index)
+                        need_update = True
                     else:
-                        # bin 타입일 때는 예전처럼 한 칸 위로 이동 (자동 실행 대상 변경)
-                        current_command_index = (current_command_index - 1) % len(commands)
-
-                    need_update = True
+                        # bin일 때는 여기서는 따로 실행 안 함
+                        # (자동 실행은 메인 루프에서 처리)
+                        pass
+                # 길게 동작 한 번 처리했으면 루프 종료
                 break
 
             time.sleep(0.01)
@@ -683,7 +685,7 @@ def get_ip_address():
         ip = s.getsockname()[0]
         s.close()
         return ip
-    except Exception as e:
+    except Exception:
         return "0.0.0.0"
 
 def update_oled_display():
@@ -713,7 +715,12 @@ def update_oled_display():
             if item_type != "system":
                 battery_icon = select_battery_icon(voltage_percentage)
                 draw.bitmap((90, -9), battery_icon, fill=255)
-                draw.text((99, 3), f"{voltage_percentage:.0f}%", font=font_st, fill=255)
+                # 퍼센티지 표시 (음수면 오류이므로 '--%')
+                if voltage_percentage >= 0:
+                    perc_text = f"{voltage_percentage:.0f}%"
+                else:
+                    perc_text = "--%"
+                draw.text((99, 3), perc_text, font=font_st, fill=255)
                 draw.text((27, 1), current_time, font=font_time, fill=255)
             else:
                 if ip_address == "0.0.0.0":
