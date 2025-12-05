@@ -1,4 +1,4 @@
-6from datetime import datetime
+from datetime import datetime
 import RPi.GPIO as GPIO
 import time
 import os
@@ -470,6 +470,7 @@ def execute_command(command_index):
         print(f"'{commands[command_index]}' 업데이트 성공!")
         display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
         time.sleep(0.5)
+        time.sleep(3)
         lock_memory_procedure()
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
