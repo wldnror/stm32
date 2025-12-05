@@ -15,10 +15,10 @@ import re  # ← 번호 파싱용
 
 VISUAL_X_OFFSET = 0  # 필요에 따라 -3, -4 등으로 조절
 display_lock = threading.Lock()
+
 # GPIO 핀 설정
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
-# LED_DEBUGGING = 23
 LED_SUCCESS = 24
 LED_ERROR = 25
 LED_ERROR1 = 23
@@ -38,6 +38,7 @@ GPIO.setmode(GPIO.BCM)
 last_time_button_next_pressed = 0
 last_time_button_execute_pressed = 0
 button_press_interval = 0.5  # 두 버튼이 동시에 눌린 것으로 간주되는 최대 시간 차이
+LONG_PRESS_THRESHOLD = 0.7   # EXECUTE 길게 누르는 기준 시간(초)
 
 need_update = False
 is_command_executing = False
@@ -58,10 +59,16 @@ commands = []
 command_names = []
 command_types = []           # "bin", "dir", "system", "back"
 menu_extras = []             # type이 "dir"일 때 하위 디렉토리 경로 저장
+current_command_index = 0
+
+status_message = ""
+message_position = (0, 0)
+message_font_size = 17
 
 # ---------------- 버튼 / 모드 ----------------
 
 def toggle_mode():
+    """AUTO <-> MANUAL 모드 전환"""
     global is_auto_mode, last_mode_toggle_time
     is_auto_mode = not is_auto_mode
     last_mode_toggle_time = time.time()
@@ -75,15 +82,17 @@ def button_next_callback(channel):
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 일정 시간 동안는 입력 무시
+    # 모드 전환 직후 일정 시간 동안 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 10):
         is_button_pressed = False
         return
 
-    # EXECUTE 버튼이 최근에 눌렸는지 확인
+    # EXECUTE 버튼이 최근에 눌렸는지 확인 → 두 버튼 동시에 눌린 것으로 보고 모드 전환
     if current_time - last_time_button_execute_pressed < button_press_interval:
         toggle_mode()  # 모드 전환
         need_update = True
     else:
+        # NEXT 고유 기능: 메뉴 한 칸 아래로 이동
         if commands:  # 명령 목록이 비어있지 않을 때만 인덱스 변경
             current_command_index = (current_command_index + 1) % len(commands)
             need_update = True
@@ -93,59 +102,87 @@ def button_next_callback(channel):
 
 
 def button_execute_callback(channel):
+    """
+    AUTO 모드:
+      - NEXT와 거의 동시에 → 모드 전환
+      - EXECUTE 단독 짧게: 메뉴 한 칸 아래로 이동 (NEXT처럼)
+      - EXECUTE 단독 길게: 현재 선택 항목 실행
+          * dir/system/back: 실제 진입/실행
+          * bin: 한 칸 위로 이동 (자동 실행 대상 변경)
+        길게 누르고 있는 동안 LONG_PRESS_THRESHOLD를 넘는 시점에 바로 실행됨
+    MANUAL 모드:
+      - EXECUTE = 현재 항목 실행 (기존과 동일)
+    """
     global current_command_index, need_update, last_mode_toggle_time, is_executing, is_button_pressed
     global last_time_button_next_pressed, last_time_button_execute_pressed
 
     current_time = time.time()
     is_button_pressed = True
 
-    if is_executing or (current_time - last_mode_toggle_time < 10):  # 모드 전환 후 일정 시간 동안는 입력 무시
+    # 모드 전환 직후 일정 시간 동안 입력 무시
+    if is_executing or (current_time - last_mode_toggle_time < 10):
         is_button_pressed = False
         return
 
-    # NEXT 버튼이 최근에 눌렸는지 확인
+    # 1) NEXT + EXECUTE 거의 동시에 → 모드 전환
     if current_time - last_time_button_next_pressed < button_press_interval:
-        toggle_mode()  # 모드 전환
+        toggle_mode()
         need_update = True
+        last_time_button_execute_pressed = current_time
+        is_button_pressed = False
+        return
+
+    # 2) 여기부터 EXECUTE 단독 동작
+    if is_auto_mode:
+        # --- AUTO 모드: 길게/짧게 구분 ---
+        press_start = time.time()
+
+        # 버튼 상태를 보면서 "길게 누르고 있는지" 감지
+        while True:
+            if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.HIGH:
+                # 버튼이 기준 시간 전에 떼어졌으면 → 짧게 누른 것
+                press_duration = time.time() - press_start
+                print(f"[AUTO] EXECUTE short press ({press_duration:.3f}s)")
+                # 짧게: 메뉴 한 칸 아래로 이동 (NEXT처럼)
+                if commands:
+                    current_command_index = (current_command_index + 1) % len(commands)
+                    need_update = True
+                break
+
+            if time.time() - press_start >= LONG_PRESS_THRESHOLD:
+                # 기준 시간을 넘도록 계속 누르고 있으면 → 길게 누르는 중으로 판단
+                print(f"[AUTO] EXECUTE long press detected (>{LONG_PRESS_THRESHOLD}s)")
+
+                with display_lock:
+                    if not commands:
+                        break
+
+                    item_type = command_types[current_command_index]
+                    print("[AUTO] LONG PRESS EXECUTE on index", current_command_index,
+                          "type:", item_type)
+
+                    if item_type in ("system", "dir", "back"):
+                        # 폴더/시스템/이전으로는 실제 실행(진입)
+                        execute_command(current_command_index)
+                    else:
+                        # bin 타입일 때는 예전처럼 한 칸 위로 이동 (자동 실행 대상 변경)
+                        current_command_index = (current_command_index - 1) % len(commands)
+
+                    need_update = True
+                break
+
+            time.sleep(0.01)
+
     else:
-        # EXECUTE 버튼만 눌렸을 때의 로직
-        if not is_auto_mode:
-            # 수동 모드에서는 현재 메뉴 항목을 실행 (dir/back/system/bin 모두 포함)
-            if commands:
-                print("[MANUAL] EXECUTE on index", current_command_index,
-                      "type:", command_types[current_command_index])
-                execute_command(current_command_index)
-                need_update = True
-        else:
-            # 자동 모드
-            with display_lock:
-                if not commands:
-                    is_button_pressed = False
-                    return
+        # --- MANUAL 모드: 기존 로직 그대로 (EXECUTE = 실행) ---
+        if commands:
+            print("[MANUAL] EXECUTE on index", current_command_index,
+                  "type:", command_types[current_command_index])
+            execute_command(current_command_index)
+            need_update = True
 
-                item_type = command_types[current_command_index]
-                print("[AUTO] EXECUTE on index", current_command_index,
-                      "type:", item_type)
-
-                # 자동 모드에서도 폴더/이전/시스템은 선택(실행) 가능하게
-                if item_type in ("system", "dir", "back"):
-                    execute_command(current_command_index)
-                else:
-                    # bin 타입일 때는 기존처럼 한 칸 위로 이동
-                    # (실제 실행은 메인 루프에서 자동으로)
-                    current_command_index = (current_command_index - 1) % len(commands)
-
-                need_update = True
-
-    last_time_button_execute_pressed = current_time  # EXECUTE 버튼 눌린 시간 갱신
+    last_time_button_execute_pressed = time.time()
     is_button_pressed = False
-
-
-# (주의) 위에서 한 번 정의했지만, 아래 정의가 최종으로 사용됨
-def toggle_mode():
-    global is_auto_mode
-    is_auto_mode = not is_auto_mode
-    update_oled_display()  # OLED 화면 업데이트
 
 
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
@@ -234,7 +271,7 @@ font_1 = ImageFont.truetype(font_path, 21)   # 일반 메뉴(펌웨어 .bin)용
 font_sysupdate = ImageFont.truetype(font_path, 17)  # 시스템 업데이트 전용 더 작은 폰트
 font_time = ImageFont.truetype(font_path, 12)
 
-# 배터리 아이콘 로드
+# 배터리 아이콘 로드 (지금은 모두 같은 이미지 사용)
 low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
@@ -367,11 +404,14 @@ command_types = current_menu["types"]
 menu_extras = current_menu["extras"]
 current_command_index = 0
 
-status_message = ""
-message_position = (0, 0)
-message_font_size = 17
-
 # ---------------- git pull / 진행바 ----------------
+
+def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
+    with canvas(device) as draw:
+        draw.text(message_position, message, font=font, fill=255)
+        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
+        draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")
+
 
 def git_pull():
     shell_script_path = '/home/user/stm32/git-pull.sh'
@@ -430,12 +470,6 @@ def git_pull():
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
-
-def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
-    with canvas(device) as draw:
-        draw.text(message_position, message, font=font, fill=255)
-        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
-        draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")
 
 # ---------------- 메모리 잠금/해제 ----------------
 
