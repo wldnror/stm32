@@ -198,7 +198,8 @@ font_s = ImageFont.truetype(font_path, 13)
 font_st = ImageFont.truetype(font_path, 11)
 font = ImageFont.truetype(font_path, 17)
 font_status = ImageFont.truetype(font_path, 13)
-font_1 = ImageFont.truetype(font_path, 21)
+font_1 = ImageFont.truetype(font_path, 21)   # 일반 메뉴(펌웨어 .bin)용
+font_sysupdate = ImageFont.truetype(font_path, 17)  # 🔥 시스템 업데이트 전용 더 작은 폰트
 font_time = ImageFont.truetype(font_path, 12)
 
 # 배터리 아이콘 로드
@@ -539,24 +540,27 @@ def update_oled_display():
                 # ✅ 메뉴 이름을 가운데 정렬로 표시 (anchor="mm" 사용)
                 title = command_names[current_command_index]
                 center_x = device.width // 2 + VISUAL_X_OFFSET
-                # center_y = device.height // 2 + 4  # +값이면 아래로 이동, -값이면 위로 이동
+
+                # 시스템 업데이트만 약간 위로 + 작은 폰트
                 if title == "시스템 업데이트":
                     center_y = 35  # 🔥 업데이트만 위로
+                    use_font = font_sysupdate
                 else:
                     center_y = 42  # 일반 메뉴는 조금 아래로 중앙 근처
+                    use_font = font_1
 
                 try:
                     # Pillow에서 anchor 지원될 때
-                    draw.text((center_x, center_y), title, font=font_1, fill=255, anchor="mm")
+                    draw.text((center_x, center_y), title, font=use_font, fill=255, anchor="mm")
                 except TypeError:
                     # anchor 없으면 수동으로 중앙 계산
                     try:
-                        w, h = draw.textsize(title, font=font_1)
+                        w, h = draw.textsize(title, font=use_font)
                     except Exception:
                         w, h = (len(title) * 8, 16)
                     x = int(center_x - w / 2)
                     y = int(center_y - h / 2)
-                    draw.text((x, y), title, font=font_1, fill=255)
+                    draw.text((x, y), title, font=use_font, fill=255)
 
 
 # 실시간 업데이트를 위한 스레드 함수
