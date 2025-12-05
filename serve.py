@@ -1,4 +1,4 @@
-from datetime import datetime
+6from datetime import datetime
 import RPi.GPIO as GPIO
 import time
 import os
@@ -309,7 +309,7 @@ def git_pull():
                 print("업데이트 성공!")
                 GPIO.output(LED_SUCCESS, True)
                 display_progress_and_message(100, "업데이트 성공!", message_position=(10, 10), font_size=15)
-                time.sleep(1)
+                time.sleep(10)
                 GPIO.output(LED_SUCCESS, False)
                 restart_script()
         else:
