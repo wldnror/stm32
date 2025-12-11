@@ -729,7 +729,7 @@ def update_oled_display():
                     ip_display = ip_address
                 draw.text((0, 51), ip_display, font=font_big, fill=255)
                 draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
-                draw.text((83, 50), 'ver 3.70', font=font_big, fill=255)
+                draw.text((83, 50), 'ver 3.71', font=font_big, fill=255)
                 draw.text((0, -3), current_time, font=font_time, fill=255)
 
             # 상태 메시지가 있을 때 전체 메시지 화면
