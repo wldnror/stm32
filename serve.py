@@ -199,7 +199,6 @@ def check_stm32_connection():
                 connection_failed_since_last_success = False
             else:
                 print("STM32 연결 성공")
-                # 연속적으로 성공 메시지가 찍히는 것을 막으려면 여기서 토글/플래그 처리
                 connection_success = True
             return True
         else:
@@ -454,7 +453,6 @@ def unlock_memory():
     else:
         display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
         time.sleep(1)
-        # 실패 후에는 메인 OLED 갱신 요청만
         global need_update
         need_update = True
         return False
@@ -764,10 +762,6 @@ realtime_update_thread.start()
 need_update = True
 
 try:
-    global mode_toggle_requested, next_pressed_event
-    global execute_is_down, execute_press_time
-    global last_stm32_check_time
-
     while True:
         now = time.time()
 
@@ -824,7 +818,7 @@ try:
 
         # 4) 모드 토글 요청 처리
         if mode_toggle_requested:
-            # 모드 전환 직후 10초 동안은 중복 전환 방지
+            # 모드 전환 직후 0.5초 동안은 중복 전환 방지
             if now - last_mode_toggle_time >= 0.5:
                 toggle_mode()
             mode_toggle_requested = False
