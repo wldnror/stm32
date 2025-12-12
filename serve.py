@@ -52,6 +52,7 @@ mode_toggle_requested = False
 # EXECUTE 버튼 길게/짧게 판정용
 execute_press_time = None
 execute_is_down = False
+execute_long_handled = False  # ← 이 눌림에서 long press 처리 여부
 
 # NEXT 버튼 눌림 이벤트 플래그 (메인 루프에서 처리)
 next_pressed_event = False
@@ -145,11 +146,12 @@ def button_execute_callback(channel):
     실제 길게/짧게/모드 전환 판단은 메인 루프에서,
     버튼이 '떨어지는 시점'을 폴링으로 체크.
     """
-    global last_time_button_execute_pressed, execute_press_time, execute_is_down
+    global last_time_button_execute_pressed, execute_press_time, execute_is_down, execute_long_handled
     now = time.time()
     last_time_button_execute_pressed = now
     execute_press_time = now
     execute_is_down = True
+    execute_long_handled = False  # 새 눌림 시작 시 long 처리 플래그 리셋
 
 # 자동 모드와 수동 모드 아이콘 대신 문자열 사용
 auto_mode_text = 'A'
@@ -409,7 +411,7 @@ def git_pull():
                 GPIO.output(LED_SUCCESS, False)
                 restart_script()
         else:
-            print("GitHub 업데이트 실패. 오류 코드:", result.returncode)
+            print("GitHub 업데이트 실패. 오류 코드:", resultreturncode)
             print("오류 메시지:", result.stderr)
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
@@ -770,9 +772,21 @@ try:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
 
+        # 2-0) EXECUTE 길게 누르는 중인지 감시 (버튼이 아직 내려가 있는 상태에서 long 처리)
+        if execute_is_down and not execute_long_handled and execute_press_time is not None:
+            if now - execute_press_time >= LONG_PRESS_THRESHOLD:
+                execute_long_handled = True
+                if is_auto_mode and commands and not is_executing:
+                    item_type = command_types[current_command_index]
+                    print(f"[AUTO] EXECUTE long press detected (hold), type={item_type}")
+                    if item_type in ("system", "dir", "back"):
+                        execute_command(current_command_index)
+                        need_update = True
+                # MANUAL 모드는 길이 구분 없이 release에서만 실행 처리
+
         # 2) EXECUTE 버튼 릴리즈 감지 (길게/짧게/모드 전환 판단)
         if execute_is_down and GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.HIGH:
-            # 버튼이 올라감 → 눌렀던 시간으로 동작 판단
+            # 버튼이 올라감 → 눌렀던 시간으로 동작 판단 (단, long은 위에서 이미 처리될 수 있음)
             duration = now - execute_press_time if execute_press_time else 0
             execute_is_down = False
 
@@ -781,29 +795,29 @@ try:
                 mode_toggle_requested = True
                 # 이 경우 NEXT 이벤트는 취소
                 next_pressed_event = False
+
             else:
                 # AUTO / MANUAL 모드별 동작
                 if is_auto_mode:
-                    if duration < LONG_PRESS_THRESHOLD:
-                        # 짧게: '이전 항목'으로 이동 (index - 1)
+                    if execute_long_handled:
+                        # 이미 long press 로직 처리됨 → 여기서는 아무 것도 하지 않음
+                        print(f"[AUTO] EXECUTE release after long press ({duration:.3f}s)")
+                    else:
+                        # long 처리 안 됐으면 무조건 short로 처리
                         if commands and not is_executing:
+                            print(f"[AUTO] EXECUTE short press ({duration:.3f}s)")
                             current_command_index = (current_command_index - 1) % len(commands)
                             need_update = True
-                    else:
-                        # 길게: 폴더/시스템/◀ 이전으로 진입(실행)
-                        if commands and not is_executing:
-                            item_type = command_types[current_command_index]
-                            print(f"[AUTO] EXECUTE long press ({duration:.3f}s), type={item_type}")
-                            if item_type in ("system", "dir", "back"):
-                                execute_command(current_command_index)
-                                need_update = True
-                            # bin은 자동 실행 루프에서 처리
                 else:
-                    # MANUAL 모드: EXECUTE = 현재 항목 실행 (길이 무시)
+                    # MANUAL 모드: 길이 상관 없이 실행
                     if commands and not is_executing:
                         print("[MANUAL] EXECUTE pressed, run command")
                         execute_command(current_command_index)
                         need_update = True
+
+            # 이 눌림에 대한 상태 리셋
+            execute_press_time = None
+            execute_long_handled = False
 
         # 3) NEXT 버튼 단독 이벤트 처리 (모드 전환 조합이 아닌 경우)
         if next_pressed_event:
