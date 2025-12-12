@@ -824,7 +824,7 @@ try:
             # EXECUTE를 함께 누른 케이스는 위에서 처리
             if not execute_is_down and (now - last_time_button_next_pressed) >= 0:
                 # 모드 전환 직후 10초 동안은 입력 무시 (기존 로직 유지)
-                if not is_executing and (now - last_mode_toggle_time >= 10):
+                if not is_executing and (now - last_mode_toggle_time >= 1):
                     if commands:
                         current_command_index = (current_command_index + 1) % len(commands)
                         need_update = True
