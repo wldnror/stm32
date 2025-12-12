@@ -31,7 +31,7 @@ MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
 # 자동 모드와 수동 모드 상태를 추적하는 전역 변수
 is_auto_mode = True
 
-# 이 STM32 연결 세션에서 자동 업데이트를 이미 1회 했는지 여부
+# 이 STM32 "연결 세션"에서 자동 업데이트를 이미 1회 했는지 여부
 auto_flash_done_connection = False
 
 # GPIO 핀 번호 모드 설정 및 초기 상태 설정
@@ -183,13 +183,9 @@ def check_stm32_connection():
     너무 자주 돌지 않도록 메인 루프에서 주기 제한.
     """
     global connection_success, connection_failed_since_last_success, is_command_executing
-    global auto_flash_done_connection
 
     if is_command_executing:
         return False
-
-    # 이전 연결 상태 저장
-    prev_connection_success = connection_success
 
     try:
         command = [
@@ -213,11 +209,6 @@ def check_stm32_connection():
             print("STM32 연결 실패:", result.stderr)
             connection_failed_since_last_success = True
             connection_success = False
-
-        # False -> True 로 바뀐 순간: 새 STM32 연결
-        if connection_success and not prev_connection_success:
-            print("=> 새 STM32 연결 감지: 자동 업데이트 1회 허용 상태로 리셋")
-            auto_flash_done_connection = False
 
         return connection_success
 
@@ -505,7 +496,7 @@ def lock_memory_procedure():
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
-            print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
+            print("메모리 잠금에 실패했습니다. 오류 코드:", resultreturncode)
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
             display_progress_and_message(0, "메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
@@ -850,21 +841,29 @@ try:
                 toggle_mode()
             mode_toggle_requested = False
 
-        # 5) 자동 모드에서 bin 타입 자동 실행 + STM32 연결 체크 (주기 제한)
+        # 4.5) STM32 연결 상태 주기적 확인 (3초마다)
+        if now - last_stm32_check_time > 3.0:
+            last_stm32_check_time = now
+            prev_state = connection_success
+            check_stm32_connection()
+            if connection_success and not prev_state:
+                print("=> 새 STM32 연결 감지: 자동 업데이트 1회 허용 상태로 리셋")
+                auto_flash_done_connection = False
+            elif (not connection_success) and prev_state:
+                print("=> STM32 케이블 제거 감지")
+
+        # 5) 자동 모드에서 bin 타입 자동 실행 (연결당 1회)
         if commands:
             if (
                 is_auto_mode
                 and command_types[current_command_index] == "bin"
                 and not is_executing
-                and not auto_flash_done_connection   # 이 연결 세션에서 아직 자동 업데이트 안 했을 때만
+                and connection_success             # 실제 STM32가 연결돼 있을 때만
+                and not auto_flash_done_connection # 이 연결 세션에서 아직 자동 업데이트 안 했을 때만
             ):
-                # STM32 연결 체크는 3초에 한 번만 수행
-                if now - last_stm32_check_time > 3.0:
-                    last_stm32_check_time = now
-                    if check_stm32_connection() and connection_success:
-                        execute_command(current_command_index)
-                        # 이 STM32 연결 세션에서는 자동 업데이트 1회 완료
-                        auto_flash_done_connection = True
+                print("[AUTO] STM32 연결 상태에서 자동 업데이트 1회 실행")
+                execute_command(current_command_index)
+                auto_flash_done_connection = True
 
         time.sleep(0.03)
 
