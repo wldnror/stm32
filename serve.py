@@ -842,7 +842,7 @@ try:
             mode_toggle_requested = False
 
         # 4.5) STM32 연결 상태 주기적 확인 (3초마다)
-        if now - last_stm32_check_time > 3.0:
+        if now - last_stm32_check_time > 0.7:
             last_stm32_check_time = now
             prev_state = connection_success
             check_stm32_connection()
