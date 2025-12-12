@@ -37,8 +37,8 @@ GPIO.setmode(GPIO.BCM)
 # 전역 변수로 마지막으로 눌린 시간을 추적
 last_time_button_next_pressed = 0.0
 last_time_button_execute_pressed = 0.0
-button_press_interval = 0.5  # 두 버튼이 동시에 눌린 것으로 간주되는 최대 시간 차이
-LONG_PRESS_THRESHOLD = 0.8   # EXECUTE 길게 누르는 기준 시간(초)
+button_press_interval = 0.15  # 두 버튼이 동시에 눌린 것으로 간주되는 최대 시간 차이
+LONG_PRESS_THRESHOLD = 0.7   # EXECUTE 길게 누르는 기준 시간(초)
 
 need_update = False
 is_command_executing = False
@@ -160,8 +160,8 @@ manual_mode_text = 'M'
 # GPIO 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=800)
-GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=800)
+GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=100)
+GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=100)
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
