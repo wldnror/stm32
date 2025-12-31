@@ -278,15 +278,7 @@ def parse_order_and_name(name: str, is_dir: bool):
     return order, display
 
 def build_menu_for_dir(dir_path, is_root=False):
-    """
-    dir_path 안의 폴더와 .bin 파일을 읽어서 메뉴를 구성한다.
-    - 폴더   → type: "dir"
-    - .bin  → type: "bin"
-    - 루트   → 마지막에 "시스템 업데이트" (type: "system")
-    - 서브폴더 → 마지막에 "◀ 이전으로" (type: "back")
-    정렬 순서:
-    - 번호(order) → 타입(폴더/파일) → 이름
-    """
+   
     entries = []  # (order, type_pri, display, type, extra)
 
     try:
@@ -728,11 +720,7 @@ def update_oled_display():
 last_oled_update_time = 0.0
 
 def realtime_update_display():
-    """
-    OLED는 이 쓰레드만 직접 그리게 한다.
-    - need_update 플래그가 True이거나
-    - 마지막 업데이트 이후 1초 이상 지났을 때 갱신
-    """
+
     global is_command_executing, need_update, last_oled_update_time
     while True:
         if not is_command_executing:
