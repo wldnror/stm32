@@ -591,19 +591,19 @@ def execute_command(command_index):
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-    if not unlock_memory():
-        GPIO.output(LED_ERROR, True)
-        GPIO.output(LED_ERROR1, True)
-        with canvas(device) as draw:
-            draw.text((20, 8), "메모리 잠금", font=font, fill=255)
-            draw.text((28, 27), "해제 실패", font=font, fill=255)
-        time.sleep(2)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
-        is_executing = False
-        is_command_executing = False
-        need_update = True
-        return
+    # if not unlock_memory():
+    #     GPIO.output(LED_ERROR, True)
+    #     GPIO.output(LED_ERROR1, True)
+    #     with canvas(device) as draw:
+    #         draw.text((20, 8), "메모리 잠금", font=font, fill=255)
+    #         draw.text((28, 27), "해제 실패", font=font, fill=255)
+    #     time.sleep(2)
+    #     GPIO.output(LED_ERROR, False)
+    #     GPIO.output(LED_ERROR1, False)
+    #     is_executing = False
+    #     is_command_executing = False
+    #     need_update = True
+    #     return
 
     display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
