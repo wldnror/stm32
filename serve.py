@@ -17,7 +17,6 @@ VISUAL_X_OFFSET = 0
 display_lock = threading.Lock()
 state_lock = threading.Lock()
 stm32_state_lock = threading.Lock()
-openocd_lock = threading.Lock()
 
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
@@ -71,24 +70,9 @@ connection_failed_since_last_success = False
 last_stm32_check_time = 0.0
 
 stop_threads = False
-last_selected_type = None
-
-font_cache = {}
-def get_font(size: int):
-    f = font_cache.get(size)
-    if f is None:
-        f = ImageFont.truetype(font_path, size)
-        font_cache[size] = f
-    return f
 
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-def run_openocd(args, timeout=None, capture=True):
-    with openocd_lock:
-        if capture:
-            return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
-        return subprocess.run(args, timeout=timeout)
 
 def init_ina219():
     global ina
@@ -125,11 +109,10 @@ def toggle_mode():
     global is_auto_mode, last_mode_toggle_time, need_update
     global stm32_poll_enabled, connection_success, connection_failed_since_last_success
 
-    with state_lock:
-        is_auto_mode = not is_auto_mode
-        last_mode_toggle_time = time.time()
-        need_update = True
-        stm32_poll_enabled = is_auto_mode
+    is_auto_mode = not is_auto_mode
+    last_mode_toggle_time = time.time()
+    need_update = True
+    stm32_poll_enabled = is_auto_mode
 
     if not is_auto_mode:
         kill_openocd()
@@ -160,11 +143,10 @@ GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
 
 def check_stm32_connection():
-    global connection_success, connection_failed_since_last_success
+    global connection_success, connection_failed_since_last_success, is_command_executing
 
-    with state_lock:
-        if is_command_executing:
-            return False
+    if is_command_executing:
+        return False
 
     try:
         command = [
@@ -174,56 +156,73 @@ def check_stm32_connection():
             "-c", "init",
             "-c", "exit"
         ]
-        result = run_openocd(command, timeout=1.2, capture=True)
-        ok = (result.returncode == 0)
-        if not ok:
-            if result.stderr:
-                print("STM32 연결 실패:", result.stderr)
-    except subprocess.TimeoutExpired:
-        ok = False
-    except Exception as e:
-        print(f"STM32 연결 체크 중 오류 발생: {e}")
-        ok = False
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=1.2
+        )
 
-    with stm32_state_lock:
-        if ok:
-            if connection_failed_since_last_success:
-                print("STM32 재연결 성공")
+        ok = (result.returncode == 0)
+
+        with stm32_state_lock:
+            if ok:
+                if connection_failed_since_last_success:
+                    print("STM32 재연결 성공")
+                    connection_failed_since_last_success = False
+                else:
+                    print("STM32 연결 성공")
+                connection_success = True
             else:
-                print("STM32 연결 성공")
-            connection_success = True
-            connection_failed_since_last_success = False
-        else:
+                print("STM32 연결 실패:", result.stderr)
+                connection_failed_since_last_success = True
+                connection_success = False
+
+        return ok
+
+    except subprocess.TimeoutExpired:
+        with stm32_state_lock:
             connection_failed_since_last_success = True
             connection_success = False
-
-    return ok
+        return False
+    except Exception as e:
+        print(f"STM32 연결 체크 중 오류 발생: {e}")
+        with stm32_state_lock:
+            connection_failed_since_last_success = True
+            connection_success = False
+        return False
 
 def stm32_poll_thread():
     global last_stm32_check_time, auto_flash_done_connection
     while not stop_threads:
-        time.sleep(0.1)
+        time.sleep(0.05)
 
-        with state_lock:
-            poll_ok = stm32_poll_enabled and is_auto_mode and (not is_command_executing)
-            idx = current_command_index
-            types = command_types[:] if command_types else []
-        if not poll_ok:
+        if not stm32_poll_enabled or not is_auto_mode or is_command_executing:
             continue
-        if types and 0 <= idx < len(types) and types[idx] == "system":
-            continue
+
+        if commands:
+            try:
+                if command_types[current_command_index] == "system":
+                    continue
+            except Exception:
+                continue
 
         now = time.time()
-        if now - last_stm32_check_time < 0.7:
+        if now - last_stm32_check_time <= 0.7:
             continue
         last_stm32_check_time = now
 
         with stm32_state_lock:
             prev_state = connection_success
+
         check_stm32_connection()
+
         with stm32_state_lock:
             cur_state = connection_success
+
         if cur_state and (not prev_state):
+            print("=> 새 STM32 연결 감지: 자동 업데이트 1회 허용 상태로 리셋")
             auto_flash_done_connection = False
 
 serial = i2c(port=1, address=0x3C)
@@ -238,6 +237,14 @@ font_status = ImageFont.truetype(font_path, 13)
 font_1 = ImageFont.truetype(font_path, 21)
 font_sysupdate = ImageFont.truetype(font_path, 17)
 font_time = ImageFont.truetype(font_path, 12)
+
+font_cache = {}
+def get_font(size: int):
+    f = font_cache.get(size)
+    if f is None:
+        f = ImageFont.truetype(font_path, size)
+        font_cache[size] = f
+    return f
 
 low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
@@ -256,7 +263,10 @@ def select_battery_icon(percentage):
 FIRMWARE_DIR = "/home/user/stm32/Program"
 
 def parse_order_and_name(name: str, is_dir: bool):
-    raw = name if is_dir else os.path.splitext(name)[0]
+    if is_dir:
+        raw = name
+    else:
+        raw = os.path.splitext(name)[0]
     m = re.match(r"^(\d+)\.(.*)$", raw)
     if m:
         order = int(m.group(1))
@@ -279,13 +289,13 @@ def build_menu_for_dir(dir_path, is_root=False):
 
             elif fname.lower().endswith(".bin"):
                 order, display_name = parse_order_and_name(fname, is_dir=False)
-                cmd = [
-                    "sudo", "openocd",
-                    "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-                    "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-                    "-c", f"program {full_path} verify reset exit 0x08000000"
-                ]
-                entries.append((order, 1, display_name, "bin", cmd))
+                openocd_cmd = (
+                    "sudo openocd "
+                    "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+                    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+                    f"-c \"program {full_path} verify reset exit 0x08000000\""
+                )
+                entries.append((order, 1, display_name, "bin", openocd_cmd))
 
     except FileNotFoundError:
         print("펌웨어 폴더를 찾을 수 없습니다:", dir_path)
@@ -416,22 +426,16 @@ def unlock_memory():
         "-c", "reset run",
         "-c", "shutdown"
     ]
-    try:
-        result = run_openocd(openocd_command, timeout=20, capture=False)
-        ok = (result.returncode == 0)
-    except Exception:
-        ok = False
+    result = subprocess.run(openocd_command)
 
-    if ok:
+    if result.returncode == 0:
         display_progress_and_message(30, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
         time.sleep(1)
         return True
-
     display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
     time.sleep(1)
     global need_update
-    with state_lock:
-        need_update = True
+    need_update = True
     return False
 
 def restart_script():
@@ -448,7 +452,8 @@ def lock_memory_procedure():
     global need_update
     display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
     openocd_command = [
-        "sudo", "openocd",
+        "sudo",
+        "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
         "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
         "-c", "init",
@@ -458,25 +463,30 @@ def lock_memory_procedure():
         "-c", "shutdown",
     ]
     try:
-        result = run_openocd(openocd_command, timeout=20, capture=True)
-        ok = (result.returncode == 0)
-    except Exception:
-        ok = False
-
-    if ok:
-        GPIO.output(LED_SUCCESS, True)
-        display_progress_and_message(100, "메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
-        time.sleep(1)
-        GPIO.output(LED_SUCCESS, False)
-    else:
+        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            print("성공적으로 메모리를 잠갔습니다.")
+            GPIO.output(LED_SUCCESS, True)
+            display_progress_and_message(100, "메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
+            time.sleep(1)
+            GPIO.output(LED_SUCCESS, False)
+        else:
+            print("메모리 잠금에 실패했습니다. 오류 코드:", result.returncode)
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            display_progress_and_message(0, "메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
+            time.sleep(1)
+            GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
+    except Exception as e:
+        print("명령 실행 중 오류 발생:", str(e))
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        display_progress_and_message(0, "메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
+        display_progress_and_message(0, "오류 발생")
         time.sleep(1)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
-
-    with state_lock:
+    finally:
         need_update = True
 
 def execute_command(command_index):
@@ -484,115 +494,105 @@ def execute_command(command_index):
     global current_menu, commands, command_names, command_types, menu_extras
     global current_command_index, menu_stack, need_update
 
-    with state_lock:
-        is_executing = True
-        is_command_executing = True
+    is_executing = True
+    is_command_executing = True
 
     if not commands:
-        with state_lock:
-            is_executing = False
-            is_command_executing = False
+        is_executing = False
+        is_command_executing = False
         return
 
     item_type = command_types[command_index]
+    print("[EXECUTE] index:", command_index, "type:", item_type, "name:", command_names[command_index])
 
     if item_type == "dir":
         subdir = menu_extras[command_index]
         if subdir and os.path.isdir(subdir):
-            with state_lock:
-                menu_stack.append((current_menu, current_command_index))
-            new_menu = build_menu_for_dir(subdir, is_root=False)
-            with state_lock:
-                current_menu = new_menu
-                commands = current_menu["commands"]
-                command_names = current_menu["names"]
-                command_types = current_menu["types"]
-                menu_extras = current_menu["extras"]
-                current_command_index = 0
-                need_update = True
+            menu_stack.append((current_menu, current_command_index))
+            current_menu = build_menu_for_dir(subdir, is_root=False)
+            commands = current_menu["commands"]
+            command_names = current_menu["names"]
+            command_types = current_menu["types"]
+            menu_extras = current_menu["extras"]
+            current_command_index = 0
+            need_update = True
 
-        with state_lock:
-            is_executing = False
-            is_command_executing = False
+        is_executing = False
+        is_command_executing = False
         return
 
     if item_type == "back":
-        with state_lock:
-            has_stack = bool(menu_stack)
-        if has_stack:
-            with state_lock:
-                prev_menu, prev_index = menu_stack.pop()
-                current_menu = prev_menu
-                commands = current_menu["commands"]
-                command_names = current_menu["names"]
-                command_types = current_menu["types"]
-                menu_extras = current_menu["extras"]
-                current_command_index = prev_index if 0 <= prev_index < len(commands) else 0
-                need_update = True
+        if menu_stack:
+            prev_menu, prev_index = menu_stack.pop()
+            current_menu = prev_menu
+            commands = current_menu["commands"]
+            command_names = current_menu["names"]
+            command_types = current_menu["types"]
+            menu_extras = current_menu["extras"]
 
-        with state_lock:
-            is_executing = False
-            is_command_executing = False
+            if 0 <= prev_index < len(commands):
+                current_command_index = prev_index
+            else:
+                current_command_index = 0
+
+            need_update = True
+
+        is_executing = False
+        is_command_executing = False
         return
 
     if item_type == "system":
         kill_openocd()
+        with stm32_state_lock:
+            global connection_success, connection_failed_since_last_success
+            connection_success = False
+            connection_failed_since_last_success = False
         git_pull()
-        with state_lock:
-            need_update = True
-            is_executing = False
-            is_command_executing = False
+        need_update = True
+        is_executing = False
+        is_command_executing = False
         return
 
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-    with openocd_lock:
-        if not unlock_memory():
-            GPIO.output(LED_ERROR, True)
-            GPIO.output(LED_ERROR1, True)
-            with canvas(device) as draw:
-                draw.text((20, 8), "메모리 잠금", font=font, fill=255)
-                draw.text((28, 27), "해제 실패", font=font, fill=255)
-            time.sleep(2)
-            GPIO.output(LED_ERROR, False)
-            GPIO.output(LED_ERROR1, False)
-            with state_lock:
-                is_executing = False
-                is_command_executing = False
-                need_update = True
-            return
+    if not unlock_memory():
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        with canvas(device) as draw:
+            draw.text((20, 8), "메모리 잠금", font=font, fill=255)
+            draw.text((28, 27), "해제 실패", font=font, fill=255)
+        time.sleep(2)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        is_executing = False
+        is_command_executing = False
+        need_update = True
+        return
 
-        display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
+    display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
+    process = subprocess.Popen(commands[command_index], shell=True)
 
-        cmd = commands[command_index]
-        try:
-            process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            process = None
+    start_time = time.time()
+    max_duration = 6
+    progress_increment = 20 / max_duration
 
-        start_time = time.time()
-        max_duration = 6
-        progress_increment = 20 / max_duration if max_duration > 0 else 0
+    while process.poll() is None:
+        elapsed = time.time() - start_time
+        current_progress = 30 + (elapsed * progress_increment)
+        current_progress = min(current_progress, 80)
+        display_progress_and_message(current_progress, "업데이트 중...", message_position=(12, 10), font_size=15)
+        time.sleep(0.5)
 
-        if process is not None:
-            while process.poll() is None:
-                elapsed = time.time() - start_time
-                current_progress = 30 + (elapsed * progress_increment)
-                current_progress = min(current_progress, 80)
-                display_progress_and_message(current_progress, "업데이트 중...", message_position=(12, 10), font_size=15)
-                time.sleep(0.5)
-
-            result = process.returncode
-        else:
-            result = 1
-
+    result = process.returncode
     if result == 0:
+        print(f"'{commands[command_index]}' 업데이트 성공!")
         display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
         time.sleep(0.5)
         # lock_memory_procedure()
     else:
+        print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         display_progress_and_message(0, "업데이트 실패", message_position=(7, 10), font_size=15)
@@ -600,10 +600,9 @@ def execute_command(command_index):
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
-    with state_lock:
-        need_update = True
-        is_executing = False
-        is_command_executing = False
+    need_update = True
+    is_executing = False
+    is_command_executing = False
 
 def get_ip_address():
     try:
@@ -617,28 +616,22 @@ def get_ip_address():
         return "0.0.0.0"
 
 def update_oled_display():
-    global status_message, message_position, message_font_size
+    global current_command_index, status_message, message_position, message_font_size
     with display_lock:
-        with state_lock:
-            if not commands:
-                return
-            idx = current_command_index
-            types = command_types[:]
-            names = command_names[:]
-            auto_mode = is_auto_mode
-        if not (0 <= idx < len(names) and 0 <= idx < len(types)):
+        if not commands:
             return
 
         ip_address = get_ip_address()
-        current_time = datetime.now().strftime("%H시 %M분")
+        now = datetime.now()
+        current_time = now.strftime("%H시 %M분")
         voltage_percentage = battery_percentage
 
         with canvas(device) as draw:
-            item_type = types[idx]
-            title = names[idx]
+            item_type = command_types[current_command_index]
+            title = command_names[current_command_index]
 
             if item_type != "system":
-                mode_char = "A" if auto_mode else "M"
+                mode_char = "A" if is_auto_mode else "M"
                 outer_ellipse_box = (2, 0, 22, 20)
                 text_position = {"A": (8, -3), "M": (5, -3)}
                 draw.ellipse(outer_ellipse_box, outline="white", fill=None)
@@ -660,14 +653,9 @@ def update_oled_display():
                 draw.text((83, 50), "ver 3.71", font=font_big, fill=255)
                 draw.text((0, -3), current_time, font=font_time, fill=255)
 
-            with state_lock:
-                sm = status_message
-                mp = message_position
-                mfs = message_font_size
-
-            if sm:
+            if status_message:
                 draw.rectangle(device.bounding_box, outline="white", fill="black")
-                draw.text(mp, sm, font=get_font(mfs), fill=255)
+                draw.text(message_position, status_message, font=get_font(message_font_size), fill=255)
             else:
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 if item_type == "system":
@@ -691,19 +679,14 @@ def update_oled_display():
 last_oled_update_time = 0.0
 
 def realtime_update_display():
-    global last_oled_update_time
+    global is_command_executing, need_update, last_oled_update_time
     while not stop_threads:
-        with state_lock:
-            busy = is_command_executing
-            nu = need_update
-        if not busy:
+        if not is_command_executing:
             now = time.time()
-            if nu or (now - last_oled_update_time >= 1.0):
+            if need_update or (now - last_oled_update_time >= 1.0):
                 update_oled_display()
                 last_oled_update_time = now
-                with state_lock:
-                    global need_update
-                    need_update = False
+                need_update = False
         time.sleep(0.05)
 
 def shutdown_system():
@@ -717,7 +700,6 @@ def shutdown_system():
         print("시스템 종료 중 오류 발생:", str(e))
 
 init_ina219()
-
 battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
 battery_thread.start()
 
@@ -727,27 +709,23 @@ realtime_update_thread.start()
 stm32_thread = threading.Thread(target=stm32_poll_thread, daemon=True)
 stm32_thread.start()
 
-with state_lock:
-    need_update = True
+need_update = True
 
 try:
     while True:
         now = time.time()
 
         if battery_percentage == 0:
+            print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
 
         if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
             if now - execute_press_time >= LONG_PRESS_THRESHOLD:
                 execute_long_handled = True
-                with state_lock:
-                    auto_mode = is_auto_mode
-                    can = bool(commands) and (not is_executing)
-                    idx = current_command_index
-                    it = command_types[idx] if can and 0 <= idx < len(command_types) else None
-                if auto_mode and can and it in ("system", "dir", "back"):
-                    execute_command(idx)
-                    with state_lock:
+                if is_auto_mode and commands and (not is_executing):
+                    item_type = command_types[current_command_index]
+                    if item_type in ("system", "dir", "back"):
+                        execute_command(current_command_index)
                         need_update = True
 
         if execute_is_down and GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.HIGH:
@@ -757,63 +735,46 @@ try:
                 mode_toggle_requested = True
                 next_pressed_event = False
             else:
-                with state_lock:
-                    auto_mode = is_auto_mode
-                    can = bool(commands) and (not is_executing)
-                    idx = current_command_index
-                if auto_mode:
-                    if not execute_long_handled:
-                        if can:
-                            with state_lock:
-                                current_command_index = (current_command_index - 1) % len(commands)
-                                need_update = True
-                else:
-                    if can:
-                        execute_command(idx)
-                        with state_lock:
+                if is_auto_mode:
+                    if execute_long_handled:
+                        pass
+                    else:
+                        if commands and (not is_executing):
+                            current_command_index = (current_command_index - 1) % len(commands)
                             need_update = True
+                else:
+                    if commands and (not is_executing):
+                        execute_command(current_command_index)
+                        need_update = True
 
             execute_press_time = None
             execute_long_handled = False
 
         if next_pressed_event:
             if (not execute_is_down) and (now - last_time_button_next_pressed) >= 0:
-                with state_lock:
-                    if (not is_executing) and (now - last_mode_toggle_time >= 1) and commands:
+                if (not is_executing) and (now - last_mode_toggle_time >= 1):
+                    if commands:
                         current_command_index = (current_command_index + 1) % len(commands)
                         need_update = True
                 next_pressed_event = False
 
         if mode_toggle_requested:
-            with state_lock:
-                ok = (now - last_mode_toggle_time >= 0.5)
-            if ok:
+            if now - last_mode_toggle_time >= 0.5:
                 toggle_mode()
             mode_toggle_requested = False
 
-        with state_lock:
-            st = command_types[current_command_index] if commands else None
+        with stm32_state_lock:
+            cs = connection_success
 
-        if st != last_selected_type:
-            last_selected_type = st
-            if st == "system":
-                kill_openocd()
-                with stm32_state_lock:
-                    connection_success = False
-                    connection_failed_since_last_success = False
-
-        with state_lock:
-            auto_mode = is_auto_mode
-            can = bool(commands) and (not is_executing)
-            idx = current_command_index
-            t = command_types[idx] if can and 0 <= idx < len(command_types) else None
-            done = auto_flash_done_connection
-
-        if can and auto_mode and t == "bin":
-            with stm32_state_lock:
-                cs = connection_success
-            if cs and (not done):
-                execute_command(idx)
+        if commands:
+            if (
+                is_auto_mode
+                and command_types[current_command_index] == "bin"
+                and (not is_executing)
+                and cs
+                and (not auto_flash_done_connection)
+            ):
+                execute_command(current_command_index)
                 auto_flash_done_connection = True
 
         time.sleep(0.03)
@@ -826,7 +787,4 @@ finally:
         kill_openocd()
     except Exception:
         pass
-    try:
-        GPIO.cleanup()
-    except Exception:
-        pass
+    GPIO.cleanup()
