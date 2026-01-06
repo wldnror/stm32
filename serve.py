@@ -93,11 +93,7 @@ def init_ina219():
         ina = None
 
 def read_ina219_percentage():
-    """
-    배터리 퍼센트 계산 (실제 I2C 읽기)
-    -> 전용 쓰레드에서만 호출하고,
-       다른 곳에서는 battery_percentage 캐시만 사용하도록 함.
-    """
+ 
     global ina
     if ina is None:
         return -1
@@ -616,7 +612,7 @@ def execute_command(command_index):
         print(f"'{commands[command_index]}' 업데이트 성공!")
         display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
         time.sleep(0.5)
-        lock_memory_procedure()
+        # lock_memory_procedure()
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
