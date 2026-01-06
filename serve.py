@@ -15,6 +15,8 @@ import re
 
 VISUAL_X_OFFSET = 0
 display_lock = threading.Lock()
+state_lock = threading.Lock()
+stm32_state_lock = threading.Lock()
 
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
@@ -63,6 +65,12 @@ message_font_size = 17
 ina = None
 battery_percentage = -1
 
+connection_success = False
+connection_failed_since_last_success = False
+last_stm32_check_time = 0.0
+
+stop_threads = False
+
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -93,7 +101,7 @@ def read_ina219_percentage():
 
 def battery_monitor_thread():
     global battery_percentage
-    while True:
+    while not stop_threads:
         battery_percentage = read_ina219_percentage()
         time.sleep(2)
 
@@ -104,13 +112,13 @@ def toggle_mode():
     is_auto_mode = not is_auto_mode
     last_mode_toggle_time = time.time()
     need_update = True
-
     stm32_poll_enabled = is_auto_mode
 
     if not is_auto_mode:
         kill_openocd()
-        connection_success = False
-        connection_failed_since_last_success = False
+        with stm32_state_lock:
+            connection_success = False
+            connection_failed_since_last_success = False
 
 def button_next_callback(channel):
     global last_time_button_next_pressed, next_pressed_event
@@ -134,10 +142,6 @@ GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
 
-connection_success = False
-connection_failed_since_last_success = False
-last_stm32_check_time = 0.0
-
 def check_stm32_connection():
     global connection_success, connection_failed_since_last_success, is_command_executing
 
@@ -152,28 +156,74 @@ def check_stm32_connection():
             "-c", "init",
             "-c", "exit"
         ]
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=1.2
+        )
 
-        if result.returncode == 0:
-            if connection_failed_since_last_success:
-                print("STM32 재연결 성공")
+        ok = (result.returncode == 0)
+
+        with stm32_state_lock:
+            if ok:
+                if connection_failed_since_last_success:
+                    print("STM32 재연결 성공")
+                    connection_failed_since_last_success = False
+                else:
+                    print("STM32 연결 성공")
                 connection_success = True
-                connection_failed_since_last_success = False
             else:
-                print("STM32 연결 성공")
-                connection_success = True
-        else:
-            print("STM32 연결 실패:", result.stderr)
+                print("STM32 연결 실패:", result.stderr)
+                connection_failed_since_last_success = True
+                connection_success = False
+
+        return ok
+
+    except subprocess.TimeoutExpired:
+        with stm32_state_lock:
             connection_failed_since_last_success = True
             connection_success = False
-
-        return connection_success
-
+        return False
     except Exception as e:
         print(f"STM32 연결 체크 중 오류 발생: {e}")
-        connection_failed_since_last_success = True
-        connection_success = False
+        with stm32_state_lock:
+            connection_failed_since_last_success = True
+            connection_success = False
         return False
+
+def stm32_poll_thread():
+    global last_stm32_check_time, auto_flash_done_connection
+    while not stop_threads:
+        time.sleep(0.05)
+
+        if not stm32_poll_enabled or not is_auto_mode or is_command_executing:
+            continue
+
+        if commands:
+            try:
+                if command_types[current_command_index] == "system":
+                    continue
+            except Exception:
+                continue
+
+        now = time.time()
+        if now - last_stm32_check_time <= 0.7:
+            continue
+        last_stm32_check_time = now
+
+        with stm32_state_lock:
+            prev_state = connection_success
+
+        check_stm32_connection()
+
+        with stm32_state_lock:
+            cur_state = connection_success
+
+        if cur_state and (not prev_state):
+            print("=> 새 STM32 연결 감지: 자동 업데이트 1회 허용 상태로 리셋")
+            auto_flash_done_connection = False
 
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
@@ -187,6 +237,14 @@ font_status = ImageFont.truetype(font_path, 13)
 font_1 = ImageFont.truetype(font_path, 21)
 font_sysupdate = ImageFont.truetype(font_path, 17)
 font_time = ImageFont.truetype(font_path, 12)
+
+font_cache = {}
+def get_font(size: int):
+    f = font_cache.get(size)
+    if f is None:
+        f = ImageFont.truetype(font_path, size)
+        font_cache[size] = f
+    return f
 
 low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
@@ -485,6 +543,10 @@ def execute_command(command_index):
 
     if item_type == "system":
         kill_openocd()
+        with stm32_state_lock:
+            global connection_success, connection_failed_since_last_success
+            connection_success = False
+            connection_failed_since_last_success = False
         git_pull()
         need_update = True
         is_executing = False
@@ -528,7 +590,6 @@ def execute_command(command_index):
         print(f"'{commands[command_index]}' 업데이트 성공!")
         display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
         time.sleep(0.5)
-        # lock_memory_procedure()
     else:
         print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
@@ -593,8 +654,7 @@ def update_oled_display():
 
             if status_message:
                 draw.rectangle(device.bounding_box, outline="white", fill="black")
-                font_custom = ImageFont.truetype(font_path, message_font_size)
-                draw.text(message_position, status_message, font=font_custom, fill=255)
+                draw.text(message_position, status_message, font=get_font(message_font_size), fill=255)
             else:
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 if item_type == "system":
@@ -619,7 +679,7 @@ last_oled_update_time = 0.0
 
 def realtime_update_display():
     global is_command_executing, need_update, last_oled_update_time
-    while True:
+    while not stop_threads:
         if not is_command_executing:
             now = time.time()
             if need_update or (now - last_oled_update_time >= 1.0):
@@ -645,6 +705,9 @@ battery_thread.start()
 realtime_update_thread = threading.Thread(target=realtime_update_display, daemon=True)
 realtime_update_thread.start()
 
+stm32_thread = threading.Thread(target=stm32_poll_thread, daemon=True)
+stm32_thread.start()
+
 need_update = True
 
 try:
@@ -665,7 +728,6 @@ try:
                         need_update = True
 
         if execute_is_down and GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.HIGH:
-            duration = now - execute_press_time if execute_press_time else 0
             execute_is_down = False
 
             if abs(last_time_button_next_pressed - last_time_button_execute_pressed) < button_press_interval:
@@ -700,28 +762,15 @@ try:
                 toggle_mode()
             mode_toggle_requested = False
 
-        selected_type = None
-        if commands:
-            selected_type = command_types[current_command_index]
-
-        if (
-            stm32_poll_enabled
-            and is_auto_mode
-            and (selected_type != "system")
-            and (now - last_stm32_check_time > 0.7)
-        ):
-            last_stm32_check_time = now
-            prev_state = connection_success
-            check_stm32_connection()
-            if connection_success and (not prev_state):
-                auto_flash_done_connection = False
+        with stm32_state_lock:
+            cs = connection_success
 
         if commands:
             if (
                 is_auto_mode
                 and command_types[current_command_index] == "bin"
                 and (not is_executing)
-                and connection_success
+                and cs
                 and (not auto_flash_done_connection)
             ):
                 execute_command(current_command_index)
@@ -732,6 +781,7 @@ try:
 except KeyboardInterrupt:
     pass
 finally:
+    stop_threads = True
     try:
         kill_openocd()
     except Exception:
