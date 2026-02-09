@@ -1,3 +1,4 @@
+
 from datetime import datetime
 import RPi.GPIO as GPIO
 import time
@@ -51,25 +52,19 @@ auto_flash_done_connection = False
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
-# 버튼 시간 기록 (동시 입력 억제용)
 last_time_button_next_pressed = 0.0
 last_time_button_execute_pressed = 0.0
 
-# ✅ 너무 공격적이던 동시 입력 억제 완화
-button_press_interval = 0.05
-
-# ✅ 롱프레스 기준
+button_press_interval = 0.15
 LONG_PRESS_THRESHOLD = 0.7              # EXECUTE long
 NEXT_LONG_CANCEL_THRESHOLD = 0.7        # NEXT long (wifi cancel)
 
 need_update = False
 is_command_executing = False
 
-# EXECUTE 상태
 execute_press_time = None
 execute_is_down = False
 execute_long_handled = False
-execute_short_event = False  # ✅ 릴리즈 때 short 판정
 
 # NEXT input state
 next_press_time = None
@@ -155,6 +150,7 @@ def clear_ui_override():
 
 
 def stop_ap_force():
+    # hostapd/dnsmasq 종료(서비스/프로세스 모두 대응)
     for cmd in [
         ["sudo", "systemctl", "stop", "hostapd"],
         ["sudo", "systemctl", "stop", "dnsmasq"],
@@ -163,6 +159,7 @@ def stop_ap_force():
     ]:
         run_quiet(cmd, timeout=1.5)
 
+    # wlan0 AP용 IP/라우팅 초기화
     for cmd in [
         ["sudo", "ip", "addr", "flush", "dev", "wlan0"],
         ["sudo", "ip", "link", "set", "wlan0", "down"],
@@ -171,25 +168,16 @@ def stop_ap_force():
         run_quiet(cmd, timeout=1.5)
 
 
-# ✅ ping 오탐 방지: HTTP 204 체크 (curl)
-def has_real_internet(timeout=3.0):
+def has_real_internet(timeout=1.2):
+    # “진짜 인터넷” 판정: wlan0로 ping 8.8.8.8
     try:
         r = subprocess.run(
-            [
-                "curl",
-                "--interface", "wlan0",
-                "-m", str(int(timeout)),
-                "-s", "-o", "/dev/null",
-                "-w", "%{http_code}",
-                "http://connectivitycheck.gstatic.com/generate_204"
-            ],
-            stdout=subprocess.PIPE,
+            ["ping", "-I", "wlan0", "-c", "1", "-W", "1", "8.8.8.8"],
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            text=True,
-            timeout=timeout + 1.0
+            timeout=timeout
         )
-        code = (r.stdout or "").strip()
-        return code in ("204", "200")
+        return r.returncode == 0
     except Exception:
         return False
 
@@ -229,7 +217,7 @@ def battery_monitor_thread():
 
 
 # ----------------------------
-# Button callbacks (✅ 안정화 버전)
+# Button callbacks
 # ----------------------------
 def button_next_edge(channel):
     """
@@ -242,8 +230,8 @@ def button_next_edge(channel):
 
     now = time.time()
 
-    # ✅ soft debounce 완화 (기존 0.18초는 너무 큼)
-    if (now - last_time_button_next_pressed) < 0.06:
+    # soft debounce
+    if (now - last_time_button_next_pressed) < 0.18:
         return
     last_time_button_next_pressed = now
 
@@ -260,43 +248,20 @@ def button_next_edge(channel):
         next_press_time = None
 
 
-def button_execute_edge(channel):
-    """
-    EXECUTE도 BOTH edge로 통일:
-    - 눌림: execute_press_time 기록
-    - 떼짐: 롱 처리 안됐으면 short 이벤트로 처리
-    """
-    global last_time_button_execute_pressed
-    global execute_press_time, execute_is_down, execute_long_handled, execute_short_event
-
+def button_execute_callback(channel):
+    global last_time_button_execute_pressed, execute_press_time, execute_is_down, execute_long_handled
     now = time.time()
-
-    # ✅ soft debounce (짧게)
-    if (now - last_time_button_execute_pressed) < 0.06:
-        return
     last_time_button_execute_pressed = now
-
-    if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:  # pressed
-        execute_press_time = now
-        execute_is_down = True
-        execute_long_handled = False
-        execute_short_event = False
-    else:  # released
-        if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
-            dt = now - execute_press_time
-            if dt < LONG_PRESS_THRESHOLD:
-                execute_short_event = True
-        execute_is_down = False
-        execute_press_time = None
-        execute_long_handled = False
+    execute_press_time = now
+    execute_is_down = True
+    execute_long_handled = False
 
 
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-# ✅ bouncetime도 완화 (기존 80/100ms + soft debounce까지 겹쳐서 씹힘)
-GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_next_edge, bouncetime=40)
-GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.BOTH, callback=button_execute_edge, bouncetime=40)
+GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_next_edge, bouncetime=80)
+GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=100)
 
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
@@ -462,9 +427,9 @@ def draw_wifi_bars(draw, x, y, level):  # level 0~4
         xx = x + i * (bar_w + gap)
         yy = y + (max_h - h)
         if level >= (i + 1):
-            draw.rectangle([xx, yy, xx + bar_w, y + max_h], fill=255)
+            draw.rectangle([xx, yy, xx + bar_w, y + max_h], fill=255, outline=255)
         else:
-            draw.rectangle([xx, yy, xx + bar_w, y + max_h], fill=0)
+            draw.rectangle([xx, yy, xx + bar_w, y + max_h], fill=0, outline=255)
 
 
 # ----------------------------
@@ -530,7 +495,7 @@ def build_menu_for_dir(dir_path, is_root=False):
             extras_local.append(None)
 
     if is_root:
-        online = has_real_internet(timeout=3.0)
+        online = wifi_portal.has_internet()
 
         if online:
             commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
@@ -726,20 +691,24 @@ def request_wifi_setup():
         wifi_action_requested = True
 
 
-def restore_wifi_after_cancel(timeout=35):
+def restore_wifi_after_cancel(timeout=18):
+    # 1) AP 확실히 종료 + wlan0 초기화
     stop_ap_force()
 
-    run_quiet(["sudo", "ip", "addr", "flush", "dev", "wlan0"], timeout=2.0)
-    run_quiet(["sudo", "ip", "link", "set", "wlan0", "down"], timeout=2.0)
-    time.sleep(0.8)
-    run_quiet(["sudo", "ip", "link", "set", "wlan0", "up"], timeout=2.0)
+    # 2) STA 재구성/재시작
+    run_quiet(["sudo", "wpa_cli", "-i", "wlan0", "reconfigure"], timeout=1.5)
 
-    run_quiet(["sudo", "systemctl", "enable", "--now", "NetworkManager"], timeout=5.0)
-    run_quiet(["sudo", "systemctl", "restart", "NetworkManager"], timeout=6.0)
+    for cmd in [
+        ["sudo", "systemctl", "restart", "wpa_supplicant"],
+        ["sudo", "systemctl", "restart", "dhcpcd"],
+        ["sudo", "systemctl", "restart", "networking"],
+    ]:
+        run_quiet(cmd, timeout=3.0)
 
+    # 3) “진짜 인터넷” 기준으로 확인
     t0 = time.time()
     while time.time() - t0 < timeout:
-        if has_real_internet(timeout=3.0):
+        if has_real_internet():
             return True
         time.sleep(0.6)
     return False
@@ -769,6 +738,7 @@ def _portal_loop_until_connected_or_cancel():
                 pass
             return "cancel"
 
+        # 사용자가 포탈에서 SSID/PSK 제출했을 때만 처리
         req = getattr(wifi_portal, "_state", {}).get("requested")
         if req:
             ok = wifi_portal.stop_ap_and_connect(req["ssid"], req["psk"])
@@ -808,6 +778,7 @@ def wifi_worker_thread():
                     need_update = True
                     time.sleep(2.0)
                 else:
+                    # status_message로 덮지 않도록 비움 (wifi_running 화면이 담당)
                     status_message = ""
                     need_update = True
 
@@ -818,7 +789,7 @@ def wifi_worker_thread():
 
                     if result == "cancel":
                         set_ui_text("WiFi 설정 취소", "재연결 중...", pos=(0, 10), font_size=13)
-                        ok_restore = restore_wifi_after_cancel(timeout=35)
+                        ok_restore = restore_wifi_after_cancel(timeout=18)
                         set_ui_text("재연결 완료" if ok_restore else "재연결 실패", "", pos=(15, 18), font_size=15)
                         time.sleep(1.4)
                         clear_ui_override()
@@ -985,6 +956,7 @@ def execute_command(command_index):
         need_update = True
         return
 
+    # ---- 업데이트 진행바는 "override 화면"으로 계속 유지됨 (깨짐 방지)
     set_ui_progress(30, "업데이트 중...", pos=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
 
@@ -1056,26 +1028,13 @@ def get_wifi_level():
 
 
 def net_poll_thread():
-    global cached_ip, cached_wifi_level, need_update
-    last_online = None
-
+    global cached_ip, cached_wifi_level
     while not stop_threads:
         cached_ip = get_ip_address()
-
-        online_now = has_real_internet(timeout=2.5)
-
         try:
-            cached_wifi_level = get_wifi_level() if online_now else 0
+            cached_wifi_level = get_wifi_level() if wifi_portal.has_internet() else 0
         except Exception:
             cached_wifi_level = 0
-
-        if last_online is None:
-            last_online = online_now
-        elif online_now != last_online:
-            last_online = online_now
-            refresh_root_menu(reset_index=False)
-            need_update = True
-
         time.sleep(1.5)
 
 
@@ -1095,14 +1054,16 @@ def _draw_override(draw):
     if not active:
         return False
 
-    draw.rectangle(device.bounding_box, fill="black")
+    draw.rectangle(device.bounding_box, outline="white", fill="black")
 
     if kind == "progress":
+        # 메시지(멀티라인 가능)
         draw.text(pos, msg, font=get_font(fs), fill=255)
-        draw.rectangle([(10, 50), (110, 60)], fill="black")
+        # progress bar
+        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
         fill_w = int((100 * percent) / 100)
         fill_w = int(max(0, min(100, fill_w)))
-        draw.rectangle([(10, 50), (10 + fill_w, 60)], fill="white")
+        draw.rectangle([(10, 50), (10 + fill_w, 60)], outline="white", fill="white")
         return True
 
     if kind == "text":
@@ -1135,6 +1096,7 @@ def update_oled_display():
 
         try:
             with canvas(device) as draw:
+                # 0) 진행바/특수화면 override가 있으면 그거만 계속 그림 (메뉴랑 섞이지 않음)
                 if _draw_override(draw):
                     return
 
@@ -1147,7 +1109,10 @@ def update_oled_display():
                     perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
                     draw.text((99, 3), perc_text, font=font_st, fill=255)
                     draw.text((2, 1), current_time, font=font_time, fill=255)
+
+                    # Wi-Fi icon (bigger, aligned with time line)
                     draw_wifi_bars(draw, 70, 0, wifi_level)
+
                 else:
                     ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
                     draw.text((0, 51), ip_display, font=font_big, fill=255)
@@ -1157,18 +1122,20 @@ def update_oled_display():
                     if not wifi_portal.has_internet():
                         draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
 
+                # status_message overlay
                 if status_message:
-                    draw.rectangle(device.bounding_box, fill="black")
+                    draw.rectangle(device.bounding_box, outline="white", fill="black")
                     draw.text(message_position, status_message, font=get_font(message_font_size), fill=255)
                     return
 
+                # WiFi setup screen
                 if wifi_running:
-                    draw.rectangle(device.bounding_box, fill="black")
+                    draw.rectangle(device.bounding_box, outline="white", fill="black")
                     draw.text((0, 0), "WiFi 설정 모드", font=get_font(13), fill=255)
 
                     body_font = get_font(11)
                     y0 = 14
-                    line = 12
+                    line = 12  # 행간
 
                     draw.text((0, y0 + line * 0), "AP: GDSENG-SETUP",  font=body_font, fill=255)
                     draw.text((0, y0 + line * 1), "PW: 12345678",      font=body_font, fill=255)
@@ -1176,6 +1143,7 @@ def update_oled_display():
                     draw.text((0, 52), "NEXT 길게: 취소", font=body_font, fill=255)
                     return
 
+                # Normal menu title
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 if item_type == "system":
                     center_y = 33
@@ -1266,30 +1234,32 @@ try:
         if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
             if now - execute_press_time >= LONG_PRESS_THRESHOLD:
                 execute_long_handled = True
-                execute_short_event = False  # ✅ 롱이면 short 취소
                 if commands and (not is_executing):
                     item_type = command_types[current_command_index]
                     if item_type in ("system", "dir", "back", "script", "wifi", "bin"):
                         execute_command(current_command_index)
                         need_update = True
 
-        # ✅ EXECUTE short press => previous menu
-        if execute_short_event:
-            # 동시 입력 억제(완화)
-            if abs(last_time_button_next_pressed - last_time_button_execute_pressed) >= button_press_interval:
-                if commands and (not is_executing):
-                    current_command_index = (current_command_index - 1) % len(commands)
-                    need_update = True
-            execute_short_event = False
+        if execute_is_down and GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.HIGH:
+            execute_is_down = False
+
+            if abs(last_time_button_next_pressed - last_time_button_execute_pressed) < button_press_interval:
+                next_pressed_event = False
+            else:
+                if not execute_long_handled:
+                    if commands and (not is_executing):
+                        current_command_index = (current_command_index - 1) % len(commands)
+                        need_update = True
+
+            execute_press_time = None
+            execute_long_handled = False
 
         # NEXT short press => next menu
         if next_pressed_event:
             if (not execute_is_down) and (not is_executing):
-                # 동시 입력 억제(완화)
-                if abs(last_time_button_next_pressed - last_time_button_execute_pressed) >= button_press_interval:
-                    if commands:
-                        current_command_index = (current_command_index + 1) % len(commands)
-                        need_update = True
+                if commands:
+                    current_command_index = (current_command_index + 1) % len(commands)
+                    need_update = True
             next_pressed_event = False
 
         # auto flash when bin selected + stm32 connected
