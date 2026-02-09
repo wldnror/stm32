@@ -89,10 +89,57 @@ cached_ip = "0.0.0.0"
 cached_wifi_level = 0
 
 
+# ----------------------------
+# Utils / System helpers
+# ----------------------------
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def run_quiet(cmd, timeout=2.0):
+    try:
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+        return True
+    except Exception:
+        return False
+
+
+def stop_ap_force():
+    # hostapd/dnsmasq 종료(서비스/프로세스 모두 대응)
+    for cmd in [
+        ["sudo", "systemctl", "stop", "hostapd"],
+        ["sudo", "systemctl", "stop", "dnsmasq"],
+        ["sudo", "pkill", "-f", "hostapd"],
+        ["sudo", "pkill", "-f", "dnsmasq"],
+    ]:
+        run_quiet(cmd, timeout=1.5)
+
+    # wlan0 AP용 IP/라우팅 초기화
+    for cmd in [
+        ["sudo", "ip", "addr", "flush", "dev", "wlan0"],
+        ["sudo", "ip", "link", "set", "wlan0", "down"],
+        ["sudo", "ip", "link", "set", "wlan0", "up"],
+    ]:
+        run_quiet(cmd, timeout=1.5)
+
+
+def has_real_internet(timeout=1.2):
+    # “진짜 인터넷” 판정: wlan0로 ping 8.8.8.8
+    try:
+        r = subprocess.run(
+            ["ping", "-I", "wlan0", "-c", "1", "-W", "1", "8.8.8.8"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+# ----------------------------
+# INA219 / Battery
+# ----------------------------
 def init_ina219():
     global ina
     try:
@@ -124,6 +171,9 @@ def battery_monitor_thread():
         time.sleep(2)
 
 
+# ----------------------------
+# Button callbacks
+# ----------------------------
 def button_next_edge(channel):
     """
     NEXT는 BOTH edge로:
@@ -173,6 +223,9 @@ GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
 
 
+# ----------------------------
+# STM32 connection polling
+# ----------------------------
 def check_stm32_connection():
     global connection_success, connection_failed_since_last_success, is_command_executing
 
@@ -251,6 +304,9 @@ def stm32_poll_thread():
             auto_flash_done_connection = False
 
 
+# ----------------------------
+# OLED / Fonts
+# ----------------------------
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
 
@@ -331,6 +387,9 @@ def draw_wifi_bars(draw, x, y, level):  # level 0~4
             draw.rectangle([xx, yy, xx + bar_w, y + max_h], fill=0, outline=255)
 
 
+# ----------------------------
+# Menu build
+# ----------------------------
 FIRMWARE_DIR = "/home/user/stm32/Program"
 OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
 
@@ -438,6 +497,9 @@ def refresh_root_menu(reset_index=False):
 refresh_root_menu(reset_index=True)
 
 
+# ----------------------------
+# Display helpers
+# ----------------------------
 def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
     try:
         with canvas(device) as draw:
@@ -448,6 +510,9 @@ def display_progress_and_message(percentage, message, message_position=(0, 0), f
         pass
 
 
+# ----------------------------
+# Git pull / System update
+# ----------------------------
 def git_pull():
     shell_script_path = "/home/user/stm32/git-pull.sh"
     if not os.path.isfile(shell_script_path):
@@ -506,6 +571,9 @@ def git_pull():
         GPIO.output(LED_ERROR1, False)
 
 
+# ----------------------------
+# OpenOCD lock/unlock
+# ----------------------------
 def unlock_memory():
     display_progress_and_message(0, "메모리 잠금\n   해제 중", message_position=(18, 0), font_size=15)
 
@@ -582,36 +650,35 @@ def lock_memory_procedure():
         need_update = True
 
 
+# ----------------------------
+# Wi-Fi: setup / cancel restore
+# ----------------------------
 def request_wifi_setup():
     global wifi_action_requested
     with wifi_action_lock:
         wifi_action_requested = True
 
 
-def restore_wifi_after_cancel(timeout=12):
-    try:
-        subprocess.run(["sudo", "wpa_cli", "-i", "wlan0", "reconfigure"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1.5)
-    except Exception:
-        pass
+def restore_wifi_after_cancel(timeout=18):
+    # 1) AP 확실히 종료 + wlan0 초기화
+    stop_ap_force()
 
-    try:
-        subprocess.run(["sudo", "systemctl", "restart", "dhcpcd"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2.5)
-    except Exception:
-        pass
+    # 2) STA 재구성/재시작
+    run_quiet(["sudo", "wpa_cli", "-i", "wlan0", "reconfigure"], timeout=1.5)
 
-    try:
-        subprocess.run(["sudo", "systemctl", "restart", "wpa_supplicant"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2.5)
-    except Exception:
-        pass
+    for cmd in [
+        ["sudo", "systemctl", "restart", "wpa_supplicant"],
+        ["sudo", "systemctl", "restart", "dhcpcd"],
+        ["sudo", "systemctl", "restart", "networking"],
+    ]:
+        run_quiet(cmd, timeout=3.0)
 
+    # 3) “진짜 인터넷” 기준으로 확인
     t0 = time.time()
     while time.time() - t0 < timeout:
-        if wifi_portal.has_internet():
+        if has_real_internet():
             return True
-        time.sleep(0.5)
+        time.sleep(0.6)
     return False
 
 
@@ -680,7 +747,7 @@ def wifi_worker_thread():
                     need_update = True
                     time.sleep(2.0)
                 else:
-                    # ✅ status_message로 덮지 않도록 비움 (wifi_running 화면이 담당)
+                    # status_message로 덮지 않도록 비움 (wifi_running 화면이 담당)
                     status_message = ""
                     need_update = True
 
@@ -695,13 +762,13 @@ def wifi_worker_thread():
                         message_font_size = 13
                         need_update = True
 
-                        ok_restore = restore_wifi_after_cancel(timeout=12)
+                        ok_restore = restore_wifi_after_cancel(timeout=18)
 
                         status_message = "재연결 완료" if ok_restore else "재연결 실패"
                         message_position = (15, 10)
                         message_font_size = 15
                         need_update = True
-                        time.sleep(1.2)
+                        time.sleep(1.4)
 
                     elif (result is True) and wifi_portal.has_internet():
                         status_message = "WiFi 연결 완료"
@@ -726,6 +793,9 @@ def wifi_worker_thread():
         time.sleep(0.05)
 
 
+# ----------------------------
+# Command execution
+# ----------------------------
 def execute_command(command_index):
     global is_executing, is_command_executing
     global current_menu, commands, command_names, command_types, menu_extras
@@ -902,6 +972,9 @@ def execute_command(command_index):
     is_command_executing = False
 
 
+# ----------------------------
+# Network info for UI
+# ----------------------------
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -945,6 +1018,9 @@ def net_poll_thread():
         time.sleep(1.5)
 
 
+# ----------------------------
+# OLED render
+# ----------------------------
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
 
@@ -976,6 +1052,7 @@ def update_oled_display():
                     draw.text((99, 3), perc_text, font=font_st, fill=255)
                     draw.text((2, 1), current_time, font=font_time, fill=255)
 
+                    # Wi-Fi icon (bigger, aligned with time line)
                     draw_wifi_bars(draw, 70, 0, wifi_level)
 
                 else:
@@ -987,27 +1064,28 @@ def update_oled_display():
                     if not wifi_portal.has_internet():
                         draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
 
+                # status_message overlay
                 if status_message:
                     draw.rectangle(device.bounding_box, outline="white", fill="black")
                     draw.text(message_position, status_message, font=get_font(message_font_size), fill=255)
                     return
 
+                # WiFi setup screen
                 if wifi_running:
                     draw.rectangle(device.bounding_box, outline="white", fill="black")
-
                     draw.text((0, 0), "WiFi 설정 모드", font=get_font(13), fill=255)
 
                     body_font = get_font(11)
                     y0 = 14
-                    line = 12
+                    line = 12  # 행간
 
                     draw.text((0, y0 + line * 0), "AP: GDSENG-SETUP",  font=body_font, fill=255)
                     draw.text((0, y0 + line * 1), "PW: 12345678",      font=body_font, fill=255)
                     draw.text((0, y0 + line * 2), "192.168.4.1:8080",  font=body_font, fill=255)
-
                     draw.text((0, 52), "NEXT 길게: 취소", font=body_font, fill=255)
                     return
 
+                # Normal menu title
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 if item_type == "system":
                     center_y = 33
@@ -1040,6 +1118,9 @@ def realtime_update_display():
         time.sleep(0.05)
 
 
+# ----------------------------
+# Power
+# ----------------------------
 def shutdown_system():
     try:
         with canvas(device) as draw:
@@ -1051,6 +1132,9 @@ def shutdown_system():
         pass
 
 
+# ----------------------------
+# Start threads
+# ----------------------------
 init_ina219()
 
 battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
@@ -1071,6 +1155,9 @@ net_thread.start()
 need_update = True
 
 
+# ----------------------------
+# Main loop
+# ----------------------------
 try:
     while True:
         now = time.time()
@@ -1078,6 +1165,7 @@ try:
         if battery_percentage == 0:
             shutdown_system()
 
+        # wifi 모드에서 NEXT long => cancel
         with wifi_action_lock:
             wifi_running = wifi_action_running
         if wifi_running and next_is_down and (not next_long_handled) and (next_press_time is not None):
@@ -1086,6 +1174,7 @@ try:
                 wifi_cancel_requested = True
                 need_update = True
 
+        # EXECUTE long press => execute current
         if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
             if now - execute_press_time >= LONG_PRESS_THRESHOLD:
                 execute_long_handled = True
@@ -1109,6 +1198,7 @@ try:
             execute_press_time = None
             execute_long_handled = False
 
+        # NEXT short press => next menu
         if next_pressed_event:
             if (not execute_is_down) and (not is_executing):
                 if commands:
@@ -1116,6 +1206,7 @@ try:
                     need_update = True
             next_pressed_event = False
 
+        # auto flash when bin selected + stm32 connected
         with stm32_state_lock:
             cs = connection_success
 
