@@ -1,3 +1,4 @@
+# /home/user/stm32/serve.py
 from datetime import datetime
 import RPi.GPIO as GPIO
 import time
@@ -232,6 +233,7 @@ device = sh1107(serial, rotate=1)
 
 font_path = "/usr/share/fonts/truetype/malgun/malgunbd.ttf"
 font_big = ImageFont.truetype(font_path, 12)
+font_small = ImageFont.truetype(font_path, 11)  # ✅ 패치: wifi 화면에서 사용
 font_s = ImageFont.truetype(font_path, 13)
 font_st = ImageFont.truetype(font_path, 11)
 font = ImageFont.truetype(font_path, 17)
@@ -370,10 +372,14 @@ current_command_index = 0
 
 
 def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
-    with canvas(device) as draw:
-        draw.text(message_position, message, font=get_font(font_size), fill=255)
-        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
-        draw.rectangle([(10, 50), (10 + int(percentage), 60)], outline="white", fill="white")
+    # ✅ OLED 예외가 전체를 죽이지 않게
+    try:
+        with canvas(device) as draw:
+            draw.text(message_position, message, font=get_font(font_size), fill=255)
+            draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
+            draw.rectangle([(10, 50), (10 + int(percentage), 60)], outline="white", fill="white")
+    except Exception as e:
+        print("[OLED] progress draw error:", e)
 
 
 def git_pull():
@@ -395,9 +401,12 @@ def git_pull():
 
     os.chmod(shell_script_path, 0o755)
 
-    with canvas(device) as draw:
-        draw.text((36, 8), "시스템", font=font, fill=255)
-        draw.text((17, 27), "업데이트 중", font=font, fill=255)
+    try:
+        with canvas(device) as draw:
+            draw.text((36, 8), "시스템", font=font, fill=255)
+            draw.text((17, 27), "업데이트 중", font=font, fill=255)
+    except Exception as e:
+        print("[OLED] draw error in git_pull:", e)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -425,6 +434,7 @@ def git_pull():
         GPIO.output(LED_ERROR1, True)
         display_progress_and_message(0, "오류 발생", message_position=(20, 10), font_size=15)
         time.sleep(1.2)
+        print("[git_pull] error:", e)
     finally:
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
@@ -495,11 +505,12 @@ def lock_memory_procedure():
             GPIO.output(LED_ERROR1, True)
             display_progress_and_message(0, "메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
             time.sleep(1)
-    except Exception:
+    except Exception as e:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         display_progress_and_message(0, "오류 발생", message_position=(20, 10), font_size=15)
         time.sleep(1)
+        print("[lock_memory] error:", e)
     finally:
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
@@ -529,7 +540,6 @@ def wifi_worker_thread():
 
         if do:
             try:
-                # 이미 인터넷이면 종료
                 if wifi_portal.has_internet():
                     status_message = "이미 인터넷\n연결됨"
                     message_position = (18, 10)
@@ -537,7 +547,6 @@ def wifi_worker_thread():
                     need_update = True
                     time.sleep(1.2)
                 else:
-                    # hostapd 없으면 AP 불가
                     r = subprocess.run(["which", "hostapd"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                     if r.returncode != 0:
                         status_message = "hostapd 없음\n설치 후\n재시도"
@@ -546,12 +555,12 @@ def wifi_worker_thread():
                         need_update = True
                         time.sleep(2.0)
                     else:
-                        status_message = "WiFi 설정 모드\nAP: GDSENG-SETUP\n192.168.4.1"
+                        status_message = "WiFi 설정 모드\nAP: GDSENG-SETUP\n192.168.4.1:8080"
                         message_position = (0, 0)
                         message_font_size = 13
                         need_update = True
 
-                        # ✅ 블로킹 작업 (여기서 실행해도 UI는 계속 업데이트됨)
+                        # ✅ 블로킹 작업은 worker에서 수행
                         wifi_portal.ensure_wifi_connected(auto_start_ap=True)
 
                         if wifi_portal.has_internet():
@@ -583,7 +592,6 @@ def execute_command(command_index):
     global current_command_index, menu_stack, need_update
     global connection_success, connection_failed_since_last_success
 
-    # ✅ Wi-Fi 메뉴는 “블로킹 실행”을 하지 않음(멈춤 방지)
     item_type = command_types[command_index]
     if item_type == "wifi":
         request_wifi_setup()
@@ -712,9 +720,13 @@ def execute_command(command_index):
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        with canvas(device) as draw:
-            draw.text((20, 8), "메모리 잠금", font=font, fill=255)
-            draw.text((28, 27), "해제 실패", font=font, fill=255)
+        try:
+            with canvas(device) as draw:
+                draw.text((20, 8), "메모리 잠금", font=font, fill=255)
+                draw.text((28, 27), "해제 실패", font=font, fill=255)
+        except Exception as e:
+            print("[OLED] draw error:", e)
+
         time.sleep(2)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
@@ -769,99 +781,103 @@ def get_ip_address():
         return "0.0.0.0"
 
 
+# =========================
+# ✅ 패치된 OLED 갱신 함수(락 교착 방지 + 예외 생존)
+# =========================
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
 
-    with display_lock:
+    # ✅ 락 무한 대기 방지
+    if not display_lock.acquire(timeout=0.2):
+        return
+
+    try:
         if not commands:
             return
 
-        ip_address = get_ip_address()
-        now = datetime.now()
-        current_time = now.strftime("%H시 %M분")
-        voltage_percentage = battery_percentage
-
-        # ✅ Wi-Fi 작업 중이면 상태 메시지 우선 표시
         with wifi_action_lock:
             wifi_running = wifi_action_running
 
-        with canvas(device) as draw:
-            item_type = command_types[current_command_index]
-            title = command_names[current_command_index]
+        now = datetime.now()
+        current_time = now.strftime("%H시 %M분")
+        voltage_percentage = battery_percentage
+        ip_address = get_ip_address()
 
-            # 상단/배터리/시간 표시
-            if item_type != "system":
-                battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
-                draw.bitmap((90, -9), battery_icon, fill=255)
-                perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
-                draw.text((99, 3), perc_text, font=font_st, fill=255)
-                draw.text((2, 1), current_time, font=font_time, fill=255)
-            else:
-                ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
-                draw.text((0, 51), ip_display, font=font_big, fill=255)
-                draw.text((80, -3), "GDSENG", font=font_big, fill=255)
-                draw.text((83, 50), "ver 3.71", font=font_big, fill=255)
-                draw.text((0, -3), current_time, font=font_time, fill=255)
-                if not wifi_portal.has_internet():
-                    draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
+        try:
+            with canvas(device) as draw:
+                item_type = command_types[current_command_index]
+                title = command_names[current_command_index]
 
-            # 상태 메시지 우선
-            if status_message:
-                draw.rectangle(device.bounding_box, outline="white", fill="black")
-                draw.text(message_position, status_message, font=get_font(message_font_size), fill=255)
-                return
+                if item_type != "system":
+                    battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
+                    draw.bitmap((90, -9), battery_icon, fill=255)
+                    perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
+                    draw.text((99, 3), perc_text, font=font_st, fill=255)
+                    draw.text((2, 1), current_time, font=font_time, fill=255)
+                else:
+                    ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
+                    draw.text((0, 51), ip_display, font=font_big, fill=255)
+                    draw.text((80, -3), "GDSENG", font=font_big, fill=255)
+                    draw.text((83, 50), "ver 3.71", font=font_big, fill=255)
+                    draw.text((0, -3), current_time, font=font_time, fill=255)
+                    if not wifi_portal.has_internet():
+                        draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
 
-            # Wi-Fi 작업 중일 때 화면이 “멈춘 느낌” 안 나게 안내 유지
-            if wifi_running:
-                draw.rectangle(device.bounding_box, outline="white", fill="black")
-                draw.text((0, 0), "WiFi 설정 중", font=get_font(16), fill=255)
-                draw.text((0, 22), "AP: GDSENG-SETUP", font=get_font(12), fill=255)
-                draw.text((0, 38), "192.168.4.1", font=get_font(12), fill=255)
-                draw.text((0, 52), current_time, font=font_small, fill=255)
-                return
+                if status_message:
+                    draw.rectangle(device.bounding_box, outline="white", fill="black")
+                    draw.text(message_position, status_message, font=get_font(message_font_size), fill=255)
+                    return
 
-            # 평소 메뉴 표시
-            center_x = device.width // 2 + VISUAL_X_OFFSET
-            if item_type == "system":
-                center_y = 33
-                use_font = font_sysupdate
-            else:
-                center_y = 42
-                use_font = font_1
+                if wifi_running:
+                    draw.rectangle(device.bounding_box, outline="white", fill="black")
+                    draw.text((0, 0), "WiFi 설정 모드", font=get_font(15), fill=255)
+                    draw.text((0, 18), "AP: GDSENG-SETUP", font=get_font(12), fill=255)
+                    draw.text((0, 32), "http://192.168.4.1", font=get_font(12), fill=255)
+                    draw.text((0, 44), ":8080", font=get_font(12), fill=255)
+                    draw.text((0, 54), current_time, font=font_small, fill=255)
+                    return
 
-            try:
-                draw.text((center_x, center_y), title, font=use_font, fill=255, anchor="mm")
-            except TypeError:
+                center_x = device.width // 2 + VISUAL_X_OFFSET
+                if item_type == "system":
+                    center_y = 33
+                    use_font = font_sysupdate
+                else:
+                    center_y = 42
+                    use_font = font_1
+
                 try:
-                    w, h = draw.textsize(title, font=use_font)
-                except Exception:
-                    w, h = (len(title) * 8, 16)
-                x = int(center_x - w / 2)
-                y = int(center_y - h / 2)
-                draw.text((x, y), title, font=use_font, fill=255)
+                    draw.text((center_x, center_y), title, font=use_font, fill=255, anchor="mm")
+                except TypeError:
+                    try:
+                        w, h = draw.textsize(title, font=use_font)
+                    except Exception:
+                        w, h = (len(title) * 8, 16)
+                    x = int(center_x - w / 2)
+                    y = int(center_y - h / 2)
+                    draw.text((x, y), title, font=use_font, fill=255)
+
+        except Exception as e:
+            print("[OLED] draw error:", e)
+            return
+
+    finally:
+        display_lock.release()
 
 
 last_oled_update_time = 0.0
 
-
+# =========================
+# ✅ 패치된 업데이트 루프(어떤 상황에도 1초마다 갱신 시도)
+# =========================
 def realtime_update_display():
     global need_update, last_oled_update_time
     while not stop_threads:
-        # ✅ 기존 코드의 "is_command_executing이면 업데이트 중지"가
-        # Wi-Fi 때 멈춤을 만들 수 있어서,
-        # 여기서는 항상 업데이트 하되, is_command_executing일 때는 1초에 한번만 갱신
         now = time.time()
 
-        if is_command_executing:
-            # 작업 중에는 1초 간격으로만
-            if now - last_oled_update_time >= 1.0:
-                update_oled_display()
-                last_oled_update_time = now
-        else:
-            if need_update or (now - last_oled_update_time >= 1.0):
-                update_oled_display()
-                last_oled_update_time = now
-                need_update = False
+        if need_update or (now - last_oled_update_time >= 1.0):
+            update_oled_display()
+            last_oled_update_time = now
+            need_update = False
 
         time.sleep(0.05)
 
@@ -919,7 +935,6 @@ try:
             if abs(last_time_button_next_pressed - last_time_button_execute_pressed) < button_press_interval:
                 next_pressed_event = False
             else:
-                # 롱프레스 처리했으면 pass
                 if execute_long_handled:
                     pass
                 else:
