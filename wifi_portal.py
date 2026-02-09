@@ -1,3 +1,4 @@
+import os
 import re
 import time
 import subprocess
@@ -8,7 +9,9 @@ AP_SSID = "GDSENG-SETUP"
 AP_PASS = "12345678"
 AP_IP   = "192.168.4.1"
 IFACE   = "wlan0"
+
 WPA_CONF = "/etc/wpa_supplicant/wpa_supplicant.conf"
+NM_CONN_DIR = "/etc/NetworkManager/system-connections"
 
 app = Flask(__name__)
 
@@ -47,12 +50,7 @@ input,select,button{
 
 button{font-weight:700;cursor:pointer}
 button:active{transform:translateY(1px)}
-
-button.primary{
-  background:#111;
-  border-color:#111;
-  color:#fff;
-}
+button.primary{background:#111;border-color:#111;color:#fff}
 
 .small{color:var(--mut);font-size:13px;line-height:1.35}
 .err{color:var(--er);font-size:13px;margin-top:10px;white-space:pre-line}
@@ -167,9 +165,11 @@ form.inline button{
 
   {% if saved_nm and saved_nm|length > 0 %}
     <div class="small" style="margin-top:10px">NetworkManager 저장</div>
-    {% for s in saved_nm %}
+    {% for item in saved_nm %}
       <form method="post" action="/delete" class="inline">
-        <input name="ssid" value="{{s}}" readonly />
+        <input value="{{ item.display }}" readonly />
+        <input type="hidden" name="ssid" value="{{ item.ssid }}" />
+        <input type="hidden" name="nm_id" value="{{ item.nm_id }}" />
         <input type="hidden" name="src" value="nm" />
         <button type="submit">삭제</button>
       </form>
@@ -230,7 +230,14 @@ function onSubmitConnect(form){
 """
 
 def _run(cmd, check=False, timeout=15.0):
-    return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=check, timeout=timeout)
+    return subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=check,
+        timeout=timeout
+    )
 
 def has_internet(timeout=1.2):
     try:
@@ -257,7 +264,6 @@ def _scan_iwlist():
 
 def _scan_nmcli():
     p = _run(["sudo", "nmcli", "-t", "-f", "SSID,SIGNAL", "dev", "wifi", "list", "ifname", IFACE], timeout=12.0)
-    txt = (p.stdout or "") + "\n" + (p.stderr or "")
     items = []
     for line in (p.stdout or "").splitlines():
         line = line.strip()
@@ -272,13 +278,14 @@ def _scan_nmcli():
         except Exception:
             sig = 0
         items.append((ssid, sig))
+
     best = {}
     for s, sig in items:
         if s not in best or sig > best[s]:
             best[s] = sig
     uniq = [(s, best[s]) for s in best]
     uniq.sort(key=lambda x: (-x[1], x[0]))
-    return [s for s, _ in uniq[:40]], txt
+    return [s for s, _ in uniq[:40]], (p.stdout or "") + "\n" + (p.stderr or "")
 
 def scan_ssids():
     scan_error = ""
@@ -313,19 +320,88 @@ def list_saved_wpa():
     except Exception:
         return []
 
-def list_saved_nm():
+def _parse_nmconnection_files():
+    """
+    /etc/NetworkManager/system-connections/*.nmconnection
+    내부에:
+      [wifi]
+      ssid=XXXX
+    같은 형식이 있을 때 ssid 추출
+    """
+    items = []
     try:
-        p = _run(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"], timeout=6.0)
-        out = []
+        if not os.path.isdir(NM_CONN_DIR):
+            return items
+        for fn in os.listdir(NM_CONN_DIR):
+            if not fn.endswith(".nmconnection"):
+                continue
+            path = os.path.join(NM_CONN_DIR, fn)
+            try:
+                txt = _run(["sudo", "cat", path], timeout=3.5).stdout
+            except Exception:
+                continue
+
+            # 파일명에서 connection id 추정 (대부분 name과 비슷)
+            nm_id = os.path.splitext(fn)[0].strip()
+
+            m = re.search(r"(?m)^\s*ssid\s*=\s*(.+?)\s*$", txt)
+            ssid = m.group(1).strip() if m else ""
+            if ssid:
+                items.append({"ssid": ssid, "nm_id": nm_id, "display": f"{ssid} ({nm_id})"})
+    except Exception:
+        pass
+    return items
+
+def list_saved_nm():
+    """
+    안정적으로 "저장된 Wi-Fi"를 보여주기 위해
+    1) sudo nmcli에서 SSID 컬럼(802-11-wireless.ssid)을 우선 사용
+    2) 안 되면 nmconnection 파일에서 ssid 파싱 (폴백)
+    """
+    items = []
+    try:
+        p = _run(["sudo", "nmcli", "-t", "-f", "NAME,TYPE,802-11-wireless.ssid", "connection", "show"], timeout=6.0)
         for line in (p.stdout or "").splitlines():
             parts = line.strip().split(":")
-            if len(parts) >= 2 and parts[1] == "wifi":
-                name = (parts[0] or "").strip()
-                if name and name not in out:
-                    out.append(name)
-        return out
+            if len(parts) < 2:
+                continue
+            name = (parts[0] or "").strip()        # connection id
+            ctype = (parts[1] or "").strip()
+            if ctype != "wifi" or not name:
+                continue
+            ssid = (parts[2] if len(parts) >= 3 else "").strip()
+            # ssid가 비어있을 수 있어요(숨김/손상/권한/드라이버 등). 그럴 땐 name만이라도 표시.
+            display = ssid if ssid else name
+            if ssid and ssid != name:
+                display = f"{ssid} ({name})"
+            items.append({"ssid": ssid or name, "nm_id": name, "display": display})
     except Exception:
-        return []
+        items = []
+
+    # nmcli로 못 얻었거나 너무 빈 경우 파일 파싱으로 보강
+    if not items:
+        items = _parse_nmconnection_files()
+    else:
+        # 일부라도 ssid가 공백이면 파일 파싱으로 추가 보강
+        has_real_ssid = any(("(" in it["display"]) or (it["ssid"] and it["ssid"] != it["nm_id"]) for it in items)
+        if not has_real_ssid:
+            fb = _parse_nmconnection_files()
+            # 중복 방지( nm_id 기준 )
+            known = set([it["nm_id"] for it in items if it.get("nm_id")])
+            for it in fb:
+                if it["nm_id"] not in known:
+                    items.append(it)
+
+    # display 기준으로 중복 제거
+    uniq = []
+    seen = set()
+    for it in items:
+        key = (it.get("nm_id",""), it.get("display",""))
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(it)
+    return uniq
 
 def delete_saved_wpa(ssid):
     if not ssid:
@@ -346,11 +422,14 @@ def delete_saved_wpa(ssid):
     except Exception as e:
         return False, f"삭제 실패: {e}"
 
-def delete_saved_nm(ssid):
-    if not ssid:
-        return False, "SSID empty"
+def delete_saved_nm(nm_id: str):
+    """
+    NetworkManager는 SSID가 아니라 "connection id(NAME)"로 삭제해야 확실합니다.
+    """
+    if not nm_id:
+        return False, "NM id empty"
     try:
-        p = _run(["sudo", "nmcli", "connection", "delete", "id", ssid], timeout=8.0)
+        p = _run(["sudo", "nmcli", "connection", "delete", "id", nm_id], timeout=8.0)
         if p.returncode == 0:
             return True, "삭제 완료"
         msg = (p.stderr or "").strip() or (p.stdout or "").strip() or "삭제 실패"
@@ -360,14 +439,20 @@ def delete_saved_nm(ssid):
 
 def reset_wifi_config():
     errs = []
-    for s in list_saved_nm():
-        ok, _ = delete_saved_nm(s)
+
+    # NM 전체 삭제
+    for it in list_saved_nm():
+        nm_id = it.get("nm_id", "")
+        ok, _ = delete_saved_nm(nm_id)
         if not ok:
-            errs.append(f"NM:{s}")
+            errs.append(f"NM:{nm_id}")
+
+    # WPA 전체 삭제
     for s in list_saved_wpa():
         ok, _ = delete_saved_wpa(s)
         if not ok:
             errs.append(f"WPA:{s}")
+
     if errs:
         return False, "일부 삭제 실패: " + ", ".join(errs)
     return True, "초기화 완료"
@@ -488,9 +573,11 @@ def index():
     ssids, scan_mode, scan_error = scan_ssids()
     saved_wpa = list_saved_wpa()
     saved_nm = list_saved_nm()
+
     msg = _state["last_error"] or _state["last_ok"] or ""
     ok = bool(_state["last_ok"]) and not _state["last_error"]
     status = "인터넷 연결됨" if has_internet() else "설정 모드"
+
     return render_template_string(
         PAGE,
         ssids=ssids,
@@ -522,12 +609,15 @@ def connect():
 
 @app.route("/delete", methods=["POST"])
 def delete():
-    ssid = (request.form.get("ssid") or "").strip()
     src = (request.form.get("src") or "").strip().lower()
+
     if src == "nm":
-        ok, msg = delete_saved_nm(ssid)
+        nm_id = (request.form.get("nm_id") or "").strip()
+        ok, msg = delete_saved_nm(nm_id)
     else:
+        ssid = (request.form.get("ssid") or "").strip()
         ok, msg = delete_saved_wpa(ssid)
+
     _state["last_ok"] = msg if ok else ""
     _state["last_error"] = "" if ok else msg
     return redirect("/")
