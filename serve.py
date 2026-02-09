@@ -705,7 +705,7 @@ def update_oled_display():
                 draw.bitmap((90, -9), battery_icon, fill=255)
                 perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
                 draw.text((99, 3), perc_text, font=font_st, fill=255)
-                draw.text((27, 1), current_time, font=font_time, fill=255)
+                draw.text((2, 1), current_time, font=font_time, fill=255)
             else:
                 ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
                 draw.text((0, 51), ip_display, font=font_big, fill=255)
