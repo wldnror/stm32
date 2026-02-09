@@ -167,7 +167,7 @@ def stop_ap_force():
         run_quiet(cmd, timeout=1.5)
 
 
-# ✅ 변경 1) ping 기반 오탐 제거: HTTP 204 체크 (curl)
+# ✅ (수정) ping 오탐 제거: HTTP 204 체크 (curl)
 def has_real_internet(timeout=3.0):
     """
     “진짜 인터넷” 판정 (ICMP ping 대신 HTTP 기반)
@@ -440,9 +440,9 @@ def draw_wifi_bars(draw, x, y, level):  # level 0~4
         xx = x + i * (bar_w + gap)
         yy = y + (max_h - h)
         if level >= (i + 1):
-            draw.rectangle([xx, yy, xx + bar_w, y + max_h], fill=255, outline=255)
+            draw.rectangle([xx, yy, xx + bar_w, y + max_h], fill=255)  # outline 제거
         else:
-            draw.rectangle([xx, yy, xx + bar_w, y + max_h], fill=0, outline=255)
+            draw.rectangle([xx, yy, xx + bar_w, y + max_h], fill=0)    # outline 제거
 
 
 # ----------------------------
@@ -508,7 +508,8 @@ def build_menu_for_dir(dir_path, is_root=False):
             extras_local.append(None)
 
     if is_root:
-        online = wifi_portal.has_internet()
+        # ✅ (수정) 온라인 판정을 wifi_portal.has_internet() 대신 curl 기반으로 통일
+        online = has_real_internet(timeout=3.0)
 
         if online:
             commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
@@ -704,26 +705,21 @@ def request_wifi_setup():
         wifi_action_requested = True
 
 
-# ✅ 변경 2) cancel 복구를 NM 기반으로 (wpa_cli / wpa_supplicant restart 제거)
+# ✅ (수정) cancel 복구를 NM 기반으로 (wpa_cli/wpa_supplicant 재시작 제거)
 def restore_wifi_after_cancel(timeout=35):
-    # 1) AP 확실히 종료 + wlan0 초기화
     stop_ap_force()
 
-    # 2) NM 기반으로 wlan0를 STA로 복구
-    #    - AP용 192.168.4.1 잔존 방지
     run_quiet(["sudo", "ip", "addr", "flush", "dev", "wlan0"], timeout=2.0)
     run_quiet(["sudo", "ip", "link", "set", "wlan0", "down"], timeout=2.0)
     time.sleep(0.8)
     run_quiet(["sudo", "ip", "link", "set", "wlan0", "up"], timeout=2.0)
 
-    # NetworkManager 재시작(프로파일 'JI' 등 자동 활성화 기대)
     run_quiet(["sudo", "systemctl", "enable", "--now", "NetworkManager"], timeout=5.0)
     run_quiet(["sudo", "systemctl", "restart", "NetworkManager"], timeout=6.0)
 
-    # 3) “진짜 인터넷” 기준(HTTP)으로 확인
     t0 = time.time()
     while time.time() - t0 < timeout:
-        if has_real_internet():
+        if has_real_internet(timeout=3.0):
             return True
         time.sleep(0.6)
     return False
@@ -753,7 +749,6 @@ def _portal_loop_until_connected_or_cancel():
                 pass
             return "cancel"
 
-        # 사용자가 포탈에서 SSID/PSK 제출했을 때만 처리
         req = getattr(wifi_portal, "_state", {}).get("requested")
         if req:
             ok = wifi_portal.stop_ap_and_connect(req["ssid"], req["psk"])
@@ -793,7 +788,6 @@ def wifi_worker_thread():
                     need_update = True
                     time.sleep(2.0)
                 else:
-                    # status_message로 덮지 않도록 비움 (wifi_running 화면이 담당)
                     status_message = ""
                     need_update = True
 
@@ -971,7 +965,6 @@ def execute_command(command_index):
         need_update = True
         return
 
-    # ---- 업데이트 진행바는 "override 화면"으로 계속 유지됨 (깨짐 방지)
     set_ui_progress(30, "업데이트 중...", pos=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
 
@@ -1042,14 +1035,28 @@ def get_wifi_level():
         return 0
 
 
+# ✅ (수정) 온라인 상태 변하면 루트 메뉴 자동 갱신
 def net_poll_thread():
-    global cached_ip, cached_wifi_level
+    global cached_ip, cached_wifi_level, need_update
+    last_online = None
+
     while not stop_threads:
         cached_ip = get_ip_address()
+
+        online_now = has_real_internet(timeout=2.5)
+
         try:
-            cached_wifi_level = get_wifi_level() if wifi_portal.has_internet() else 0
+            cached_wifi_level = get_wifi_level() if online_now else 0
         except Exception:
             cached_wifi_level = 0
+
+        if last_online is None:
+            last_online = online_now
+        elif online_now != last_online:
+            last_online = online_now
+            refresh_root_menu(reset_index=False)
+            need_update = True
+
         time.sleep(1.5)
 
 
@@ -1069,16 +1076,19 @@ def _draw_override(draw):
     if not active:
         return False
 
-    draw.rectangle(device.bounding_box, outline="white", fill="black")
+    # ✅ 테두리(네모 outline) 전부 제거: 화면 전체는 fill만
+    draw.rectangle(device.bounding_box, fill="black")
 
     if kind == "progress":
-        # 메시지(멀티라인 가능)
         draw.text(pos, msg, font=get_font(fs), fill=255)
-        # progress bar
-        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
+
+        # ✅ 진행바 테두리도 제거 (fill만)
+        # bar background
+        draw.rectangle([(10, 50), (110, 60)], fill="black")
+        # bar fill
         fill_w = int((100 * percent) / 100)
         fill_w = int(max(0, min(100, fill_w)))
-        draw.rectangle([(10, 50), (10 + fill_w, 60)], outline="white", fill="white")
+        draw.rectangle([(10, 50), (10 + fill_w, 60)], fill="white")
         return True
 
     if kind == "text":
@@ -1111,7 +1121,6 @@ def update_oled_display():
 
         try:
             with canvas(device) as draw:
-                # 0) 진행바/특수화면 override가 있으면 그거만 계속 그림 (메뉴랑 섞이지 않음)
                 if _draw_override(draw):
                     return
 
@@ -1125,7 +1134,6 @@ def update_oled_display():
                     draw.text((99, 3), perc_text, font=font_st, fill=255)
                     draw.text((2, 1), current_time, font=font_time, fill=255)
 
-                    # Wi-Fi icon (bigger, aligned with time line)
                     draw_wifi_bars(draw, 70, 0, wifi_level)
 
                 else:
@@ -1137,20 +1145,20 @@ def update_oled_display():
                     if not wifi_portal.has_internet():
                         draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
 
-                # status_message overlay
+                # ✅ status_message 화면도 테두리 제거
                 if status_message:
-                    draw.rectangle(device.bounding_box, outline="white", fill="black")
+                    draw.rectangle(device.bounding_box, fill="black")
                     draw.text(message_position, status_message, font=get_font(message_font_size), fill=255)
                     return
 
-                # WiFi setup screen
+                # ✅ WiFi setup 화면도 테두리 제거
                 if wifi_running:
-                    draw.rectangle(device.bounding_box, outline="white", fill="black")
+                    draw.rectangle(device.bounding_box, fill="black")
                     draw.text((0, 0), "WiFi 설정 모드", font=get_font(13), fill=255)
 
                     body_font = get_font(11)
                     y0 = 14
-                    line = 12  # 행간
+                    line = 12
 
                     draw.text((0, y0 + line * 0), "AP: GDSENG-SETUP",  font=body_font, fill=255)
                     draw.text((0, y0 + line * 1), "PW: 12345678",      font=body_font, fill=255)
@@ -1158,7 +1166,6 @@ def update_oled_display():
                     draw.text((0, 52), "NEXT 길게: 취소", font=body_font, fill=255)
                     return
 
-                # Normal menu title
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 if item_type == "system":
                     center_y = 33
