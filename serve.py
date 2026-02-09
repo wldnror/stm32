@@ -15,7 +15,6 @@ import re
 
 VISUAL_X_OFFSET = 0
 display_lock = threading.Lock()
-state_lock = threading.Lock()
 stm32_state_lock = threading.Lock()
 
 BUTTON_PIN_NEXT = 27
@@ -28,12 +27,11 @@ SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.1
 MAX_VOLTAGE = 4.2
 
-is_auto_mode = True
-stm32_poll_enabled = True
+# ✅ AUTO-only
 auto_flash_done_connection = False
 
 GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(False)  # ✅ GPIO 경고 제거
+GPIO.setwarnings(False)
 
 last_time_button_next_pressed = 0.0
 last_time_button_execute_pressed = 0.0
@@ -42,8 +40,6 @@ LONG_PRESS_THRESHOLD = 0.7
 
 need_update = False
 is_command_executing = False
-last_mode_toggle_time = 0.0
-mode_toggle_requested = False
 
 execute_press_time = None
 execute_is_down = False
@@ -74,7 +70,9 @@ stop_threads = False
 
 
 def kill_openocd():
-    subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["sudo", "pkill", "-f", "openocd"],
+                   stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL)
 
 
 def init_ina219():
@@ -111,26 +109,9 @@ def battery_monitor_thread():
         time.sleep(2)
 
 
-def toggle_mode():
-    global is_auto_mode, last_mode_toggle_time, need_update
-    global stm32_poll_enabled, connection_success, connection_failed_since_last_success
-
-    is_auto_mode = not is_auto_mode
-    last_mode_toggle_time = time.time()
-    need_update = True
-    stm32_poll_enabled = is_auto_mode
-
-    if not is_auto_mode:
-        kill_openocd()
-        with stm32_state_lock:
-            connection_success = False
-            connection_failed_since_last_success = False
-
-
 def button_next_callback(channel):
     global last_time_button_next_pressed, next_pressed_event
-    now = time.time()
-    last_time_button_next_pressed = now
+    last_time_button_next_pressed = time.time()
     next_pressed_event = True
 
 
@@ -209,7 +190,7 @@ def stm32_poll_thread():
     while not stop_threads:
         time.sleep(0.05)
 
-        if not stm32_poll_enabled or not is_auto_mode or is_command_executing:
+        if is_command_executing:
             continue
 
         if commands:
@@ -276,14 +257,11 @@ def select_battery_icon(percentage):
 
 
 FIRMWARE_DIR = "/home/user/stm32/Program"
-OUT_SCRIPT_PATH = "/home/user/stm32/out.py"  # ✅ out.py 실행 메뉴용
+OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
 
 
 def parse_order_and_name(name: str, is_dir: bool):
-    if is_dir:
-        raw = name
-    else:
-        raw = os.path.splitext(name)[0]
+    raw = name if is_dir else os.path.splitext(name)[0]
     m = re.match(r"^(\d+)\.(.*)$", raw)
     if m:
         order = int(m.group(1))
@@ -339,13 +317,11 @@ def build_menu_for_dir(dir_path, is_root=False):
             extras_local.append(None)
 
     if is_root:
-        # ✅ out.py 실행 메뉴 추가 (루트에서만)
         commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
         names_local.append("펌웨어 추출(OUT)")
         types_local.append("script")
         extras_local.append(None)
 
-        # 기존 시스템 업데이트
         commands_local.append("git_pull")
         names_local.append("시스템 업데이트")
         types_local.append("system")
@@ -461,6 +437,7 @@ def unlock_memory():
         display_progress_and_message(30, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
         time.sleep(1)
         return True
+
     display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
     time.sleep(1)
     global need_update
@@ -482,6 +459,7 @@ def restart_script():
 def lock_memory_procedure():
     global need_update
     display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
+
     openocd_command = [
         "sudo",
         "openocd",
@@ -525,7 +503,7 @@ def execute_command(command_index):
     global is_executing, is_command_executing
     global current_menu, commands, command_names, command_types, menu_extras
     global current_command_index, menu_stack, need_update
-    global connection_success, connection_failed_since_last_success  # ✅ 여기서만 global 선언
+    global connection_success, connection_failed_since_last_success
 
     is_executing = True
     is_command_executing = True
@@ -563,11 +541,7 @@ def execute_command(command_index):
             command_types = current_menu["types"]
             menu_extras = current_menu["extras"]
 
-            if 0 <= prev_index < len(commands):
-                current_command_index = prev_index
-            else:
-                current_command_index = 0
-
+            current_command_index = prev_index if (0 <= prev_index < len(commands)) else 0
             need_update = True
 
         is_executing = False
@@ -585,7 +559,6 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    # ✅ out.py 실행 (펌웨어 추출/FTP 업로드)
     if item_type == "script":
         kill_openocd()
         with stm32_state_lock:
@@ -728,19 +701,9 @@ def update_oled_display():
             title = command_names[current_command_index]
 
             if item_type != "system":
-                mode_char = "A" if is_auto_mode else "M"
-                outer_ellipse_box = (2, 0, 22, 20)
-                text_position = {"A": (8, -3), "M": (5, -3)}
-                draw.ellipse(outer_ellipse_box, outline="white", fill=None)
-                draw.text(text_position[mode_char], mode_char, font=font, fill=255)
-
-            if item_type != "system":
                 battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
                 draw.bitmap((90, -9), battery_icon, fill=255)
-                if voltage_percentage is not None and voltage_percentage >= 0:
-                    perc_text = f"{voltage_percentage:.0f}%"
-                else:
-                    perc_text = "--%"
+                perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
                 draw.text((99, 3), perc_text, font=font_st, fill=255)
                 draw.text((27, 1), current_time, font=font_time, fill=255)
             else:
@@ -778,7 +741,7 @@ last_oled_update_time = 0.0
 
 
 def realtime_update_display():
-    global is_command_executing, need_update, last_oled_update_time
+    global need_update, last_oled_update_time
     while not stop_threads:
         if not is_command_executing:
             now = time.time()
@@ -821,57 +784,52 @@ try:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
 
+        # ✅ EXECUTE 롱프레스: system/dir/back/script만 실행
         if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
             if now - execute_press_time >= LONG_PRESS_THRESHOLD:
                 execute_long_handled = True
-                if is_auto_mode and commands and (not is_executing):
+                if commands and (not is_executing):
                     item_type = command_types[current_command_index]
                     if item_type in ("system", "dir", "back", "script"):
                         execute_command(current_command_index)
                         need_update = True
 
+        # ✅ EXECUTE 버튼 UP 처리
         if execute_is_down and GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.HIGH:
             execute_is_down = False
 
+            # 동시 입력(예전 모드토글 자리)은 무시
             if abs(last_time_button_next_pressed - last_time_button_execute_pressed) < button_press_interval:
-                mode_toggle_requested = True
                 next_pressed_event = False
             else:
-                if is_auto_mode:
-                    if execute_long_handled:
-                        pass
-                    else:
-                        if commands and (not is_executing):
-                            current_command_index = (current_command_index - 1) % len(commands)
-                            need_update = True
+                # 롱프레스 실행을 이미 처리했으면 pass
+                if execute_long_handled:
+                    pass
                 else:
+                    # 짧게 누르면 "이전 항목"
                     if commands and (not is_executing):
-                        execute_command(current_command_index)
+                        current_command_index = (current_command_index - 1) % len(commands)
                         need_update = True
 
             execute_press_time = None
             execute_long_handled = False
 
+        # ✅ NEXT: 다음 항목
         if next_pressed_event:
             if (not execute_is_down) and (now - last_time_button_next_pressed) >= 0:
-                if (not is_executing) and (now - last_mode_toggle_time >= 1):
+                if (not is_executing):
                     if commands:
                         current_command_index = (current_command_index + 1) % len(commands)
                         need_update = True
                 next_pressed_event = False
 
-        if mode_toggle_requested:
-            if now - last_mode_toggle_time >= 0.5:
-                toggle_mode()
-            mode_toggle_requested = False
-
+        # ✅ STM32 연결되면 현재 선택된 bin 자동 플래시(연결당 1회)
         with stm32_state_lock:
             cs = connection_success
 
         if commands:
             if (
-                is_auto_mode
-                and command_types[current_command_index] == "bin"
+                command_types[current_command_index] == "bin"
                 and (not is_executing)
                 and cs
                 and (not auto_flash_done_connection)
