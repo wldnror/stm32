@@ -100,7 +100,7 @@ wifi_cancel_requested = False
 # cached network ui
 cached_ip = "0.0.0.0"
 cached_wifi_level = 0
-cached_online = False  # ✅ 온라인 여부를 polling에서 계산해 메뉴 표시에 사용
+cached_online = False  # 온라인 여부 polling에서 계산해 메뉴 표시에 사용
 
 
 # ----------------------------
@@ -116,6 +116,14 @@ def run_quiet(cmd, timeout=2.0):
         return True
     except Exception:
         return False
+
+
+def run_capture(cmd, timeout=4.0):
+    try:
+        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
+        return r.returncode, r.stdout, r.stderr
+    except Exception as e:
+        return 999, "", str(e)
 
 
 def set_ui_progress(percent, message, pos=(0, 0), font_size=15):
@@ -150,7 +158,18 @@ def clear_ui_override():
 
 
 def stop_ap_force():
-    # hostapd/dnsmasq 종료(서비스/프로세스 모두 대응)
+    # (1) 포탈이 띄운 /tmp/*.conf 기반 hostapd/dnsmasq PID 먼저 정리
+    rc, out, _ = run_capture(["bash", "-lc", r"pgrep -a hostapd | awk '/\/tmp\/hostapd\.conf/{print $1}'"], timeout=2.0)
+    pids = out.strip().split()
+    for pid in pids:
+        run_quiet(["sudo", "kill", "-9", pid], timeout=1.0)
+
+    rc, out, _ = run_capture(["bash", "-lc", r"pgrep -a dnsmasq | awk '/\/tmp\/dnsmasq\.conf/{print $1}'"], timeout=2.0)
+    pids = out.strip().split()
+    for pid in pids:
+        run_quiet(["sudo", "kill", "-9", pid], timeout=1.0)
+
+    # (2) 서비스/프로세스 모두 대응
     for cmd in [
         ["sudo", "systemctl", "stop", "hostapd"],
         ["sudo", "systemctl", "stop", "dnsmasq"],
@@ -159,7 +178,7 @@ def stop_ap_force():
     ]:
         run_quiet(cmd, timeout=2.5)
 
-    # wlan0 AP용 IP/라우팅 초기화
+    # (3) wlan0 AP용 IP/라우팅 초기화
     for cmd in [
         ["sudo", "ip", "addr", "flush", "dev", "wlan0"],
         ["sudo", "ip", "link", "set", "wlan0", "down"],
@@ -182,6 +201,117 @@ def has_real_internet(timeout=1.2):
         return False
 
 
+def nm_is_active():
+    rc, out, _ = run_capture(["systemctl", "is-active", "NetworkManager"], timeout=2.0)
+    return (rc == 0) and (out.strip() == "active")
+
+
+def nm_ensure_running():
+    run_quiet(["sudo", "systemctl", "enable", "--now", "NetworkManager"], timeout=6.0)
+    run_quiet(["sudo", "systemctl", "restart", "NetworkManager"], timeout=6.0)
+    # NM이 wlan0를 잡을 시간
+    time.sleep(1.0)
+
+
+def nm_rescan():
+    run_quiet(["bash", "-lc", "nmcli dev wifi rescan ifname wlan0"], timeout=4.0)
+    time.sleep(0.6)
+
+
+def nm_saved_wifi_profiles():
+    """
+    반환: list of dict {name, ssid, priority(int), timestamp(int)}
+    """
+    profiles = []
+    rc, out, _ = run_capture(["bash", "-lc", "nmcli -t -f NAME,TYPE,TIMESTAMP connection show"], timeout=4.0)
+    if rc != 0:
+        return profiles
+
+    for line in out.splitlines():
+        parts = line.split(":")
+        if len(parts) < 3:
+            continue
+        name, ctype, ts = parts[0], parts[1], parts[2]
+        if ctype != "802-11-wireless":
+            continue
+
+        # SSID
+        rc2, ssid_out, _ = run_capture(["bash", "-lc", f'nmcli -g 802-11-wireless.ssid connection show "{name}"'], timeout=3.0)
+        ssid = ssid_out.strip() if rc2 == 0 else ""
+        if not ssid:
+            continue
+
+        # priority (없으면 0)
+        rc3, pr_out, _ = run_capture(["bash", "-lc", f'nmcli -g connection.autoconnect-priority connection show "{name}"'], timeout=3.0)
+        pr = 0
+        try:
+            pr = int(pr_out.strip()) if pr_out.strip() else 0
+        except Exception:
+            pr = 0
+
+        # timestamp
+        tsv = 0
+        try:
+            tsv = int(ts.strip()) if ts.strip() else 0
+        except Exception:
+            tsv = 0
+
+        profiles.append({"name": name, "ssid": ssid, "priority": pr, "timestamp": tsv})
+
+    return profiles
+
+
+def nm_scan_ssid_signal():
+    """
+    반환: dict ssid -> best_signal(0~100)
+    """
+    ss = {}
+    nm_rescan()
+    rc, out, _ = run_capture(["bash", "-lc", "nmcli -t -f SSID,SIGNAL dev wifi list ifname wlan0"], timeout=6.0)
+    if rc != 0:
+        return ss
+
+    for line in out.splitlines():
+        if not line:
+            continue
+        # SSID가 비어있을 수도 있음(::)
+        parts = line.split(":")
+        if len(parts) < 2:
+            continue
+        ssid = parts[0]
+        sig = parts[1]
+        if not ssid:
+            continue
+        try:
+            s = int(sig)
+        except Exception:
+            s = 0
+        if (ssid not in ss) or (s > ss[ssid]):
+            ss[ssid] = s
+    return ss
+
+
+def pick_best_saved_visible():
+    """
+    저장된 wifi 중 '지금 보이는 것'만 후보로 하고,
+    priority > signal > timestamp(최근) 순으로 고름.
+    """
+    saved = nm_saved_wifi_profiles()
+    scan = nm_scan_ssid_signal()
+    candidates = []
+    for p in saved:
+        if p["ssid"] in scan:
+            sig = scan.get(p["ssid"], 0)
+            # score: priority(큰 가중) + signal + timestamp(약한 가중)
+            score = (p["priority"] * 1000) + sig + (p["timestamp"] / 1_000_000)
+            candidates.append((score, sig, p["timestamp"], p["name"], p["ssid"], p["priority"]))
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    top = candidates[0]
+    return {"name": top[3], "ssid": top[4], "priority": top[5], "signal": top[1], "timestamp": top[2]}
+
+
 # ✅ 핵심: AP 모드 들어갈 때 NM/wpa/dhcpcd가 wlan0 건드리면 DHCP가 망가짐
 def prep_wlan0_for_ap():
     # NM / wpa / dhcpcd를 잠시 내려서 hostapd/dnsmasq가 wlan0를 독점
@@ -190,7 +320,7 @@ def prep_wlan0_for_ap():
         ["sudo", "systemctl", "stop", "wpa_supplicant"],
         ["sudo", "systemctl", "stop", "dhcpcd"],
     ]:
-        run_quiet(cmd, timeout=5.0)
+        run_quiet(cmd, timeout=6.0)
 
     # wlan0 초기화
     for cmd in [
@@ -204,31 +334,62 @@ def prep_wlan0_for_ap():
     time.sleep(0.6)
 
 
-def restore_wlan0_to_nm(prefer_profile="JI", timeout=18):
-    # AP 종료
+def restore_wlan0_to_nm(timeout=18, prefer_profile_name=None):
+    """
+    AP 종료 -> NM 복구 -> (가능하면) 저장된 네트워크 중 최적 후보로 연결
+    prefer_profile_name 이 주어지면 먼저 시도하되, 실패하면 자동 후보 선택.
+    """
     stop_ap_force()
+    nm_ensure_running()
 
-    # NM 재가동
-    run_quiet(["sudo", "systemctl", "start", "NetworkManager"], timeout=6.0)
-    run_quiet(["sudo", "systemctl", "restart", "NetworkManager"], timeout=6.0)
+    # 1) 우선 선호 프로파일 name이 있으면 시도
+    if prefer_profile_name:
+        run_quiet(["bash", "-lc", f'nmcli connection up "{prefer_profile_name}"'], timeout=10.0)
 
-    # 선호 프로파일 있으면 올려보기(없어도 무시)
-    try:
-        p = subprocess.run(
-            ["bash", "-lc", f'nmcli -t -f NAME connection show | grep -qx "{prefer_profile}"'],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        if p.returncode == 0:
-            run_quiet(["bash", "-lc", f'nmcli connection up "{prefer_profile}"'], timeout=8.0)
-    except Exception:
-        pass
+    # 2) 온라인이면 끝
+    t0 = time.time()
+    while time.time() - t0 < 3.5:
+        if has_real_internet(timeout=1.2):
+            return True
+        time.sleep(0.5)
 
-    # 인터넷 확인
+    # 3) 저장된+보이는 것 중 최적 후보로 연결 시도
+    best = pick_best_saved_visible()
+    if best:
+        run_quiet(["bash", "-lc", f'nmcli connection up "{best["name"]}"'], timeout=12.0)
+
+    # 4) 최종 인터넷 확인
     t0 = time.time()
     while time.time() - t0 < timeout:
         if has_real_internet(timeout=1.2):
             return True
         time.sleep(0.6)
+    return False
+
+
+def connect_to_ssid_via_nm(ssid, psk, timeout=22):
+    """
+    포탈에서 받은 SSID/PSK로 NM 연결(프로파일 자동 저장됨).
+    숨김 SSID일 수 있어 2회 시도.
+    """
+    nm_ensure_running()
+    nm_rescan()
+
+    # 기존 동일 SSID 프로파일이 있으면 그걸 올리는 편이 더 안정적일 때가 있음
+    # (그래도 비번 변경 케이스 때문에 직접 connect도 시도)
+    cmds = [
+        f'nmcli --wait {timeout} dev wifi connect "{ssid}" password "{psk}" ifname wlan0',
+        f'nmcli --wait {timeout} dev wifi connect "{ssid}" password "{psk}" ifname wlan0 hidden yes',
+    ]
+    for c in cmds:
+        run_quiet(["bash", "-lc", c], timeout=timeout + 6)
+
+        # DHCP/라우팅 반영 기다림
+        for _ in range(6):
+            if has_real_internet(timeout=1.2):
+                return True
+            time.sleep(0.7)
+
     return False
 
 
@@ -280,7 +441,7 @@ def button_next_edge(channel):
 
     now = time.time()
 
-    # ✅ soft debounce 너무 크면 눌림이 씹힘 -> 줄임
+    # soft debounce(너무 크면 씹힘 -> 줄임)
     if (now - last_time_button_next_pressed) < 0.08:
         return
     last_time_button_next_pressed = now
@@ -301,7 +462,6 @@ def button_next_edge(channel):
 def button_execute_callback(channel):
     global last_time_button_execute_pressed, execute_press_time, execute_is_down, execute_long_handled
     now = time.time()
-    # ✅ EXECUTE는 이벤트 자체 debouce는 GPIO bouncetime로 충분, 여기선 시간만 기록
     last_time_button_execute_pressed = now
     execute_press_time = now
     execute_is_down = True
@@ -311,7 +471,6 @@ def button_execute_callback(channel):
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-# ✅ bouncetime 조금 줄여서 반응성 개선
 GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_next_edge, bouncetime=40)
 GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=60)
 
@@ -547,8 +706,7 @@ def build_menu_for_dir(dir_path, is_root=False):
             extras_local.append(None)
 
     if is_root:
-        # ✅ polling에서 계산한 cached_online을 사용 (즉시 반영/안전)
-        online = cached_online
+        online = cached_online  # polling에서 계산한 cached_online 사용
 
         if online:
             commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
@@ -753,12 +911,11 @@ def _portal_loop_until_connected_or_cancel():
     """
     global wifi_cancel_requested
 
-    # ✅ AP 모드 준비: NM/wpa/dhcpcd 내려서 wlan0 독점
+    # AP 모드 준비: NM/wpa/dhcpcd 내려서 wlan0 독점
     prep_wlan0_for_ap()
 
     wifi_portal.start_ap()
-
-    # ✅ 혹시 start_ap가 IP를 못 잡아줘도 보강 (이미 있으면 실패해도 무시됨)
+    # 혹시 start_ap가 IP를 못 잡아줘도 보강 (이미 있으면 실패해도 무시됨)
     run_quiet(["sudo", "ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0"], timeout=2.0)
 
     if not getattr(wifi_portal, "_state", {}).get("server_started", False):
@@ -778,10 +935,28 @@ def _portal_loop_until_connected_or_cancel():
         # 사용자가 포탈에서 SSID/PSK 제출했을 때만 처리
         req = getattr(wifi_portal, "_state", {}).get("requested")
         if req:
-            ok = wifi_portal.stop_ap_and_connect(req["ssid"], req["psk"])
+            ssid = req.get("ssid", "")
+            psk = req.get("psk", "")
             wifi_portal._state["requested"] = None
-            if ok and wifi_portal.has_internet():
+
+            # 1) AP 완전 종료
+            try:
+                if hasattr(wifi_portal, "stop_ap"):
+                    wifi_portal.stop_ap()
+            except Exception:
+                pass
+            stop_ap_force()
+
+            # 2) NM으로 SSID 연결(저장됨)
+            ok = False
+            if ssid and psk:
+                ok = connect_to_ssid_via_nm(ssid, psk, timeout=22)
+
+            if ok and has_real_internet(timeout=1.2):
                 return True
+
+            # 실패하면 AP 다시 올림
+            prep_wlan0_for_ap()
             wifi_portal.start_ap()
             run_quiet(["sudo", "ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0"], timeout=2.0)
 
@@ -826,21 +1001,18 @@ def wifi_worker_thread():
 
                     if result == "cancel":
                         set_ui_text("WiFi 설정 취소", "재연결 중...", pos=(0, 10), font_size=13)
-                        ok_restore = restore_wlan0_to_nm(prefer_profile="JI", timeout=18)
+                        ok_restore = restore_wlan0_to_nm(timeout=18)
                         set_ui_text("재연결 완료" if ok_restore else "재연결 실패", "", pos=(15, 18), font_size=15)
                         time.sleep(1.4)
                         clear_ui_override()
 
-                    elif (result is True) and wifi_portal.has_internet():
-                        # 새 연결 성공 후에도 NM 복귀(평소 JI 우선 구조 유지)
-                        set_ui_text("WiFi 연결 완료", "복구 중...", pos=(0, 10), font_size=13)
-                        restore_wlan0_to_nm(prefer_profile="JI", timeout=18)
+                    elif result is True:
                         set_ui_text("WiFi 연결 완료", "", pos=(12, 18), font_size=15)
                         time.sleep(1.5)
                         clear_ui_override()
                     else:
                         set_ui_text("WiFi 연결 실패", "복구 중...", pos=(0, 10), font_size=13)
-                        restore_wlan0_to_nm(prefer_profile="JI", timeout=18)
+                        restore_wlan0_to_nm(timeout=18)
                         set_ui_text("WiFi 연결 실패", "", pos=(12, 18), font_size=15)
                         time.sleep(1.5)
                         clear_ui_override()
@@ -852,8 +1024,8 @@ def wifi_worker_thread():
                 with wifi_action_lock:
                     wifi_action_running = False
 
-                # ✅ 혹시라도 예외로 빠져도 wlan0는 NM으로 복구
-                restore_wlan0_to_nm(prefer_profile="JI", timeout=12)
+                # 예외로 빠져도 wlan0는 NM으로 복구(저장된 최적 후보 연결)
+                restore_wlan0_to_nm(timeout=12)
                 refresh_root_menu(reset_index=True)
                 need_update = True
 
@@ -1055,7 +1227,7 @@ def get_ip_address():
 
 def get_wifi_level():
     try:
-        r = subprocess.run(["iwconfig", "wlan0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.4)
+        r = subprocess.run(["iwconfig", "wlan0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.5)
         m = re.search(r"Signal level=(-?\d+)\s*dBm", r.stdout)
         if not m:
             return 0
@@ -1074,11 +1246,11 @@ def get_wifi_level():
 
 
 def net_poll_thread():
-    global cached_ip, cached_wifi_level, cached_online
+    global cached_ip, cached_wifi_level, cached_online, need_update
+    last_online = None
     while not stop_threads:
         cached_ip = get_ip_address()
 
-        # ✅ 온라인 판정: 실제 인터넷 우선, 실패 시 wifi_portal도 참고
         online = has_real_internet(timeout=1.2)
         if not online:
             try:
@@ -1092,9 +1264,11 @@ def net_poll_thread():
         except Exception:
             cached_wifi_level = 0
 
-        # 온라인 바뀌면 메뉴도 바로 갱신
-        refresh_root_menu(reset_index=False)
-        need_update = True
+        # 온라인 상태가 바뀌었을 때만 메뉴 재빌드(불필요한 흔들림 줄임)
+        if last_online is None or (last_online != cached_online):
+            refresh_root_menu(reset_index=False)
+            need_update = True
+            last_online = cached_online
 
         time.sleep(1.5)
 
@@ -1115,7 +1289,7 @@ def _draw_override(draw):
     if not active:
         return False
 
-    # ✅ 네모 테두리(outline) 제거
+    # 네모 테두리(outline) 제거
     draw.rectangle(device.bounding_box, fill="black")
 
     if kind == "progress":
@@ -1170,7 +1344,6 @@ def update_oled_display():
                     perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
                     draw.text((99, 3), perc_text, font=font_st, fill=255)
                     draw.text((2, 1), current_time, font=font_time, fill=255)
-
                     draw_wifi_bars(draw, 70, 0, wifi_level)
 
                 else:
