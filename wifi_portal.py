@@ -245,7 +245,7 @@ def connect():
     잠시 후 자동으로 재연결됩니다. (AP가 꺼질 수 있어요)
     """
 
-def run_portal(block=True, host="0.0.0.0", port=80):
+def run_portal(block=True, host="0.0.0.0", port=8080):
     # 서버는 1번만 띄우고, AP만 on/off 하는 방식으로도 쓸 수 있음
     if block:
         app.run(host=host, port=port, debug=False, use_reloader=False)
