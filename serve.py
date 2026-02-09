@@ -40,8 +40,10 @@ GPIO.setwarnings(False)
 
 last_time_button_next_pressed = 0.0
 last_time_button_execute_pressed = 0.0
+
 button_press_interval = 0.15
-LONG_PRESS_THRESHOLD = 0.7
+LONG_PRESS_THRESHOLD = 0.7              # EXECUTE long
+NEXT_LONG_CANCEL_THRESHOLD = 0.7        # NEXT long (wifi cancel)
 
 need_update = False
 is_command_executing = False
@@ -49,7 +51,13 @@ is_command_executing = False
 execute_press_time = None
 execute_is_down = False
 execute_long_handled = False
-next_pressed_event = False
+
+# NEXT input state
+next_press_time = None
+next_is_down = False
+next_long_handled = False
+next_pressed_event = False  # short press only
+
 is_executing = False
 
 menu_stack = []
@@ -72,6 +80,13 @@ connection_failed_since_last_success = False
 last_stm32_check_time = 0.0
 
 stop_threads = False
+
+# wifi cancel flag
+wifi_cancel_requested = False
+
+# cached network ui
+cached_ip = "0.0.0.0"
+cached_wifi_level = 0
 
 
 def kill_openocd():
@@ -109,10 +124,33 @@ def battery_monitor_thread():
         time.sleep(2)
 
 
-def button_next_callback(channel):
-    global last_time_button_next_pressed, next_pressed_event
-    last_time_button_next_pressed = time.time()
-    next_pressed_event = True
+def button_next_edge(channel):
+    """
+    NEXT는 BOTH edge로:
+    - 눌림: 시간 기록
+    - 떼짐: 짧으면 next_pressed_event=True
+    """
+    global last_time_button_next_pressed
+    global next_press_time, next_is_down, next_long_handled, next_pressed_event
+
+    now = time.time()
+
+    # soft debounce (추가 안전장치)
+    if (now - last_time_button_next_pressed) < 0.18:
+        return
+    last_time_button_next_pressed = now
+
+    if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:  # pressed
+        next_press_time = now
+        next_is_down = True
+        next_long_handled = False
+    else:  # released
+        if next_is_down and (not next_long_handled) and (next_press_time is not None):
+            dt = now - next_press_time
+            if dt < NEXT_LONG_CANCEL_THRESHOLD:
+                next_pressed_event = True
+        next_is_down = False
+        next_press_time = None
 
 
 def button_execute_callback(channel):
@@ -126,8 +164,10 @@ def button_execute_callback(channel):
 
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=100)
+
+GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_next_edge, bouncetime=80)
 GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=100)
+
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
@@ -250,6 +290,47 @@ def select_battery_icon(percentage):
     return full_battery_icon
 
 
+def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_size, min_size=10):
+    size = start_size
+    while size >= min_size:
+        f = get_font(size)
+        try:
+            bbox = draw.textbbox((0, 0), text, font=f)
+            w = bbox[2] - bbox[0]
+        except Exception:
+            try:
+                w, _ = draw.textsize(text, font=f)
+            except Exception:
+                w = len(text) * (size // 2)
+        if w <= max_width:
+            try:
+                draw.text((center_x, center_y), text, font=f, fill=255, anchor="mm")
+            except TypeError:
+                draw.text((center_x, center_y), text, font=f, fill=255)
+            return
+        size -= 1
+
+    f = get_font(min_size)
+    try:
+        draw.text((center_x, center_y), text, font=f, fill=255, anchor="mm")
+    except TypeError:
+        draw.text((center_x, center_y), text, font=f, fill=255)
+
+
+def draw_wifi_bars(draw, x, y, level):  # level 0~4
+    w = 2
+    gap = 1
+    base_h = 2
+    for i in range(4):
+        h = base_h + i * 2
+        xx = x + i * (w + gap)
+        yy = y + (8 - h)
+        if level >= (i + 1):
+            draw.rectangle([xx, yy, xx + w, y + 8], fill=255, outline=255)
+        else:
+            draw.rectangle([xx, yy, xx + w, y + 8], fill=0, outline=255)
+
+
 FIRMWARE_DIR = "/home/user/stm32/Program"
 OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
 
@@ -314,7 +395,8 @@ def build_menu_for_dir(dir_path, is_root=False):
 
         if online:
             commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
-            names_local.append("펌웨어 추출(OUT)")
+            # 메뉴명이 길면 오토핏이 처리하지만, 짧게도 가능
+            names_local.append("FW 추출(OUT)")
             types_local.append("script")
             extras_local.append(None)
 
@@ -508,6 +590,9 @@ def request_wifi_setup():
 
 
 def _portal_loop_until_connected_or_cancel():
+    global wifi_cancel_requested
+
+    wifi_cancel_requested = False
     wifi_portal.start_ap()
     if not getattr(wifi_portal, "_state", {}).get("server_started", False):
         wifi_portal.run_portal(block=False)
@@ -515,6 +600,14 @@ def _portal_loop_until_connected_or_cancel():
 
     t0 = time.time()
     while True:
+        if wifi_cancel_requested:
+            try:
+                if hasattr(wifi_portal, "stop_ap"):
+                    wifi_portal.stop_ap()
+            except Exception:
+                pass
+            return False
+
         req = getattr(wifi_portal, "_state", {}).get("requested")
         if req:
             ok = wifi_portal.stop_ap_and_connect(req["ssid"], req["psk"])
@@ -522,16 +615,19 @@ def _portal_loop_until_connected_or_cancel():
             if ok:
                 return True
             wifi_portal.start_ap()
+
         if wifi_portal.has_internet():
             return True
+
         if time.time() - t0 > 600:
             return False
-        time.sleep(0.5)
+
+        time.sleep(0.2)  # 반응성 개선
 
 
 def wifi_worker_thread():
     global wifi_action_requested, wifi_action_running
-    global status_message, message_position, message_font_size, need_update
+    global status_message, message_position, message_font_size, need_update, wifi_cancel_requested
 
     while not stop_threads:
         do = False
@@ -552,9 +648,9 @@ def wifi_worker_thread():
                     need_update = True
                     time.sleep(2.0)
                 else:
-                    status_message = "WiFi 설정 모드\nAP: GDSENG-SETUP\n192.168.4.1:8080"
+                    status_message = "WiFi 설정 모드\nAP: GDSENG-SETUP\nPW: 12345678\n192.168.4.1:8080\n(NEXT 길게:취소)"
                     message_position = (0, 0)
-                    message_font_size = 13
+                    message_font_size = 12
                     need_update = True
 
                     ok = _portal_loop_until_connected_or_cancel()
@@ -562,7 +658,13 @@ def wifi_worker_thread():
                     refresh_root_menu(reset_index=True)
                     need_update = True
 
-                    if ok and wifi_portal.has_internet():
+                    if wifi_cancel_requested:
+                        status_message = "WiFi 설정 취소"
+                        message_position = (12, 10)
+                        message_font_size = 15
+                        need_update = True
+                        time.sleep(1.0)
+                    elif ok and wifi_portal.has_internet():
                         status_message = "WiFi 연결 완료"
                         message_position = (12, 10)
                         message_font_size = 15
@@ -773,6 +875,40 @@ def get_ip_address():
         return "0.0.0.0"
 
 
+def get_wifi_level():
+    """
+    iwconfig wlan0에서 Signal level(dBm) 읽어서 0~4 단계로 변환
+    """
+    try:
+        r = subprocess.run(["iwconfig", "wlan0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.4)
+        m = re.search(r"Signal level=(-?\d+)\s*dBm", r.stdout)
+        if not m:
+            return 0
+        dbm = int(m.group(1))
+        if dbm >= -55:
+            return 4
+        if dbm >= -65:
+            return 3
+        if dbm >= -75:
+            return 2
+        if dbm >= -85:
+            return 1
+        return 0
+    except Exception:
+        return 0
+
+
+def net_poll_thread():
+    global cached_ip, cached_wifi_level
+    while not stop_threads:
+        cached_ip = get_ip_address()
+        try:
+            cached_wifi_level = get_wifi_level() if wifi_portal.has_internet() else 0
+        except Exception:
+            cached_wifi_level = 0
+        time.sleep(1.5)
+
+
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
 
@@ -789,7 +925,8 @@ def update_oled_display():
         now = datetime.now()
         current_time = now.strftime("%H시 %M분")
         voltage_percentage = battery_percentage
-        ip_address = get_ip_address()
+        ip_address = cached_ip
+        wifi_level = cached_wifi_level
 
         try:
             with canvas(device) as draw:
@@ -802,6 +939,10 @@ def update_oled_display():
                     perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
                     draw.text((99, 3), perc_text, font=font_st, fill=255)
                     draw.text((2, 1), current_time, font=font_time, fill=255)
+
+                    # Wi-Fi bars (배터리 아이콘 왼쪽)
+                    draw_wifi_bars(draw, 72, 2, wifi_level)
+
                 else:
                     ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
                     draw.text((0, 51), ip_display, font=font_big, fill=255)
@@ -818,31 +959,23 @@ def update_oled_display():
 
                 if wifi_running:
                     draw.rectangle(device.bounding_box, outline="white", fill="black")
-                    draw.text((0, 0), "WiFi 설정 모드", font=get_font(15), fill=255)
-                    draw.text((0, 18), "AP: GDSENG-SETUP", font=get_font(12), fill=255)
-                    draw.text((0, 32), "http://192.168.4.1", font=get_font(12), fill=255)
-                    draw.text((0, 44), ":8080", font=get_font(12), fill=255)
-                    draw.text((0, 54), current_time, font=font_small, fill=255)
+                    draw.text((0, 0),  "WiFi 설정 모드",    font=get_font(15), fill=255)
+                    draw.text((0, 16), "AP: GDSENG-SETUP",  font=get_font(12), fill=255)
+                    draw.text((0, 30), "PW: 12345678",      font=get_font(12), fill=255)
+                    draw.text((0, 42), "192.168.4.1:8080",  font=get_font(12), fill=255)
+                    draw.text((0, 54), current_time,        font=font_small,   fill=255)
                     return
 
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 if item_type == "system":
                     center_y = 33
-                    use_font = font_sysupdate
+                    start_size = 17
                 else:
                     center_y = 42
-                    use_font = font_1
+                    start_size = 21
 
-                try:
-                    draw.text((center_x, center_y), title, font=use_font, fill=255, anchor="mm")
-                except TypeError:
-                    try:
-                        w, h = draw.textsize(title, font=use_font)
-                    except Exception:
-                        w, h = (len(title) * 8, 16)
-                    x = int(center_x - w / 2)
-                    y = int(center_y - h / 2)
-                    draw.text((x, y), title, font=use_font, fill=255)
+                max_w = device.width - 4
+                draw_center_text_autofit(draw, title, center_x, center_y, max_w, start_size, min_size=11)
 
         except Exception:
             return
@@ -890,6 +1023,9 @@ stm32_thread.start()
 wifi_thread = threading.Thread(target=wifi_worker_thread, daemon=True)
 wifi_thread.start()
 
+net_thread = threading.Thread(target=net_poll_thread, daemon=True)
+net_thread.start()
+
 need_update = True
 
 
@@ -900,6 +1036,16 @@ try:
         if battery_percentage == 0:
             shutdown_system()
 
+        # wifi 모드에서 NEXT long => cancel
+        with wifi_action_lock:
+            wifi_running = wifi_action_running
+        if wifi_running and next_is_down and (not next_long_handled) and (next_press_time is not None):
+            if now - next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
+                next_long_handled = True
+                wifi_cancel_requested = True
+                need_update = True
+
+        # EXECUTE long press => execute current
         if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
             if now - execute_press_time >= LONG_PRESS_THRESHOLD:
                 execute_long_handled = True
@@ -912,6 +1058,7 @@ try:
         if execute_is_down and GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.HIGH:
             execute_is_down = False
 
+            # 동시에 눌렸던 케이스 처리(기존 로직 유지)
             if abs(last_time_button_next_pressed - last_time_button_execute_pressed) < button_press_interval:
                 next_pressed_event = False
             else:
@@ -923,13 +1070,13 @@ try:
             execute_press_time = None
             execute_long_handled = False
 
+        # NEXT short press => next menu
         if next_pressed_event:
-            if (not execute_is_down) and (now - last_time_button_next_pressed) >= 0:
-                if not is_executing:
-                    if commands:
-                        current_command_index = (current_command_index + 1) % len(commands)
-                        need_update = True
-                next_pressed_event = False
+            if (not execute_is_down) and (not is_executing):
+                if commands:
+                    current_command_index = (current_command_index + 1) % len(commands)
+                    need_update = True
+            next_pressed_event = False
 
         with stm32_state_lock:
             cs = connection_success
