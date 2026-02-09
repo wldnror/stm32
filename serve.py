@@ -167,16 +167,30 @@ def stop_ap_force():
         run_quiet(cmd, timeout=1.5)
 
 
-def has_real_internet(timeout=1.2):
-    # “진짜 인터넷” 판정: wlan0로 ping 8.8.8.8
+# ✅ 변경 1) ping 기반 오탐 제거: HTTP 204 체크 (curl)
+def has_real_internet(timeout=3.0):
+    """
+    “진짜 인터넷” 판정 (ICMP ping 대신 HTTP 기반)
+    - 현장/회사망에서 ping 차단되는 경우가 많아서 ping은 오탐이 잦음
+    - generate_204는 성공시 보통 204(또는 200) 반환
+    """
     try:
         r = subprocess.run(
-            ["ping", "-I", "wlan0", "-c", "1", "-W", "1", "8.8.8.8"],
-            stdout=subprocess.DEVNULL,
+            [
+                "curl",
+                "--interface", "wlan0",
+                "-m", str(int(timeout)),
+                "-s", "-o", "/dev/null",
+                "-w", "%{http_code}",
+                "http://connectivitycheck.gstatic.com/generate_204"
+            ],
+            stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            timeout=timeout
+            text=True,
+            timeout=timeout + 1.0
         )
-        return r.returncode == 0
+        code = (r.stdout or "").strip()
+        return code in ("204", "200")
     except Exception:
         return False
 
@@ -690,21 +704,23 @@ def request_wifi_setup():
         wifi_action_requested = True
 
 
-def restore_wifi_after_cancel(timeout=18):
+# ✅ 변경 2) cancel 복구를 NM 기반으로 (wpa_cli / wpa_supplicant restart 제거)
+def restore_wifi_after_cancel(timeout=35):
     # 1) AP 확실히 종료 + wlan0 초기화
     stop_ap_force()
 
-    # 2) STA 재구성/재시작
-    run_quiet(["sudo", "wpa_cli", "-i", "wlan0", "reconfigure"], timeout=1.5)
+    # 2) NM 기반으로 wlan0를 STA로 복구
+    #    - AP용 192.168.4.1 잔존 방지
+    run_quiet(["sudo", "ip", "addr", "flush", "dev", "wlan0"], timeout=2.0)
+    run_quiet(["sudo", "ip", "link", "set", "wlan0", "down"], timeout=2.0)
+    time.sleep(0.8)
+    run_quiet(["sudo", "ip", "link", "set", "wlan0", "up"], timeout=2.0)
 
-    for cmd in [
-        ["sudo", "systemctl", "restart", "wpa_supplicant"],
-        ["sudo", "systemctl", "restart", "dhcpcd"],
-        ["sudo", "systemctl", "restart", "networking"],
-    ]:
-        run_quiet(cmd, timeout=3.0)
+    # NetworkManager 재시작(프로파일 'JI' 등 자동 활성화 기대)
+    run_quiet(["sudo", "systemctl", "enable", "--now", "NetworkManager"], timeout=5.0)
+    run_quiet(["sudo", "systemctl", "restart", "NetworkManager"], timeout=6.0)
 
-    # 3) “진짜 인터넷” 기준으로 확인
+    # 3) “진짜 인터넷” 기준(HTTP)으로 확인
     t0 = time.time()
     while time.time() - t0 < timeout:
         if has_real_internet():
@@ -788,7 +804,7 @@ def wifi_worker_thread():
 
                     if result == "cancel":
                         set_ui_text("WiFi 설정 취소", "재연결 중...", pos=(0, 10), font_size=13)
-                        ok_restore = restore_wifi_after_cancel(timeout=18)
+                        ok_restore = restore_wifi_after_cancel(timeout=35)
                         set_ui_text("재연결 완료" if ok_restore else "재연결 실패", "", pos=(15, 18), font_size=15)
                         time.sleep(1.4)
                         clear_ui_override()
