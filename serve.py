@@ -316,7 +316,6 @@ def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_si
 
 
 def draw_wifi_bars(draw, x, y, level):  # level 0~4
-    # 크게 보이게 + 기준선 맞추기
     bar_w = 3
     gap = 2
     base_h = 3
@@ -590,21 +589,18 @@ def request_wifi_setup():
 
 
 def restore_wifi_after_cancel(timeout=12):
-    # 기존 wpa_supplicant 설정으로 재연결 유도
     try:
         subprocess.run(["sudo", "wpa_cli", "-i", "wlan0", "reconfigure"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1.5)
     except Exception:
         pass
 
-    # dhcpcd 재시작(라즈비안 기본)
     try:
         subprocess.run(["sudo", "systemctl", "restart", "dhcpcd"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2.5)
     except Exception:
         pass
 
-    # 필요시 wpa_supplicant 재시작
     try:
         subprocess.run(["sudo", "systemctl", "restart", "wpa_supplicant"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2.5)
@@ -622,9 +618,9 @@ def restore_wifi_after_cancel(timeout=12):
 def _portal_loop_until_connected_or_cancel():
     """
     반환값:
-      True  = 연결됨
-      False = 실패/타임아웃
-      "cancel" = 사용자 취소(NEXT long)
+      True      = 새 연결 성공
+      False     = 실패/타임아웃
+      "cancel"  = 사용자 취소(NEXT long)
     """
     global wifi_cancel_requested
 
@@ -643,16 +639,15 @@ def _portal_loop_until_connected_or_cancel():
                 pass
             return "cancel"
 
+        # 사용자가 포탈에서 SSID/PSK 제출했을 때만 처리
         req = getattr(wifi_portal, "_state", {}).get("requested")
         if req:
             ok = wifi_portal.stop_ap_and_connect(req["ssid"], req["psk"])
             wifi_portal._state["requested"] = None
-            if ok:
+            if ok and wifi_portal.has_internet():
                 return True
-            wifi_portal.start_ap()
 
-        if wifi_portal.has_internet():
-            return True
+            wifi_portal.start_ap()
 
         if time.time() - t0 > 600:
             return False
@@ -685,9 +680,8 @@ def wifi_worker_thread():
                     need_update = True
                     time.sleep(2.0)
                 else:
-                    status_message = "WiFi 설정 모드"
-                    message_position = (0, 0)
-                    message_font_size = 13
+                    # ✅ status_message로 덮지 않도록 비움 (wifi_running 화면이 담당)
+                    status_message = ""
                     need_update = True
 
                     result = _portal_loop_until_connected_or_cancel()
@@ -982,7 +976,6 @@ def update_oled_display():
                     draw.text((99, 3), perc_text, font=font_st, fill=255)
                     draw.text((2, 1), current_time, font=font_time, fill=255)
 
-                    # Wi-Fi bars: 크기 키우고, 시계 라인에 맞춰 아래로
                     draw_wifi_bars(draw, 70, 0, wifi_level)
 
                 else:
@@ -1002,19 +995,16 @@ def update_oled_display():
                 if wifi_running:
                     draw.rectangle(device.bounding_box, outline="white", fill="black")
 
-                    # 타이틀
                     draw.text((0, 0), "WiFi 설정 모드", font=get_font(13), fill=255)
 
-                    # 본문: 행간 직접 제어(아래로 튀는 문제 방지)
                     body_font = get_font(11)
                     y0 = 14
-                    line = 12  # 행간(필요하면 11~12 사이로 조절)
+                    line = 12
 
                     draw.text((0, y0 + line * 0), "AP: GDSENG-SETUP",  font=body_font, fill=255)
                     draw.text((0, y0 + line * 1), "PW: 12345678",      font=body_font, fill=255)
                     draw.text((0, y0 + line * 2), "192.168.4.1:8080",  font=body_font, fill=255)
 
-                    # 하단 안내
                     draw.text((0, 52), "NEXT 길게: 취소", font=body_font, fill=255)
                     return
 
@@ -1088,7 +1078,6 @@ try:
         if battery_percentage == 0:
             shutdown_system()
 
-        # wifi 모드에서 NEXT long => cancel
         with wifi_action_lock:
             wifi_running = wifi_action_running
         if wifi_running and next_is_down and (not next_long_handled) and (next_press_time is not None):
@@ -1097,7 +1086,6 @@ try:
                 wifi_cancel_requested = True
                 need_update = True
 
-        # EXECUTE long press => execute current
         if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
             if now - execute_press_time >= LONG_PRESS_THRESHOLD:
                 execute_long_handled = True
@@ -1121,7 +1109,6 @@ try:
             execute_press_time = None
             execute_long_handled = False
 
-        # NEXT short press => next menu
         if next_pressed_event:
             if (not execute_is_down) and (not is_executing):
                 if commands:
