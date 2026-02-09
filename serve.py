@@ -13,6 +13,9 @@ from ina219 import INA219
 import threading
 import re
 
+# ✅ Wi-Fi 설정 포털 모듈 추가
+import wifi_portal
+
 VISUAL_X_OFFSET = 0
 display_lock = threading.Lock()
 stm32_state_lock = threading.Lock()
@@ -318,7 +321,7 @@ def build_menu_for_dir(dir_path, is_root=False):
 
     if is_root:
         commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
-        names_local.append("펌웨어 OUT")
+        names_local.append("펌웨어 추출(OUT)")
         types_local.append("script")
         extras_local.append(None)
 
@@ -763,6 +766,39 @@ def shutdown_system():
         print("시스템 종료 중 오류 발생:", str(e))
 
 
+# ✅✅✅ Wi-Fi 자동 설정/포털 watchdog 추가
+def wifi_watchdog_thread():
+    global status_message, message_position, message_font_size, need_update
+
+    while not stop_threads:
+        # 인터넷 OK면 느리게 체크
+        if wifi_portal.has_internet():
+            time.sleep(10)
+            continue
+
+        # 인터넷이 없으면 안내
+        status_message = "WiFi 설정 필요\nAP: GDSENG-SETUP\n192.168.4.1"
+        message_position = (0, 0)
+        message_font_size = 13
+        need_update = True
+
+        # 포털 실행 (연결될 때까지)
+        ok = wifi_portal.ensure_wifi_connected(auto_start_ap=True)
+
+        if ok:
+            status_message = "WiFi 연결 완료"
+        else:
+            status_message = "WiFi 연결 실패"
+        message_position = (15, 10)
+        message_font_size = 15
+        need_update = True
+
+        time.sleep(3)
+        status_message = ""
+        need_update = True
+        time.sleep(5)
+
+
 init_ina219()
 battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
 battery_thread.start()
@@ -772,6 +808,10 @@ realtime_update_thread.start()
 
 stm32_thread = threading.Thread(target=stm32_poll_thread, daemon=True)
 stm32_thread.start()
+
+# ✅ Wi-Fi watchdog 스레드 시작
+wifi_thread = threading.Thread(target=wifi_watchdog_thread, daemon=True)
+wifi_thread.start()
 
 need_update = True
 
