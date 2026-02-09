@@ -23,6 +23,19 @@ wifi_action_lock = threading.Lock()
 wifi_action_requested = False
 wifi_action_running = False
 
+# --------- OLED override(중요: 화면 깨짐/깜빡임 방지) ----------
+ui_override_lock = threading.Lock()
+ui_override = {
+    "active": False,        # True면 메뉴화면 대신 이 화면을 계속 그린다
+    "kind": "none",         # "progress" | "text"
+    "percent": 0,
+    "message": "",
+    "pos": (0, 0),
+    "font_size": 15,
+    "line2": "",            # text kind일 때 추가 줄
+}
+# -------------------------------------------------------------
+
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
 LED_SUCCESS = 24
@@ -102,6 +115,37 @@ def run_quiet(cmd, timeout=2.0):
         return True
     except Exception:
         return False
+
+
+def set_ui_progress(percent, message, pos=(0, 0), font_size=15):
+    with ui_override_lock:
+        ui_override["active"] = True
+        ui_override["kind"] = "progress"
+        ui_override["percent"] = int(max(0, min(100, percent)))
+        ui_override["message"] = message
+        ui_override["pos"] = pos
+        ui_override["font_size"] = font_size
+        ui_override["line2"] = ""
+
+
+def set_ui_text(line1, line2="", pos=(0, 0), font_size=15):
+    with ui_override_lock:
+        ui_override["active"] = True
+        ui_override["kind"] = "text"
+        ui_override["message"] = line1
+        ui_override["line2"] = line2
+        ui_override["pos"] = pos
+        ui_override["font_size"] = font_size
+        ui_override["percent"] = 0
+
+
+def clear_ui_override():
+    with ui_override_lock:
+        ui_override["active"] = False
+        ui_override["kind"] = "none"
+        ui_override["message"] = ""
+        ui_override["line2"] = ""
+        ui_override["percent"] = 0
 
 
 def stop_ap_force():
@@ -498,19 +542,6 @@ refresh_root_menu(reset_index=True)
 
 
 # ----------------------------
-# Display helpers
-# ----------------------------
-def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
-    try:
-        with canvas(device) as draw:
-            draw.text(message_position, message, font=get_font(font_size), fill=255)
-            draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
-            draw.rectangle([(10, 50), (10 + int(percentage), 60)], outline="white", fill="white")
-    except Exception:
-        pass
-
-
-# ----------------------------
 # Git pull / System update
 # ----------------------------
 def git_pull():
@@ -532,50 +563,49 @@ def git_pull():
 
     os.chmod(shell_script_path, 0o755)
 
-    try:
-        with canvas(device) as draw:
-            draw.text((36, 8), "시스템", font=font, fill=255)
-            draw.text((17, 27), "업데이트 중", font=font, fill=255)
-    except Exception:
-        pass
+    set_ui_text("시스템", "업데이트 중", pos=(20, 10), font_size=15)
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
         if result.returncode == 0:
             if "이미 최신 상태" in result.stdout:
-                display_progress_and_message(100, "이미 최신 상태", message_position=(10, 10), font_size=15)
-                time.sleep(1)
+                set_ui_text("이미 최신 상태", "", pos=(10, 18), font_size=15)
+                time.sleep(1.0)
             else:
                 GPIO.output(LED_SUCCESS, True)
-                display_progress_and_message(100, "업데이트 성공!", message_position=(10, 10), font_size=15)
-                time.sleep(1)
+                set_ui_text("업데이트 성공!", "", pos=(10, 18), font_size=15)
+                time.sleep(1.0)
                 GPIO.output(LED_SUCCESS, False)
                 restart_script()
         else:
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            display_progress_and_message(0, "업데이트 실패", message_position=(10, 10), font_size=15)
+            set_ui_text("업데이트 실패", "", pos=(10, 18), font_size=15)
             time.sleep(1.2)
+
     except Exception:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        display_progress_and_message(0, "오류 발생", message_position=(20, 10), font_size=15)
+        set_ui_text("오류 발생", "", pos=(20, 18), font_size=15)
         time.sleep(1.2)
+
     finally:
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
 
 
 # ----------------------------
 # OpenOCD lock/unlock
 # ----------------------------
 def unlock_memory():
-    display_progress_and_message(0, "메모리 잠금\n   해제 중", message_position=(18, 0), font_size=15)
+    set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
 
     openocd_command = [
         "sudo", "openocd",
@@ -590,19 +620,20 @@ def unlock_memory():
     result = subprocess.run(openocd_command)
 
     if result.returncode == 0:
-        display_progress_and_message(30, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
+        set_ui_progress(30, "메모리 잠금\n 해제 성공!", pos=(20, 0), font_size=15)
         time.sleep(1)
         return True
 
-    display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
+    set_ui_progress(0, "메모리 잠금\n 해제 실패!", pos=(20, 0), font_size=15)
     time.sleep(1)
+
     global need_update
     need_update = True
     return False
 
 
 def restart_script():
-    display_progress_and_message(25, "재시작 중", message_position=(20, 10), font_size=15)
+    set_ui_progress(25, "재시작 중", pos=(20, 10), font_size=15)
 
     def restart():
         time.sleep(1)
@@ -613,7 +644,7 @@ def restart_script():
 
 def lock_memory_procedure():
     global need_update
-    display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
+    set_ui_progress(80, "메모리 잠금 중", pos=(3, 10), font_size=15)
 
     openocd_command = [
         "sudo",
@@ -630,18 +661,18 @@ def lock_memory_procedure():
         result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
             GPIO.output(LED_SUCCESS, True)
-            display_progress_and_message(100, "메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
+            set_ui_progress(100, "메모리 잠금\n    성공", pos=(20, 0), font_size=15)
             time.sleep(1)
             GPIO.output(LED_SUCCESS, False)
         else:
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            display_progress_and_message(0, "메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
+            set_ui_progress(0, "메모리 잠금\n    실패", pos=(20, 0), font_size=15)
             time.sleep(1)
     except Exception:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        display_progress_and_message(0, "오류 발생", message_position=(20, 10), font_size=15)
+        set_ui_progress(0, "오류 발생", pos=(20, 10), font_size=15)
         time.sleep(1)
     finally:
         GPIO.output(LED_SUCCESS, False)
@@ -713,7 +744,6 @@ def _portal_loop_until_connected_or_cancel():
             wifi_portal._state["requested"] = None
             if ok and wifi_portal.has_internet():
                 return True
-
             wifi_portal.start_ap()
 
         if time.time() - t0 > 600:
@@ -757,31 +787,20 @@ def wifi_worker_thread():
                     need_update = True
 
                     if result == "cancel":
-                        status_message = "WiFi 설정 취소\n재연결 중..."
-                        message_position = (0, 10)
-                        message_font_size = 13
-                        need_update = True
-
+                        set_ui_text("WiFi 설정 취소", "재연결 중...", pos=(0, 10), font_size=13)
                         ok_restore = restore_wifi_after_cancel(timeout=18)
-
-                        status_message = "재연결 완료" if ok_restore else "재연결 실패"
-                        message_position = (15, 10)
-                        message_font_size = 15
-                        need_update = True
+                        set_ui_text("재연결 완료" if ok_restore else "재연결 실패", "", pos=(15, 18), font_size=15)
                         time.sleep(1.4)
+                        clear_ui_override()
 
                     elif (result is True) and wifi_portal.has_internet():
-                        status_message = "WiFi 연결 완료"
-                        message_position = (12, 10)
-                        message_font_size = 15
-                        need_update = True
+                        set_ui_text("WiFi 연결 완료", "", pos=(12, 18), font_size=15)
                         time.sleep(1.5)
+                        clear_ui_override()
                     else:
-                        status_message = "WiFi 연결 실패"
-                        message_position = (12, 10)
-                        message_font_size = 15
-                        need_update = True
+                        set_ui_text("WiFi 연결 실패", "", pos=(12, 18), font_size=15)
                         time.sleep(1.5)
+                        clear_ui_override()
 
                 status_message = ""
                 need_update = True
@@ -870,16 +889,17 @@ def execute_command(command_index):
         if not os.path.isfile(OUT_SCRIPT_PATH):
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            display_progress_and_message(0, "out.py 없음", message_position=(15, 10), font_size=15)
+            set_ui_text("out.py 없음", "", pos=(15, 18), font_size=15)
             time.sleep(1.5)
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
+            clear_ui_override()
             need_update = True
             is_executing = False
             is_command_executing = False
             return
 
-        display_progress_and_message(10, "추출/업로드\n 실행 중...", message_position=(10, 5), font_size=15)
+        set_ui_progress(10, "추출/업로드\n 실행 중...", pos=(10, 5), font_size=15)
 
         try:
             result = subprocess.run(
@@ -892,13 +912,13 @@ def execute_command(command_index):
 
             if result.returncode == 0:
                 GPIO.output(LED_SUCCESS, True)
-                display_progress_and_message(100, "완료!", message_position=(35, 10), font_size=15)
+                set_ui_progress(100, "완료!", pos=(35, 10), font_size=15)
                 time.sleep(1)
                 GPIO.output(LED_SUCCESS, False)
             else:
                 GPIO.output(LED_ERROR, True)
                 GPIO.output(LED_ERROR1, True)
-                display_progress_and_message(0, "실패!", message_position=(35, 10), font_size=15)
+                set_ui_progress(0, "실패!", pos=(35, 10), font_size=15)
                 time.sleep(1.2)
                 GPIO.output(LED_ERROR, False)
                 GPIO.output(LED_ERROR1, False)
@@ -906,11 +926,12 @@ def execute_command(command_index):
         except Exception:
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            display_progress_and_message(0, "오류 발생", message_position=(25, 10), font_size=15)
+            set_ui_progress(0, "오류 발생", pos=(25, 10), font_size=15)
             time.sleep(1.2)
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
 
+        clear_ui_override()
         refresh_root_menu(reset_index=True)
         need_update = True
         is_executing = False
@@ -924,21 +945,18 @@ def execute_command(command_index):
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        try:
-            with canvas(device) as draw:
-                draw.text((20, 8), "메모리 잠금", font=font, fill=255)
-                draw.text((28, 27), "해제 실패", font=font, fill=255)
-        except Exception:
-            pass
+        set_ui_text("메모리 잠금", "해제 실패", pos=(20, 12), font_size=15)
         time.sleep(2)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
         is_executing = False
         is_command_executing = False
         need_update = True
         return
 
-    display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
+    # ---- 업데이트 진행바는 "override 화면"으로 계속 유지됨 (깨짐 방지)
+    set_ui_progress(30, "업데이트 중...", pos=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
 
     start_time = time.time()
@@ -949,24 +967,25 @@ def execute_command(command_index):
         elapsed = time.time() - start_time
         current_progress = 30 + (elapsed * progress_increment)
         current_progress = min(current_progress, 80)
-        display_progress_and_message(current_progress, "업데이트 중...", message_position=(12, 10), font_size=15)
-        time.sleep(0.5)
+        set_ui_progress(current_progress, "업데이트 중...", pos=(12, 10), font_size=15)
+        time.sleep(0.2)
 
     result = process.returncode
     if result == 0:
-        display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
-        time.sleep(10.5)
+        set_ui_progress(80, "업데이트 성공!", pos=(7, 10), font_size=15)
+        time.sleep(1.0)
         lock_memory_procedure()
     else:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        display_progress_and_message(0, "업데이트 실패", message_position=(7, 10), font_size=15)
+        set_ui_progress(0, "업데이트 실패", pos=(7, 10), font_size=15)
         time.sleep(1)
 
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
+    clear_ui_override()
     need_update = True
     is_executing = False
     is_command_executing = False
@@ -1021,6 +1040,40 @@ def net_poll_thread():
 # ----------------------------
 # OLED render
 # ----------------------------
+def _draw_override(draw):
+    with ui_override_lock:
+        active = ui_override["active"]
+        kind = ui_override["kind"]
+        percent = ui_override["percent"]
+        msg = ui_override["message"]
+        pos = ui_override["pos"]
+        fs = ui_override["font_size"]
+        line2 = ui_override["line2"]
+
+    if not active:
+        return False
+
+    draw.rectangle(device.bounding_box, outline="white", fill="black")
+
+    if kind == "progress":
+        # 메시지(멀티라인 가능)
+        draw.text(pos, msg, font=get_font(fs), fill=255)
+        # progress bar
+        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
+        fill_w = int((100 * percent) / 100)
+        fill_w = int(max(0, min(100, fill_w)))
+        draw.rectangle([(10, 50), (10 + fill_w, 60)], outline="white", fill="white")
+        return True
+
+    if kind == "text":
+        draw.text(pos, msg, font=get_font(fs), fill=255)
+        if line2:
+            draw.text((pos[0], pos[1] + 18), line2, font=get_font(fs), fill=255)
+        return True
+
+    return False
+
+
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
 
@@ -1042,6 +1095,10 @@ def update_oled_display():
 
         try:
             with canvas(device) as draw:
+                # 0) 진행바/특수화면 override가 있으면 그거만 계속 그림 (메뉴랑 섞이지 않음)
+                if _draw_override(draw):
+                    return
+
                 item_type = command_types[current_command_index]
                 title = command_names[current_command_index]
 
@@ -1111,22 +1168,20 @@ def realtime_update_display():
     global need_update, last_oled_update_time
     while not stop_threads:
         now = time.time()
-        if need_update or (now - last_oled_update_time >= 1.0):
+        if need_update or (now - last_oled_update_time >= 0.2):
             update_oled_display()
             last_oled_update_time = now
             need_update = False
-        time.sleep(0.05)
+        time.sleep(0.03)
 
 
 # ----------------------------
 # Power
 # ----------------------------
 def shutdown_system():
+    set_ui_text("배터리 부족", "시스템 종료 중...", pos=(10, 18), font_size=15)
+    time.sleep(2)
     try:
-        with canvas(device) as draw:
-            draw.text((20, 25), "배터리 부족", font=font, fill=255)
-            draw.text((25, 50), "시스템 종료 중...", font=font_st, fill=255)
-        time.sleep(5)
         os.system("sudo shutdown -h now")
     except Exception:
         pass
