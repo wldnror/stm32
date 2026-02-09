@@ -2,7 +2,6 @@
 import os
 import re
 import time
-import json
 import socket
 import subprocess
 import threading
@@ -11,12 +10,11 @@ from flask import Flask, request, render_template_string
 AP_SSID = "GDSENG-SETUP"
 AP_PASS = "12345678"          # 8자 이상
 AP_IP   = "192.168.4.1"
-AP_NET  = "192.168.4.0/24"
 IFACE   = "wlan0"
 
 WPA_CONF = "/etc/wpa_supplicant/wpa_supplicant.conf"
 
-# 간단 HTML (모바일용)
+# 모바일용 간단 페이지
 PAGE = """
 <!doctype html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -27,8 +25,11 @@ body{font-family:system-ui;margin:16px}
 input,select,button{width:100%;padding:12px;margin-top:10px;font-size:16px}
 button{font-weight:700}
 .small{color:#666;font-size:13px}
+.err{color:#b00020;font-size:13px;margin-top:8px}
+.ok{color:#006400;font-size:13px;margin-top:8px}
 </style></head><body>
 <h2>라즈베리파이 Wi-Fi 설정</h2>
+
 <div class="card">
   <div class="small">주변 Wi-Fi 목록</div>
   <form method="post" action="/connect">
@@ -40,6 +41,10 @@ button{font-weight:700}
     <input name="psk" type="password" placeholder="비밀번호 (없으면 빈칸)" />
     <button type="submit">연결하기</button>
   </form>
+
+  {% if msg %}
+    <div class="{{ 'ok' if ok else 'err' }}">{{ msg }}</div>
+  {% endif %}
 </div>
 
 <div class="card">
@@ -70,7 +75,7 @@ def _run(cmd, check=False):
     return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=check)
 
 def has_internet(timeout=2.0):
-    # DNS/UDP로 빠르게 체크
+    # 빠른 연결 확인 (UDP DNS)
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.settimeout(timeout)
@@ -81,44 +86,43 @@ def has_internet(timeout=2.0):
         return False
 
 def scan_ssids():
-    # iwlist scan 기반 (파이 제로에서 잘 동작)
+    # iwlist scan (Pi Zero에서도 흔히 사용)
     try:
         p = _run(["sudo", "iwlist", IFACE, "scan"])
         txt = p.stdout + "\n" + p.stderr
         ssids = re.findall(r'ESSID:"(.*?)"', txt)
-        ssids = [s for s in ssids if s and s.strip()]
-        # 중복 제거 (순서 유지)
+        ssids = [s.strip() for s in ssids if s and s.strip()]
         out = []
         for s in ssids:
             if s not in out:
                 out.append(s)
-        return out[:30]
+        return out[:40]
     except Exception:
         return []
 
 def _write_wpa_network(ssid, psk):
-    # wpa_passphrase로 PSK 해시 생성해서 안전하게 저장
     if not ssid:
         raise ValueError("SSID empty")
 
     if psk:
         gen = _run(["wpa_passphrase", ssid, psk], check=True).stdout
-        # network 블록만 추출
         m = re.search(r"network=\{.*?\}\s*", gen, flags=re.S)
         block = m.group(0) if m else gen
     else:
-        # 오픈 네트워크
         block = f'network={{\n    ssid="{ssid}"\n    key_mgmt=NONE\n}}\n'
 
-    # 기존 파일 백업
     _run(["sudo", "cp", WPA_CONF, WPA_CONF + ".bak"])
 
-    # country / ctrl_interface / update_config 유지하면서 network만 추가 (맨 아래 append)
     tmp = "/tmp/wpa_supplicant.conf.tmp"
     existing = _run(["sudo", "cat", WPA_CONF]).stdout
 
-    # 이미 같은 ssid가 있으면 제거 후 append
-    existing = re.sub(r'network=\{[^}]*ssid="'+re.escape(ssid)+r'"[^}]*\}\s*', "", existing, flags=re.S)
+    # 동일 SSID가 이미 있으면 제거 후 append
+    existing = re.sub(
+        r'network=\{[^}]*ssid="'+re.escape(ssid)+r'"[^}]*\}\s*',
+        "",
+        existing,
+        flags=re.S
+    )
 
     new_content = existing.rstrip() + "\n\n" + block + "\n"
     with open(tmp, "w", encoding="utf-8") as f:
@@ -128,15 +132,16 @@ def _write_wpa_network(ssid, psk):
     _run(["sudo", "chmod", "600", WPA_CONF])
 
 def start_ap():
-    # AP 모드로 전환 (hostapd + dnsmasq 즉석 설정)
     _state["running"] = True
     _state["done"] = False
     _state["last_error"] = ""
+    _state["requested"] = None
 
-    # 네트워크/프로세스 정리
+    # 기존 AP 프로세스 정리
     _run(["sudo", "pkill", "-f", "hostapd"])
     _run(["sudo", "pkill", "-f", "dnsmasq"])
 
+    # wlan0 IP 설정
     _run(["sudo", "ip", "link", "set", IFACE, "down"])
     _run(["sudo", "ip", "addr", "flush", "dev", IFACE])
     _run(["sudo", "ip", "addr", "add", f"{AP_IP}/24", "dev", IFACE])
@@ -161,19 +166,21 @@ interface={IFACE}
 dhcp-range=192.168.4.10,192.168.4.200,255.255.255.0,12h
 address=/#/{AP_IP}
 """
+
     with open("/tmp/hostapd.conf", "w") as f:
         f.write(hostapd_conf.strip() + "\n")
     with open("/tmp/dnsmasq.conf", "w") as f:
         f.write(dnsmasq_conf.strip() + "\n")
 
-    # dnsmasq 실행
-    _run(["sudo", "dnsmasq", "-C", "/tmp/dnsmasq.conf", "-d"], check=False)
+    # dnsmasq (캡티브 포털 느낌: 모든 도메인을 AP_IP로)
+    subprocess.Popen(["sudo", "dnsmasq", "-C", "/tmp/dnsmasq.conf", "-d"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    # hostapd 실행 (백그라운드)
+    # hostapd
     subprocess.Popen(["sudo", "hostapd", "/tmp/hostapd.conf"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-def stop_ap_and_connect(ssid, psk, wait_sec=25):
+def stop_ap_and_connect(ssid, psk, wait_sec=30):
     try:
         _write_wpa_network(ssid, psk)
     except Exception as e:
@@ -184,17 +191,16 @@ def stop_ap_and_connect(ssid, psk, wait_sec=25):
     _run(["sudo", "pkill", "-f", "hostapd"])
     _run(["sudo", "pkill", "-f", "dnsmasq"])
 
-    # STA 모드 복귀: wpa_supplicant 재시작
+    # STA 모드 복귀
     _run(["sudo", "ip", "addr", "flush", "dev", IFACE])
     _run(["sudo", "ip", "link", "set", IFACE, "down"])
     _run(["sudo", "ip", "link", "set", IFACE, "up"])
 
-    # Raspberry Pi OS 기본 구성에 맞춰 재연결 트리거
+    # 재연결 트리거 (wpa_supplicant 기반)
     _run(["sudo", "wpa_cli", "-i", IFACE, "reconfigure"], check=False)
     _run(["sudo", "dhclient", "-r", IFACE], check=False)
     _run(["sudo", "dhclient", IFACE], check=False)
 
-    # 인터넷 확인 대기
     t0 = time.time()
     while time.time() - t0 < wait_sec:
         if has_internet():
@@ -203,13 +209,15 @@ def stop_ap_and_connect(ssid, psk, wait_sec=25):
             return True
         time.sleep(1)
 
-    _state["last_error"] = "연결 시간 초과 (인터넷 확인 실패)"
+    _state["last_error"] = "연결 시간 초과(인터넷 확인 실패)"
     return False
 
 @app.route("/", methods=["GET"])
 def index():
     ssids = scan_ssids()
-    return render_template_string(PAGE, ssids=ssids, ap=AP_SSID, ip=AP_IP)
+    msg = _state["last_error"] if _state["last_error"] else ""
+    ok = False
+    return render_template_string(PAGE, ssids=ssids, ap=AP_SSID, ip=AP_IP, msg=msg, ok=ok)
 
 @app.route("/connect", methods=["POST"])
 def connect():
@@ -226,12 +234,13 @@ def connect():
     """
 
 def run_portal(block=True, host="0.0.0.0", port=80):
-    # Flask 서버 실행 (thread로도 가능)
     if block:
         app.run(host=host, port=port, debug=False, use_reloader=False)
     else:
-        th = threading.Thread(target=lambda: app.run(host=host, port=port, debug=False, use_reloader=False),
-                              daemon=True)
+        th = threading.Thread(
+            target=lambda: app.run(host=host, port=port, debug=False, use_reloader=False),
+            daemon=True
+        )
         th.start()
         return th
 
@@ -239,7 +248,6 @@ def ensure_wifi_connected(auto_start_ap=True):
     """
     인터넷이 없으면 AP+포털을 켜고,
     사용자가 SSID/PSK 제출하면 연결 시도 후 종료.
-    return: True(인터넷 OK) / False(실패)
     """
     if has_internet():
         return True
@@ -259,7 +267,7 @@ def ensure_wifi_connected(auto_start_ap=True):
             if ok:
                 return True
             else:
-                # 실패하면 다시 AP 켜서 재시도 가능하게
+                # 실패하면 다시 AP 켜서 재시도
                 start_ap()
                 run_portal(block=False)
         time.sleep(0.5)
