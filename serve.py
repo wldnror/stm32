@@ -1,4 +1,3 @@
-
 from datetime import datetime
 import RPi.GPIO as GPIO
 import time
@@ -101,6 +100,7 @@ wifi_cancel_requested = False
 # cached network ui
 cached_ip = "0.0.0.0"
 cached_wifi_level = 0
+cached_online = False  # ✅ 온라인 여부를 polling에서 계산해 메뉴 표시에 사용
 
 
 # ----------------------------
@@ -157,7 +157,7 @@ def stop_ap_force():
         ["sudo", "pkill", "-f", "hostapd"],
         ["sudo", "pkill", "-f", "dnsmasq"],
     ]:
-        run_quiet(cmd, timeout=1.5)
+        run_quiet(cmd, timeout=2.5)
 
     # wlan0 AP용 IP/라우팅 초기화
     for cmd in [
@@ -165,7 +165,7 @@ def stop_ap_force():
         ["sudo", "ip", "link", "set", "wlan0", "down"],
         ["sudo", "ip", "link", "set", "wlan0", "up"],
     ]:
-        run_quiet(cmd, timeout=1.5)
+        run_quiet(cmd, timeout=2.5)
 
 
 def has_real_internet(timeout=1.2):
@@ -180,6 +180,56 @@ def has_real_internet(timeout=1.2):
         return r.returncode == 0
     except Exception:
         return False
+
+
+# ✅ 핵심: AP 모드 들어갈 때 NM/wpa/dhcpcd가 wlan0 건드리면 DHCP가 망가짐
+def prep_wlan0_for_ap():
+    # NM / wpa / dhcpcd를 잠시 내려서 hostapd/dnsmasq가 wlan0를 독점
+    for cmd in [
+        ["sudo", "systemctl", "stop", "NetworkManager"],
+        ["sudo", "systemctl", "stop", "wpa_supplicant"],
+        ["sudo", "systemctl", "stop", "dhcpcd"],
+    ]:
+        run_quiet(cmd, timeout=5.0)
+
+    # wlan0 초기화
+    for cmd in [
+        ["sudo", "ip", "addr", "flush", "dev", "wlan0"],
+        ["sudo", "ip", "link", "set", "wlan0", "down"],
+    ]:
+        run_quiet(cmd, timeout=2.5)
+
+    time.sleep(0.6)
+    run_quiet(["sudo", "ip", "link", "set", "wlan0", "up"], timeout=2.5)
+    time.sleep(0.6)
+
+
+def restore_wlan0_to_nm(prefer_profile="JI", timeout=18):
+    # AP 종료
+    stop_ap_force()
+
+    # NM 재가동
+    run_quiet(["sudo", "systemctl", "start", "NetworkManager"], timeout=6.0)
+    run_quiet(["sudo", "systemctl", "restart", "NetworkManager"], timeout=6.0)
+
+    # 선호 프로파일 있으면 올려보기(없어도 무시)
+    try:
+        p = subprocess.run(
+            ["bash", "-lc", f'nmcli -t -f NAME connection show | grep -qx "{prefer_profile}"'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        if p.returncode == 0:
+            run_quiet(["bash", "-lc", f'nmcli connection up "{prefer_profile}"'], timeout=8.0)
+    except Exception:
+        pass
+
+    # 인터넷 확인
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if has_real_internet(timeout=1.2):
+            return True
+        time.sleep(0.6)
+    return False
 
 
 # ----------------------------
@@ -230,8 +280,8 @@ def button_next_edge(channel):
 
     now = time.time()
 
-    # soft debounce
-    if (now - last_time_button_next_pressed) < 0.18:
+    # ✅ soft debounce 너무 크면 눌림이 씹힘 -> 줄임
+    if (now - last_time_button_next_pressed) < 0.08:
         return
     last_time_button_next_pressed = now
 
@@ -251,6 +301,7 @@ def button_next_edge(channel):
 def button_execute_callback(channel):
     global last_time_button_execute_pressed, execute_press_time, execute_is_down, execute_long_handled
     now = time.time()
+    # ✅ EXECUTE는 이벤트 자체 debouce는 GPIO bouncetime로 충분, 여기선 시간만 기록
     last_time_button_execute_pressed = now
     execute_press_time = now
     execute_is_down = True
@@ -260,8 +311,9 @@ def button_execute_callback(channel):
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_next_edge, bouncetime=80)
-GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=100)
+# ✅ bouncetime 조금 줄여서 반응성 개선
+GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_next_edge, bouncetime=40)
+GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=60)
 
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
@@ -495,7 +547,8 @@ def build_menu_for_dir(dir_path, is_root=False):
             extras_local.append(None)
 
     if is_root:
-        online = wifi_portal.has_internet()
+        # ✅ polling에서 계산한 cached_online을 사용 (즉시 반영/안전)
+        online = cached_online
 
         if online:
             commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
@@ -691,29 +744,6 @@ def request_wifi_setup():
         wifi_action_requested = True
 
 
-def restore_wifi_after_cancel(timeout=18):
-    # 1) AP 확실히 종료 + wlan0 초기화
-    stop_ap_force()
-
-    # 2) STA 재구성/재시작
-    run_quiet(["sudo", "wpa_cli", "-i", "wlan0", "reconfigure"], timeout=1.5)
-
-    for cmd in [
-        ["sudo", "systemctl", "restart", "wpa_supplicant"],
-        ["sudo", "systemctl", "restart", "dhcpcd"],
-        ["sudo", "systemctl", "restart", "networking"],
-    ]:
-        run_quiet(cmd, timeout=3.0)
-
-    # 3) “진짜 인터넷” 기준으로 확인
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        if has_real_internet():
-            return True
-        time.sleep(0.6)
-    return False
-
-
 def _portal_loop_until_connected_or_cancel():
     """
     반환값:
@@ -723,7 +753,14 @@ def _portal_loop_until_connected_or_cancel():
     """
     global wifi_cancel_requested
 
+    # ✅ AP 모드 준비: NM/wpa/dhcpcd 내려서 wlan0 독점
+    prep_wlan0_for_ap()
+
     wifi_portal.start_ap()
+
+    # ✅ 혹시 start_ap가 IP를 못 잡아줘도 보강 (이미 있으면 실패해도 무시됨)
+    run_quiet(["sudo", "ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0"], timeout=2.0)
+
     if not getattr(wifi_portal, "_state", {}).get("server_started", False):
         wifi_portal.run_portal(block=False)
         wifi_portal._state["server_started"] = True
@@ -746,6 +783,7 @@ def _portal_loop_until_connected_or_cancel():
             if ok and wifi_portal.has_internet():
                 return True
             wifi_portal.start_ap()
+            run_quiet(["sudo", "ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0"], timeout=2.0)
 
         if time.time() - t0 > 600:
             return False
@@ -778,7 +816,6 @@ def wifi_worker_thread():
                     need_update = True
                     time.sleep(2.0)
                 else:
-                    # status_message로 덮지 않도록 비움 (wifi_running 화면이 담당)
                     status_message = ""
                     need_update = True
 
@@ -789,16 +826,21 @@ def wifi_worker_thread():
 
                     if result == "cancel":
                         set_ui_text("WiFi 설정 취소", "재연결 중...", pos=(0, 10), font_size=13)
-                        ok_restore = restore_wifi_after_cancel(timeout=18)
+                        ok_restore = restore_wlan0_to_nm(prefer_profile="JI", timeout=18)
                         set_ui_text("재연결 완료" if ok_restore else "재연결 실패", "", pos=(15, 18), font_size=15)
                         time.sleep(1.4)
                         clear_ui_override()
 
                     elif (result is True) and wifi_portal.has_internet():
+                        # 새 연결 성공 후에도 NM 복귀(평소 JI 우선 구조 유지)
+                        set_ui_text("WiFi 연결 완료", "복구 중...", pos=(0, 10), font_size=13)
+                        restore_wlan0_to_nm(prefer_profile="JI", timeout=18)
                         set_ui_text("WiFi 연결 완료", "", pos=(12, 18), font_size=15)
                         time.sleep(1.5)
                         clear_ui_override()
                     else:
+                        set_ui_text("WiFi 연결 실패", "복구 중...", pos=(0, 10), font_size=13)
+                        restore_wlan0_to_nm(prefer_profile="JI", timeout=18)
                         set_ui_text("WiFi 연결 실패", "", pos=(12, 18), font_size=15)
                         time.sleep(1.5)
                         clear_ui_override()
@@ -809,6 +851,11 @@ def wifi_worker_thread():
             finally:
                 with wifi_action_lock:
                     wifi_action_running = False
+
+                # ✅ 혹시라도 예외로 빠져도 wlan0는 NM으로 복구
+                restore_wlan0_to_nm(prefer_profile="JI", timeout=12)
+                refresh_root_menu(reset_index=True)
+                need_update = True
 
         time.sleep(0.05)
 
@@ -956,7 +1003,6 @@ def execute_command(command_index):
         need_update = True
         return
 
-    # ---- 업데이트 진행바는 "override 화면"으로 계속 유지됨 (깨짐 방지)
     set_ui_progress(30, "업데이트 중...", pos=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
 
@@ -1028,13 +1074,28 @@ def get_wifi_level():
 
 
 def net_poll_thread():
-    global cached_ip, cached_wifi_level
+    global cached_ip, cached_wifi_level, cached_online
     while not stop_threads:
         cached_ip = get_ip_address()
+
+        # ✅ 온라인 판정: 실제 인터넷 우선, 실패 시 wifi_portal도 참고
+        online = has_real_internet(timeout=1.2)
+        if not online:
+            try:
+                online = bool(wifi_portal.has_internet())
+            except Exception:
+                online = False
+        cached_online = online
+
         try:
-            cached_wifi_level = get_wifi_level() if wifi_portal.has_internet() else 0
+            cached_wifi_level = get_wifi_level() if cached_online else 0
         except Exception:
             cached_wifi_level = 0
+
+        # 온라인 바뀌면 메뉴도 바로 갱신
+        refresh_root_menu(reset_index=False)
+        need_update = True
+
         time.sleep(1.5)
 
 
@@ -1054,16 +1115,17 @@ def _draw_override(draw):
     if not active:
         return False
 
-    draw.rectangle(device.bounding_box, outline="white", fill="black")
+    # ✅ 네모 테두리(outline) 제거
+    draw.rectangle(device.bounding_box, fill="black")
 
     if kind == "progress":
-        # 메시지(멀티라인 가능)
         draw.text(pos, msg, font=get_font(fs), fill=255)
-        # progress bar
-        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
+
+        # progress bar (outline 제거)
+        draw.rectangle([(10, 50), (110, 60)], fill="black")
         fill_w = int((100 * percent) / 100)
         fill_w = int(max(0, min(100, fill_w)))
-        draw.rectangle([(10, 50), (10 + fill_w, 60)], outline="white", fill="white")
+        draw.rectangle([(10, 50), (10 + fill_w, 60)], fill="white")
         return True
 
     if kind == "text":
@@ -1096,7 +1158,6 @@ def update_oled_display():
 
         try:
             with canvas(device) as draw:
-                # 0) 진행바/특수화면 override가 있으면 그거만 계속 그림 (메뉴랑 섞이지 않음)
                 if _draw_override(draw):
                     return
 
@@ -1110,7 +1171,6 @@ def update_oled_display():
                     draw.text((99, 3), perc_text, font=font_st, fill=255)
                     draw.text((2, 1), current_time, font=font_time, fill=255)
 
-                    # Wi-Fi icon (bigger, aligned with time line)
                     draw_wifi_bars(draw, 70, 0, wifi_level)
 
                 else:
@@ -1119,23 +1179,23 @@ def update_oled_display():
                     draw.text((80, -3), "GDSENG", font=font_big, fill=255)
                     draw.text((83, 50), "ver 3.71", font=font_big, fill=255)
                     draw.text((0, -3), current_time, font=font_time, fill=255)
-                    if not wifi_portal.has_internet():
+                    if not cached_online:
                         draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
 
-                # status_message overlay
+                # status_message overlay (outline 제거)
                 if status_message:
-                    draw.rectangle(device.bounding_box, outline="white", fill="black")
+                    draw.rectangle(device.bounding_box, fill="black")
                     draw.text(message_position, status_message, font=get_font(message_font_size), fill=255)
                     return
 
-                # WiFi setup screen
+                # WiFi setup screen (outline 제거)
                 if wifi_running:
-                    draw.rectangle(device.bounding_box, outline="white", fill="black")
+                    draw.rectangle(device.bounding_box, fill="black")
                     draw.text((0, 0), "WiFi 설정 모드", font=get_font(13), fill=255)
 
                     body_font = get_font(11)
                     y0 = 14
-                    line = 12  # 행간
+                    line = 12
 
                     draw.text((0, y0 + line * 0), "AP: GDSENG-SETUP",  font=body_font, fill=255)
                     draw.text((0, y0 + line * 1), "PW: 12345678",      font=body_font, fill=255)
@@ -1143,7 +1203,6 @@ def update_oled_display():
                     draw.text((0, 52), "NEXT 길게: 취소", font=body_font, fill=255)
                     return
 
-                # Normal menu title
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 if item_type == "system":
                     center_y = 33
