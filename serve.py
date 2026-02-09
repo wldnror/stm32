@@ -71,8 +71,10 @@ last_stm32_check_time = 0.0
 
 stop_threads = False
 
+
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
 def init_ina219():
     global ina
@@ -83,6 +85,7 @@ def init_ina219():
     except Exception as e:
         print("INA219 초기화 실패:", str(e))
         ina = None
+
 
 def read_ina219_percentage():
     global ina
@@ -99,11 +102,13 @@ def read_ina219_percentage():
         print("INA219 모듈 읽기 실패:", str(e))
         return -1
 
+
 def battery_monitor_thread():
     global battery_percentage
     while not stop_threads:
         battery_percentage = read_ina219_percentage()
         time.sleep(2)
+
 
 def toggle_mode():
     global is_auto_mode, last_mode_toggle_time, need_update
@@ -120,11 +125,13 @@ def toggle_mode():
             connection_success = False
             connection_failed_since_last_success = False
 
+
 def button_next_callback(channel):
     global last_time_button_next_pressed, next_pressed_event
     now = time.time()
     last_time_button_next_pressed = now
     next_pressed_event = True
+
 
 def button_execute_callback(channel):
     global last_time_button_execute_pressed, execute_press_time, execute_is_down, execute_long_handled
@@ -134,6 +141,7 @@ def button_execute_callback(channel):
     execute_is_down = True
     execute_long_handled = False
 
+
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=100)
@@ -141,6 +149,7 @@ GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
+
 
 def check_stm32_connection():
     global connection_success, connection_failed_since_last_success, is_command_executing
@@ -193,6 +202,7 @@ def check_stm32_connection():
             connection_success = False
         return False
 
+
 def stm32_poll_thread():
     global last_stm32_check_time, auto_flash_done_connection
     while not stop_threads:
@@ -225,6 +235,7 @@ def stm32_poll_thread():
             print("=> 새 STM32 연결 감지: 자동 업데이트 1회 허용 상태로 리셋")
             auto_flash_done_connection = False
 
+
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
 
@@ -246,10 +257,12 @@ def get_font(size: int):
         font_cache[size] = f
     return f
 
+
 low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+
 
 def select_battery_icon(percentage):
     if percentage < 20:
@@ -260,7 +273,10 @@ def select_battery_icon(percentage):
         return high_battery_icon
     return full_battery_icon
 
+
 FIRMWARE_DIR = "/home/user/stm32/Program"
+OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
+
 
 def parse_order_and_name(name: str, is_dir: bool):
     if is_dir:
@@ -275,6 +291,7 @@ def parse_order_and_name(name: str, is_dir: bool):
         order = 9999
         display = raw
     return order, display
+
 
 def build_menu_for_dir(dir_path, is_root=False):
     entries = []
@@ -321,6 +338,12 @@ def build_menu_for_dir(dir_path, is_root=False):
             extras_local.append(None)
 
     if is_root:
+        # out.py 실행 메뉴(루트에만)
+        commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
+        names_local.append("펌웨어 추출(OUT)")
+        types_local.append("script")
+        extras_local.append(None)
+
         commands_local.append("git_pull")
         names_local.append("시스템 업데이트")
         types_local.append("system")
@@ -342,6 +365,7 @@ def build_menu_for_dir(dir_path, is_root=False):
     print(f"로딩된 메뉴 ({dir_path}):", names_local)
     return menu
 
+
 current_menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
 commands = current_menu["commands"]
 command_names = current_menu["names"]
@@ -349,11 +373,13 @@ command_types = current_menu["types"]
 menu_extras = current_menu["extras"]
 current_command_index = 0
 
+
 def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
     with canvas(device) as draw:
         draw.text(message_position, message, font=font, fill=255)
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
         draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")
+
 
 def git_pull():
     shell_script_path = "/home/user/stm32/git-pull.sh"
@@ -413,6 +439,7 @@ def git_pull():
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
+
 def unlock_memory():
     display_progress_and_message(0, "메모리 잠금\n   해제 중", message_position=(18, 0), font_size=15)
 
@@ -438,6 +465,7 @@ def unlock_memory():
     need_update = True
     return False
 
+
 def restart_script():
     print("스크립트를 재시작합니다.")
     display_progress_and_message(25, "재시작 중", message_position=(20, 10), font_size=15)
@@ -447,6 +475,7 @@ def restart_script():
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
     threading.Thread(target=restart, daemon=True).start()
+
 
 def lock_memory_procedure():
     global need_update
@@ -488,6 +517,7 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR1, False)
     finally:
         need_update = True
+
 
 def execute_command(command_index):
     global is_executing, is_command_executing
@@ -553,6 +583,69 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
+    # out.py 실행(추출/FTP 업로드)
+    if item_type == "script":
+        kill_openocd()
+        with stm32_state_lock:
+            global connection_success, connection_failed_since_last_success
+            connection_success = False
+            connection_failed_since_last_success = False
+
+        GPIO.output(LED_SUCCESS, False)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+
+        if not os.path.isfile(OUT_SCRIPT_PATH):
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            display_progress_and_message(0, "out.py 없음", message_position=(15, 10), font_size=15)
+            time.sleep(1.5)
+            GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
+            need_update = True
+            is_executing = False
+            is_command_executing = False
+            return
+
+        display_progress_and_message(10, "추출/업로드\n 실행 중...", message_position=(10, 5), font_size=15)
+
+        try:
+            result = subprocess.run(
+                commands[command_index],
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+
+            if result.returncode == 0:
+                GPIO.output(LED_SUCCESS, True)
+                display_progress_and_message(100, "완료!", message_position=(35, 10), font_size=15)
+                time.sleep(1)
+                GPIO.output(LED_SUCCESS, False)
+            else:
+                GPIO.output(LED_ERROR, True)
+                GPIO.output(LED_ERROR1, True)
+                display_progress_and_message(0, "실패!", message_position=(35, 10), font_size=15)
+                time.sleep(1.2)
+                GPIO.output(LED_ERROR, False)
+                GPIO.output(LED_ERROR1, False)
+                print("[out.py stderr]", result.stderr)
+
+        except Exception as e:
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            display_progress_and_message(0, "오류 발생", message_position=(25, 10), font_size=15)
+            time.sleep(1.2)
+            GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
+            print("script 실행 중 오류:", e)
+
+        need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
@@ -604,6 +697,7 @@ def execute_command(command_index):
     is_executing = False
     is_command_executing = False
 
+
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -614,6 +708,7 @@ def get_ip_address():
         return ip
     except Exception:
         return "0.0.0.0"
+
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
@@ -676,7 +771,9 @@ def update_oled_display():
                     y = int(center_y - h / 2)
                     draw.text((x, y), title, font=use_font, fill=255)
 
+
 last_oled_update_time = 0.0
+
 
 def realtime_update_display():
     global is_command_executing, need_update, last_oled_update_time
@@ -689,6 +786,7 @@ def realtime_update_display():
                 need_update = False
         time.sleep(0.05)
 
+
 def shutdown_system():
     try:
         with canvas(device) as draw:
@@ -698,6 +796,7 @@ def shutdown_system():
         os.system("sudo shutdown -h now")
     except Exception as e:
         print("시스템 종료 중 오류 발생:", str(e))
+
 
 init_ina219()
 battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
@@ -710,6 +809,7 @@ stm32_thread = threading.Thread(target=stm32_poll_thread, daemon=True)
 stm32_thread.start()
 
 need_update = True
+
 
 try:
     while True:
@@ -724,7 +824,7 @@ try:
                 execute_long_handled = True
                 if is_auto_mode and commands and (not is_executing):
                     item_type = command_types[current_command_index]
-                    if item_type in ("system", "dir", "back"):
+                    if item_type in ("system", "dir", "back", "script"):
                         execute_command(current_command_index)
                         need_update = True
 
