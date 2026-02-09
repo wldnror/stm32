@@ -12,7 +12,6 @@ import subprocess
 from ina219 import INA219
 import threading
 import re
-
 import wifi_portal
 
 VISUAL_X_OFFSET = 0
@@ -23,18 +22,16 @@ wifi_action_lock = threading.Lock()
 wifi_action_requested = False
 wifi_action_running = False
 
-# --------- OLED override(중요: 화면 깨짐/깜빡임 방지) ----------
 ui_override_lock = threading.Lock()
 ui_override = {
     "active": False,
-    "kind": "none",         # "progress" | "text"
+    "kind": "none",
     "percent": 0,
     "message": "",
     "pos": (0, 0),
     "font_size": 15,
     "line2": "",
 }
-# -------------------------------------------------------------
 
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
@@ -51,15 +48,14 @@ auto_flash_done_connection = False
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
-# --- debounce 튜닝 (버튼 잘 안눌리는 문제 개선) ---
 last_time_button_next_pressed = 0.0
 last_time_button_execute_pressed = 0.0
 SOFT_DEBOUNCE_NEXT = 0.08
 SOFT_DEBOUNCE_EXEC = 0.08
 
 button_press_interval = 0.15
-LONG_PRESS_THRESHOLD = 0.7              # EXECUTE long
-NEXT_LONG_CANCEL_THRESHOLD = 0.7        # NEXT long (wifi cancel)
+LONG_PRESS_THRESHOLD = 0.7
+NEXT_LONG_CANCEL_THRESHOLD = 0.7
 
 need_update = False
 is_command_executing = False
@@ -68,11 +64,10 @@ execute_press_time = None
 execute_is_down = False
 execute_long_handled = False
 
-# NEXT input state
 next_press_time = None
 next_is_down = False
 next_long_handled = False
-next_pressed_event = False  # short press only
+next_pressed_event = False
 
 is_executing = False
 
@@ -97,20 +92,17 @@ last_stm32_check_time = 0.0
 
 stop_threads = False
 
-# wifi cancel flag
 wifi_cancel_requested = False
 
-# cached network ui
 cached_ip = "0.0.0.0"
 cached_wifi_level = 0
 
-# 마지막으로 STA에서 잘 붙어있던 NM 프로파일 이름(복구용)
 last_good_wifi_profile = None
 
+cached_online = False
+last_menu_online = None
 
-# ----------------------------
-# Utils / System helpers
-# ----------------------------
+
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -163,7 +155,6 @@ def clear_ui_override():
 
 
 def has_real_internet(timeout=1.5):
-    # “진짜 인터넷” 판정: wlan0로 ping 8.8.8.8
     try:
         r = subprocess.run(
             ["ping", "-I", "wlan0", "-c", "1", "-W", "1", "8.8.8.8"],
@@ -176,9 +167,6 @@ def has_real_internet(timeout=1.5):
         return False
 
 
-# ----------------------------
-# NetworkManager 기반 Wi-Fi 유틸 (JI 저장소 기준)
-# ----------------------------
 def nm_is_active():
     rc, out, _ = run_capture(["systemctl", "is-active", "NetworkManager"], timeout=2.0)
     return (rc == 0) and ("active" in out.strip())
@@ -190,8 +178,6 @@ def nm_restart():
 
 
 def nm_set_managed(managed: bool):
-    # AP 모드 들어갈 때 NM이 간섭하면 꼬이므로 unmanaged로 두고,
-    # 나올 때 managed로 복구
     v = "yes" if managed else "no"
     run_quiet(["sudo", "nmcli", "dev", "set", "wlan0", "managed", v], timeout=4.0)
 
@@ -201,8 +187,6 @@ def nm_disconnect_wlan0():
 
 
 def nm_get_active_wifi_profile():
-    # wlan0에 붙어있는 활성 connection name 추출
-    # 출력 예: NAME:JI  DEVICE:wlan0  TYPE:wifi
     rc, out, _ = run_capture(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"], timeout=3.0)
     if rc != 0:
         return None
@@ -216,30 +200,24 @@ def nm_get_active_wifi_profile():
 
 
 def nm_autoconnect(timeout=25):
-    # NM 정책(우선순위/최근연결/신호 등)에 따라 자동 연결
     t0 = time.time()
     while time.time() - t0 < timeout:
         if has_real_internet():
             return True
-        # 활성 wifi 프로파일이 생기면 DHCP 기다리는 단계일 수 있어 조금 더 기다림
         time.sleep(0.7)
     return has_real_internet()
 
 
 def nm_connect(ssid: str, psk: str, timeout=30):
-    # 스캔 후 연결 (성공 시 NM 프로파일로 저장됨)
-    # "오류: SSID를 찾을 수 없습니다" 대비: rescan 한번 더
     run_quiet(["sudo", "nmcli", "dev", "wifi", "rescan", "ifname", "wlan0"], timeout=6.0)
-    rc, out, err = run_capture(
+    rc, _, _ = run_capture(
         ["sudo", "nmcli", "--wait", str(int(timeout)), "dev", "wifi", "connect", ssid, "password", psk, "ifname", "wlan0"],
         timeout=timeout + 5
     )
     if rc == 0:
         return True
-
-    # 한 번 더(스캔 타이밍 이슈)
     run_quiet(["sudo", "nmcli", "dev", "wifi", "rescan", "ifname", "wlan0"], timeout=6.0)
-    rc2, out2, err2 = run_capture(
+    rc2, _, _ = run_capture(
         ["sudo", "nmcli", "--wait", str(int(timeout)), "dev", "wifi", "connect", ssid, "password", psk, "ifname", "wlan0"],
         timeout=timeout + 5
     )
@@ -247,8 +225,6 @@ def nm_connect(ssid: str, psk: str, timeout=30):
 
 
 def kill_portal_tmp_procs():
-    # 포탈이 /tmp/hostapd.conf, /tmp/dnsmasq.conf로 띄운 프로세스만 정확히 kill
-    # (서비스 stop으로는 안 내려가는 케이스가 있어서 필수)
     cmd = r"""sudo bash -lc '
 pids=$(pgrep -a hostapd | awk "/\/tmp\/hostapd\.conf/{print \$1}" | xargs)
 [ -n "$pids" ] && kill -9 $pids || true
@@ -266,9 +242,6 @@ def wlan0_soft_reset():
     time.sleep(1)
 
 
-# ----------------------------
-# INA219 / Battery
-# ----------------------------
 def init_ina219():
     global ina
     try:
@@ -300,30 +273,20 @@ def battery_monitor_thread():
         time.sleep(2)
 
 
-# ----------------------------
-# Button callbacks
-# ----------------------------
 def button_next_edge(channel):
-    """
-    NEXT는 BOTH edge로:
-    - 눌림: 시간 기록(롱프레스 감지)
-    - 떼짐: 짧으면 next_pressed_event=True
-    """
     global last_time_button_next_pressed
     global next_press_time, next_is_down, next_long_handled, next_pressed_event
 
     now = time.time()
-
-    # soft debounce (너무 크면 버튼이 안먹는 느낌이 남)
     if (now - last_time_button_next_pressed) < SOFT_DEBOUNCE_NEXT:
         return
     last_time_button_next_pressed = now
 
-    if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:  # pressed
+    if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
         next_press_time = now
         next_is_down = True
         next_long_handled = False
-    else:  # released
+    else:
         if next_is_down and (not next_long_handled) and (next_press_time is not None):
             dt = now - next_press_time
             if dt < NEXT_LONG_CANCEL_THRESHOLD:
@@ -354,9 +317,6 @@ GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
 
 
-# ----------------------------
-# STM32 connection polling
-# ----------------------------
 def check_stm32_connection():
     global connection_success, connection_failed_since_last_success, is_command_executing
 
@@ -435,9 +395,6 @@ def stm32_poll_thread():
             auto_flash_done_connection = False
 
 
-# ----------------------------
-# OLED / Fonts
-# ----------------------------
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
 
@@ -502,11 +459,11 @@ def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_si
         draw.text((center_x, center_y), text, font=f, fill=255)
 
 
-def draw_wifi_bars(draw, x, y, level):  # level 0~4
+def draw_wifi_bars(draw, x, y, level):
     bar_w = 3
     gap = 2
     base_h = 3
-    max_h = base_h + 3 * 3  # 12
+    max_h = base_h + 3 * 3
 
     for i in range(4):
         h = base_h + i * 3
@@ -515,14 +472,9 @@ def draw_wifi_bars(draw, x, y, level):  # level 0~4
         if level >= (i + 1):
             draw.rectangle([xx, yy, xx + bar_w, y + max_h], fill=255)
         else:
-            # 테두리(네모)는 없애고, 비어있는 바는 얇게라도 보이게 "점"으로 최소 표현
-            # (완전 없애면 아이콘이 아예 사라져서 UX가 나빠짐)
             draw.rectangle([xx, y + max_h - 1, xx + bar_w, y + max_h], fill=255)
 
 
-# ----------------------------
-# Menu build
-# ----------------------------
 FIRMWARE_DIR = "/home/user/stm32/Program"
 OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
 
@@ -583,7 +535,6 @@ def build_menu_for_dir(dir_path, is_root=False):
             extras_local.append(None)
 
     if is_root:
-        # 기존 wifi_portal.has_internet() 대신 "진짜 인터넷(ping)" 기준으로 메뉴 노출
         online = has_real_internet()
 
         if online:
@@ -631,9 +582,6 @@ def refresh_root_menu(reset_index=False):
 refresh_root_menu(reset_index=True)
 
 
-# ----------------------------
-# Git pull / System update
-# ----------------------------
 def git_pull():
     shell_script_path = "/home/user/stm32/git-pull.sh"
     if not os.path.isfile(shell_script_path):
@@ -691,9 +639,6 @@ def git_pull():
         clear_ui_override()
 
 
-# ----------------------------
-# OpenOCD lock/unlock
-# ----------------------------
 def unlock_memory():
     set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
 
@@ -771,9 +716,6 @@ def lock_memory_procedure():
         need_update = True
 
 
-# ----------------------------
-# Wi-Fi: setup / cancel restore  (NetworkManager 기준으로 통일)
-# ----------------------------
 def request_wifi_setup():
     global wifi_action_requested
     with wifi_action_lock:
@@ -781,11 +723,6 @@ def request_wifi_setup():
 
 
 def prepare_for_ap_mode():
-    """
-    AP(포탈) 모드 들어가기 전에:
-    - 현재 STA에서 붙어있던 NM 프로파일 이름 기억
-    - NM이 wlan0 잡고 있으면 간섭하므로 wlan0 unmanaged + disconnect
-    """
     global last_good_wifi_profile
     try:
         prof = nm_get_active_wifi_profile()
@@ -794,7 +731,6 @@ def prepare_for_ap_mode():
     except Exception:
         pass
 
-    # NM이 살아있으면 간섭 방지
     if nm_is_active():
         nm_disconnect_wlan0()
         nm_set_managed(False)
@@ -802,33 +738,21 @@ def prepare_for_ap_mode():
 
 
 def restore_after_ap_mode(timeout=25):
-    """
-    포탈 취소/실패/종료 후 STA로 복귀:
-    - /tmp conf로 떠 있는 hostapd/dnsmasq 프로세스까지 확실히 kill
-    - wlan0 초기화
-    - NM managed 복구 + 재시작
-    - 마지막 프로파일(있으면) 우선으로 up, 아니면 NM 자동연결
-    """
     global last_good_wifi_profile
 
-    # 1) 포탈이 띄운 AP 프로세스 먼저 정리(가장 중요)
     kill_portal_tmp_procs()
     run_quiet(["sudo", "systemctl", "stop", "hostapd"], timeout=3.0)
     run_quiet(["sudo", "systemctl", "stop", "dnsmasq"], timeout=3.0)
 
-    # 2) wlan0 초기화
     wlan0_soft_reset()
 
-    # 3) NM 복구
     nm_set_managed(True)
     nm_restart()
     time.sleep(1.2)
 
-    # 4) 마지막으로 붙었던 프로파일 우선
     if last_good_wifi_profile:
         run_quiet(["sudo", "nmcli", "connection", "up", last_good_wifi_profile], timeout=12.0)
 
-    # 5) 최종: 자동연결/인터넷 확인
     t0 = time.time()
     while time.time() - t0 < timeout:
         if has_real_internet():
@@ -839,13 +763,6 @@ def restore_after_ap_mode(timeout=25):
 
 
 def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
-    """
-    포탈에서 SSID/PSK 제출되면:
-    - AP 완전 종료
-    - NM managed 복구 + 재시작
-    - nmcli로 SSID/PSK 직접 연결(=NM 프로파일로 저장)
-    """
-    # 1) AP 프로세스 정리
     try:
         if hasattr(wifi_portal, "stop_ap"):
             wifi_portal.stop_ap()
@@ -856,33 +773,22 @@ def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     run_quiet(["sudo", "systemctl", "stop", "hostapd"], timeout=3.0)
     run_quiet(["sudo", "systemctl", "stop", "dnsmasq"], timeout=3.0)
 
-    # 2) wlan0 초기화
     wlan0_soft_reset()
 
-    # 3) NM 복구
     nm_set_managed(True)
     nm_restart()
     time.sleep(1.5)
 
-    # 4) 연결
     ok = nm_connect(ssid, psk, timeout=timeout)
     if not ok:
         return False
 
-    # 5) 인터넷 확인(조금 기다림)
     return nm_autoconnect(timeout=20)
 
 
 def _portal_loop_until_connected_or_cancel():
-    """
-    반환값:
-      True      = 새 연결 성공
-      False     = 실패/타임아웃
-      "cancel"  = 사용자 취소(NEXT long)
-    """
     global wifi_cancel_requested
 
-    # AP 모드 준비 (NM 간섭 제거 + last profile 기억)
     prepare_for_ap_mode()
 
     wifi_portal.start_ap()
@@ -900,14 +806,12 @@ def _portal_loop_until_connected_or_cancel():
                 pass
             return "cancel"
 
-        # 사용자가 포탈에서 SSID/PSK 제출했을 때만 처리
         req = getattr(wifi_portal, "_state", {}).get("requested")
         if req:
-            ssid = req.get("ssid", "").strip()
-            psk = req.get("psk", "").strip()
+            ssid = (req.get("ssid") or "").strip()
+            psk = (req.get("psk") or "").strip()
             wifi_portal._state["requested"] = None
 
-            # ★ NM 기준으로 실제 연결 수행(성공해야만 True)
             ok = False
             if ssid and psk:
                 ok = connect_from_portal_nm(ssid, psk, timeout=35)
@@ -915,7 +819,6 @@ def _portal_loop_until_connected_or_cancel():
             if ok:
                 return True
 
-            # 실패면 다시 AP 띄움
             prepare_for_ap_mode()
             wifi_portal.start_ap()
 
@@ -955,7 +858,6 @@ def wifi_worker_thread():
 
                     result = _portal_loop_until_connected_or_cancel()
 
-                    # 메뉴는 "실제 인터넷(ping)" 기준으로 재구성
                     refresh_root_menu(reset_index=True)
                     need_update = True
 
@@ -985,9 +887,6 @@ def wifi_worker_thread():
         time.sleep(0.05)
 
 
-# ----------------------------
-# Command execution
-# ----------------------------
 def execute_command(command_index):
     global is_executing, is_command_executing
     global current_menu, commands, command_names, command_types, menu_extras
@@ -1128,7 +1027,6 @@ def execute_command(command_index):
         need_update = True
         return
 
-    # ---- 업데이트 진행바는 "override 화면"으로 계속 유지됨 (깨짐 방지)
     set_ui_progress(30, "업데이트 중...", pos=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
 
@@ -1164,9 +1062,6 @@ def execute_command(command_index):
     is_command_executing = False
 
 
-# ----------------------------
-# Network info for UI
-# ----------------------------
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1181,7 +1076,6 @@ def get_ip_address():
 
 def get_wifi_level():
     try:
-        # 연결 안된 상태면 0으로
         rc, out, _ = run_capture(["iw", "dev", "wlan0", "link"], timeout=0.6)
         if rc != 0 or "Not connected" in out:
             return 0
@@ -1205,17 +1099,22 @@ def get_wifi_level():
 
 
 def net_poll_thread():
-    global cached_ip, cached_wifi_level
+    global cached_ip, cached_wifi_level, cached_online, last_menu_online, need_update
     while not stop_threads:
         cached_ip = get_ip_address()
-        # 인터넷 기준도 ping 기준으로(메뉴 노출과 동일)
-        cached_wifi_level = get_wifi_level() if has_real_internet() else 0
+
+        online_now = has_real_internet()
+        cached_online = online_now
+        cached_wifi_level = get_wifi_level() if online_now else 0
+
+        if last_menu_online is None or online_now != last_menu_online:
+            last_menu_online = online_now
+            refresh_root_menu(reset_index=False)
+            need_update = True
+
         time.sleep(1.5)
 
 
-# ----------------------------
-# OLED render
-# ----------------------------
 def _draw_override(draw):
     with ui_override_lock:
         active = ui_override["active"]
@@ -1229,15 +1128,12 @@ def _draw_override(draw):
     if not active:
         return False
 
-    # 네모 테두리 전부 제거: outline 사용 안함
     draw.rectangle(device.bounding_box, fill="black")
 
     if kind == "progress":
         draw.text(pos, msg, font=get_font(fs), fill=255)
-
-        # progress bar (테두리 없이)
         x1, y1, x2, y2 = 10, 50, 110, 60
-        draw.rectangle([(x1, y1), (x2, y2)], fill=0)  # background
+        draw.rectangle([(x1, y1), (x2, y2)], fill=0)
         fill_w = int((x2 - x1) * (percent / 100.0))
         fill_w = int(max(0, min((x2 - x1), fill_w)))
         if fill_w > 0:
@@ -1296,13 +1192,11 @@ def update_oled_display():
                     if not has_real_internet():
                         draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
 
-                # status_message overlay (테두리 제거)
                 if status_message:
                     draw.rectangle(device.bounding_box, fill="black")
                     draw.text(message_position, status_message, font=get_font(message_font_size), fill=255)
                     return
 
-                # WiFi setup screen (테두리 제거)
                 if wifi_running:
                     draw.rectangle(device.bounding_box, fill="black")
                     draw.text((0, 0), "WiFi 설정 모드", font=get_font(13), fill=255)
@@ -1317,7 +1211,6 @@ def update_oled_display():
                     draw.text((0, 52), "NEXT 길게: 취소", font=body_font, fill=255)
                     return
 
-                # Normal menu title
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 if item_type == "system":
                     center_y = 33
@@ -1350,9 +1243,6 @@ def realtime_update_display():
         time.sleep(0.03)
 
 
-# ----------------------------
-# Power
-# ----------------------------
 def shutdown_system():
     set_ui_text("배터리 부족", "시스템 종료 중...", pos=(10, 18), font_size=15)
     time.sleep(2)
@@ -1362,9 +1252,6 @@ def shutdown_system():
         pass
 
 
-# ----------------------------
-# Start threads
-# ----------------------------
 init_ina219()
 
 battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
@@ -1385,9 +1272,6 @@ net_thread.start()
 need_update = True
 
 
-# ----------------------------
-# Main loop
-# ----------------------------
 try:
     while True:
         now = time.time()
@@ -1395,7 +1279,6 @@ try:
         if battery_percentage == 0:
             shutdown_system()
 
-        # wifi 모드에서 NEXT long => cancel
         with wifi_action_lock:
             wifi_running = wifi_action_running
         if wifi_running and next_is_down and (not next_long_handled) and (next_press_time is not None):
@@ -1404,7 +1287,6 @@ try:
                 wifi_cancel_requested = True
                 need_update = True
 
-        # EXECUTE long press => execute current
         if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
             if now - execute_press_time >= LONG_PRESS_THRESHOLD:
                 execute_long_handled = True
@@ -1428,7 +1310,6 @@ try:
             execute_press_time = None
             execute_long_handled = False
 
-        # NEXT short press => next menu
         if next_pressed_event:
             if (not execute_is_down) and (not is_executing):
                 if commands:
@@ -1436,7 +1317,6 @@ try:
                     need_update = True
             next_pressed_event = False
 
-        # auto flash when bin selected + stm32 connected
         with stm32_state_lock:
             cs = connection_success
 
@@ -1449,11 +1329,6 @@ try:
             ):
                 execute_command(current_command_index)
                 auto_flash_done_connection = True
-
-        # 온라인/오프라인 메뉴 갱신(너무 자주 하면 깜빡임이 생길 수 있어 2초에 한 번만)
-        # 필요하면 주석 해제해서 "연결되면 바로 시스템 업데이트 메뉴가 나타나는" UX로 만들 수 있음
-        # if int(now) % 2 == 0:
-        #     refresh_root_menu(reset_index=False)
 
         time.sleep(0.03)
 
