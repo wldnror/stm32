@@ -7,9 +7,10 @@ from flask import Flask, request, render_template_string, redirect
 
 AP_SSID = "GDSENG-SETUP"
 AP_PASS = "12345678"
-AP_IP   = "192.168.4.1"
-IFACE   = "wlan0"
+AP_IP = "192.168.4.1"
+IFACE = "wlan0"
 WPA_CONF = "/etc/wpa_supplicant/wpa_supplicant.conf"
+NM_DIR = "/etc/NetworkManager/system-connections"
 
 app = Flask(__name__)
 
@@ -192,12 +193,23 @@ function onSubmitConnect(form){
 """
 
 def _run(cmd, check=False, timeout=15.0):
-    return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=check, timeout=timeout)
+    return subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=check,
+        timeout=timeout,
+    )
 
 def has_internet(timeout=1.2):
     try:
-        r = subprocess.run(["ping", "-I", IFACE, "-c", "1", "-W", "1", "8.8.8.8"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+        r = subprocess.run(
+            ["ping", "-I", IFACE, "-c", "1", "-W", "1", "8.8.8.8"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+        )
         return r.returncode == 0
     except Exception:
         return False
@@ -226,7 +238,7 @@ def _scan_nmcli():
         if not ssid:
             continue
         try:
-            sig = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+            sig = int(parts[1]) if len(parts) > 1 and (parts[1] or "").isdigit() else 0
         except Exception:
             sig = 0
         items.append((ssid, sig))
@@ -241,7 +253,7 @@ def _scan_nmcli():
 def scan_ssids():
     scan_error = ""
     try:
-        nm, nmtxt = _scan_nmcli()
+        nm, _ = _scan_nmcli()
         if nm:
             return nm, "nmcli(신호세기 정렬)", ""
         scan_error += "nmcli empty\n"
@@ -249,7 +261,7 @@ def scan_ssids():
         scan_error += f"nmcli fail: {e}\n"
 
     try:
-        iw, iwtxt = _scan_iwlist()
+        iw, _ = _scan_iwlist()
         if iw:
             return iw, "iwlist", ""
         scan_error += "iwlist empty\n"
@@ -260,7 +272,7 @@ def scan_ssids():
 
 def list_saved_wpa():
     try:
-        txt = _run(["sudo", "cat", WPA_CONF], timeout=6.0).stdout
+        txt = _run(["sudo", "cat", WPA_CONF], timeout=6.0).stdout or ""
         ssids = re.findall(r'network=\{[^}]*ssid="([^"]+)"[^}]*\}', txt, flags=re.S)
         out = []
         for s in ssids:
@@ -272,24 +284,39 @@ def list_saved_wpa():
         return []
 
 def list_saved_nm():
+    paths = []
     try:
-        p = _run(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"], timeout=6.0)
-        out = []
+        p = _run(["sudo", "bash", "-lc", f"ls -1 {NM_DIR}/*.nmconnection 2>/dev/null"], timeout=6.0)
         for line in (p.stdout or "").splitlines():
-            parts = line.strip().split(":")
-            if len(parts) >= 2 and parts[1] == "wifi":
-                name = (parts[0] or "").strip()
-                if name and name not in out:
-                    out.append(name)
-        return out
+            line = line.strip()
+            if line:
+                paths.append(line)
     except Exception:
-        return []
+        paths = []
+
+    out = []
+    for fp in paths:
+        try:
+            txt = _run(["sudo", "cat", fp], timeout=6.0).stdout or ""
+            m_id = re.search(r'(?m)^\s*id\s*=\s*(.+)\s*$', txt)
+            m_type = re.search(r'(?m)^\s*type\s*=\s*(.+)\s*$', txt)
+            if not m_id:
+                continue
+            name = m_id.group(1).strip()
+            ctype = (m_type.group(1).strip() if m_type else "")
+            if ctype and ctype != "wifi":
+                continue
+            if name and name not in out:
+                out.append(name)
+        except Exception:
+            continue
+    return out
 
 def delete_saved_wpa(ssid):
     if not ssid:
         return False, "SSID empty"
     try:
-        txt = _run(["sudo", "cat", WPA_CONF], timeout=6.0).stdout
+        txt = _run(["sudo", "cat", WPA_CONF], timeout=6.0).stdout or ""
         before = txt
         txt2 = re.sub(r'network=\{[^}]*ssid="'+re.escape(ssid)+r'"[^}]*\}\s*', "", txt, flags=re.S)
         if txt2 == before:
@@ -307,12 +334,25 @@ def delete_saved_wpa(ssid):
 def delete_saved_nm(ssid):
     if not ssid:
         return False, "SSID empty"
+
     try:
         p = _run(["sudo", "nmcli", "connection", "delete", "id", ssid], timeout=8.0)
         if p.returncode == 0:
             return True, "삭제 완료"
-        msg = (p.stderr or "").strip() or (p.stdout or "").strip() or "삭제 실패"
-        return False, msg
+    except Exception:
+        pass
+
+    try:
+        cmd = (
+            r"f=$(grep -RIl --null -m1 -E '^\s*id\s*=\s*"
+            + re.escape(ssid)
+            + r"\s*$' " + NM_DIR + r"/*.nmconnection 2>/dev/null | tr -d '\0'); "
+              r"if [ -n \"$f\" ]; then rm -f \"$f\"; echo OK; else echo NO; fi"
+        )
+        p2 = _run(["sudo", "bash", "-lc", cmd], timeout=8.0)
+        if "OK" in (p2.stdout or ""):
+            return True, "삭제 완료"
+        return False, "해당 NM 프로파일을 찾지 못했습니다."
     except Exception as e:
         return False, f"삭제 실패: {e}"
 
@@ -335,7 +375,7 @@ def _write_wpa_network(ssid, psk):
         raise ValueError("SSID empty")
 
     if psk:
-        gen = _run(["wpa_passphrase", ssid, psk], check=True, timeout=6.0).stdout
+        gen = _run(["wpa_passphrase", ssid, psk], check=True, timeout=6.0).stdout or ""
         m = re.search(r"network=\{.*?\}\s*", gen, flags=re.S)
         block = m.group(0) if m else gen
     else:
@@ -343,7 +383,7 @@ def _write_wpa_network(ssid, psk):
 
     _run(["sudo", "cp", WPA_CONF, WPA_CONF + ".bak"], timeout=6.0)
 
-    existing = _run(["sudo", "cat", WPA_CONF], timeout=6.0).stdout
+    existing = _run(["sudo", "cat", WPA_CONF], timeout=6.0).stdout or ""
     existing = re.sub(r'network=\{[^}]*ssid="'+re.escape(ssid)+r'"[^}]*\}\s*', "", existing, flags=re.S)
 
     tmp = "/tmp/wpa_supplicant.conf.tmp"
@@ -402,8 +442,16 @@ address=/#/{AP_IP}
     with open("/tmp/dnsmasq.conf", "w", encoding="utf-8") as f:
         f.write(dnsmasq_conf.strip() + "\n")
 
-    subprocess.Popen(["sudo", "dnsmasq", "-C", "/tmp/dnsmasq.conf", "-d"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.Popen(["sudo", "hostapd", "/tmp/hostapd.conf"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(
+        ["sudo", "dnsmasq", "-C", "/tmp/dnsmasq.conf", "-d"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    subprocess.Popen(
+        ["sudo", "hostapd", "/tmp/hostapd.conf"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 def stop_ap_and_connect(ssid, psk, wait_sec=35):
     try:
@@ -464,7 +512,7 @@ def index():
 @app.route("/connect", methods=["POST"])
 def connect():
     ssid = (request.form.get("ssid") or "").strip()
-    psk  = (request.form.get("psk") or "").strip()
+    psk = (request.form.get("psk") or "").strip()
     if not ssid:
         return "SSID가 비어있습니다.", 400
     _state["requested"] = {"ssid": ssid, "psk": psk}
@@ -498,10 +546,12 @@ def reset():
 def run_portal(block=True, host="0.0.0.0", port=8080):
     if block:
         app.run(host=host, port=port, debug=False, use_reloader=False)
-    else:
-        th = threading.Thread(target=lambda: app.run(host=host, port=port, debug=False, use_reloader=False), daemon=True)
-        th.start()
-        return th
+    th = threading.Thread(
+        target=lambda: app.run(host=host, port=port, debug=False, use_reloader=False),
+        daemon=True,
+    )
+    th.start()
+    return th
 
 def ensure_wifi_connected(auto_start_ap=True):
     if has_internet():
