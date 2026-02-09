@@ -13,7 +13,7 @@ from ina219 import INA219
 import threading
 import re
 
-# ✅ Wi-Fi 설정 포털 모듈 추가
+# ✅ Wi-Fi 설정 포털 모듈
 import wifi_portal
 
 VISUAL_X_OFFSET = 0
@@ -329,6 +329,13 @@ def build_menu_for_dir(dir_path, is_root=False):
         names_local.append("시스템 업데이트")
         types_local.append("system")
         extras_local.append(None)
+
+        # ✅ Wi-Fi 설정 메뉴 추가 (선택사항)
+        commands_local.append("wifi_setup")
+        names_local.append("Wi-Fi 설정")
+        types_local.append("wifi")
+        extras_local.append(None)
+
     else:
         commands_local.append(None)
         names_local.append("◀ 이전으로")
@@ -359,7 +366,7 @@ def display_progress_and_message(percentage, message, message_position=(0, 0), f
     with canvas(device) as draw:
         draw.text(message_position, message, font=font, fill=255)
         draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
-        draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")
+        draw.rectangle([(10, 50), (10 + int(percentage), 60)], outline="white", fill="white")
 
 
 def git_pull():
@@ -507,6 +514,7 @@ def execute_command(command_index):
     global current_menu, commands, command_names, command_types, menu_extras
     global current_command_index, menu_stack, need_update
     global connection_success, connection_failed_since_last_success
+    global status_message, message_position, message_font_size
 
     is_executing = True
     is_command_executing = True
@@ -518,6 +526,29 @@ def execute_command(command_index):
 
     item_type = command_types[command_index]
     print("[EXECUTE] index:", command_index, "type:", item_type, "name:", command_names[command_index])
+
+    # ✅ Wi-Fi 설정(선택 실행)
+    if item_type == "wifi":
+        status_message = "WiFi 설정 모드\nAP: GDSENG-SETUP\n192.168.4.1"
+        message_position = (0, 0)
+        message_font_size = 13
+        need_update = True
+
+        # 인터넷이 이미 있으면 굳이 AP 안 띄움
+        if wifi_portal.has_internet():
+            status_message = "이미 인터넷 연결됨"
+            message_position = (5, 10)
+            message_font_size = 15
+            need_update = True
+            time.sleep(1.2)
+        else:
+            wifi_portal.ensure_wifi_connected(auto_start_ap=True)
+            status_message = ""
+            need_update = True
+
+        is_executing = False
+        is_command_executing = False
+        return
 
     if item_type == "dir":
         subdir = menu_extras[command_index]
@@ -716,6 +747,10 @@ def update_oled_display():
                 draw.text((83, 50), "ver 3.71", font=font_big, fill=255)
                 draw.text((0, -3), current_time, font=font_time, fill=255)
 
+                # ✅ system 화면에서만 "인터넷 없음" 안내 (선택사항이라 UI만 알림)
+                if not wifi_portal.has_internet():
+                    draw.text((0, 38), "WiFi 필요(옵션)", font=font_big, fill=255)
+
             if status_message:
                 draw.rectangle(device.bounding_box, outline="white", fill="black")
                 draw.text(message_position, status_message, font=get_font(message_font_size), fill=255)
@@ -766,39 +801,6 @@ def shutdown_system():
         print("시스템 종료 중 오류 발생:", str(e))
 
 
-# ✅✅✅ Wi-Fi 자동 설정/포털 watchdog 추가
-def wifi_watchdog_thread():
-    global status_message, message_position, message_font_size, need_update
-
-    while not stop_threads:
-        # 인터넷 OK면 느리게 체크
-        if wifi_portal.has_internet():
-            time.sleep(10)
-            continue
-
-        # 인터넷이 없으면 안내
-        status_message = "WiFi 설정 필요\nAP: GDSENG-SETUP\n192.168.4.1"
-        message_position = (0, 0)
-        message_font_size = 13
-        need_update = True
-
-        # 포털 실행 (연결될 때까지)
-        ok = wifi_portal.ensure_wifi_connected(auto_start_ap=True)
-
-        if ok:
-            status_message = "WiFi 연결 완료"
-        else:
-            status_message = "WiFi 연결 실패"
-        message_position = (15, 10)
-        message_font_size = 15
-        need_update = True
-
-        time.sleep(3)
-        status_message = ""
-        need_update = True
-        time.sleep(5)
-
-
 init_ina219()
 battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
 battery_thread.start()
@@ -808,10 +810,6 @@ realtime_update_thread.start()
 
 stm32_thread = threading.Thread(target=stm32_poll_thread, daemon=True)
 stm32_thread.start()
-
-# ✅ Wi-Fi watchdog 스레드 시작
-wifi_thread = threading.Thread(target=wifi_watchdog_thread, daemon=True)
-wifi_thread.start()
 
 need_update = True
 
@@ -824,13 +822,13 @@ try:
             print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
             shutdown_system()
 
-        # ✅ EXECUTE 롱프레스: system/dir/back/script만 실행
+        # ✅ EXECUTE 롱프레스: system/dir/back/script/wifi만 실행
         if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
             if now - execute_press_time >= LONG_PRESS_THRESHOLD:
                 execute_long_handled = True
                 if commands and (not is_executing):
                     item_type = command_types[current_command_index]
-                    if item_type in ("system", "dir", "back", "script"):
+                    if item_type in ("system", "dir", "back", "script", "wifi"):
                         execute_command(current_command_index)
                         need_update = True
 
