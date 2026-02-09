@@ -14,7 +14,6 @@ IFACE   = "wlan0"
 
 WPA_CONF = "/etc/wpa_supplicant/wpa_supplicant.conf"
 
-# 모바일용 간단 페이지
 PAGE = """
 <!doctype html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -68,7 +67,8 @@ _state = {
     "running": False,
     "requested": None,   # {"ssid":..., "psk":...}
     "done": False,
-    "last_error": ""
+    "last_error": "",
+    "server_started": False,
 }
 
 def _run(cmd, check=False):
@@ -131,15 +131,21 @@ def _write_wpa_network(ssid, psk):
     _run(["sudo", "cp", tmp, WPA_CONF], check=True)
     _run(["sudo", "chmod", "600", WPA_CONF])
 
+def _kill_wifi_owners():
+    # wlan0를 점유하는 것들 내려서 hostapd가 올라오게 함 (핵심)
+    _run(["sudo", "pkill", "-f", "hostapd"])
+    _run(["sudo", "pkill", "-f", "dnsmasq"])
+    _run(["sudo", "pkill", "-f", f"wpa_supplicant.*{IFACE}"])
+    _run(["sudo", "dhclient", "-r", IFACE], check=False)
+    _run(["sudo", "rfkill", "unblock", "wifi"], check=False)
+
 def start_ap():
     _state["running"] = True
     _state["done"] = False
     _state["last_error"] = ""
     _state["requested"] = None
 
-    # 기존 AP 프로세스 정리
-    _run(["sudo", "pkill", "-f", "hostapd"])
-    _run(["sudo", "pkill", "-f", "dnsmasq"])
+    _kill_wifi_owners()
 
     # wlan0 IP 설정
     _run(["sudo", "ip", "link", "set", IFACE, "down"])
@@ -147,12 +153,15 @@ def start_ap():
     _run(["sudo", "ip", "addr", "add", f"{AP_IP}/24", "dev", IFACE])
     _run(["sudo", "ip", "link", "set", IFACE, "up"])
 
+    # Pi Zero는 2.4GHz만 (hw_mode=g), channel 1/6/11 권장
     hostapd_conf = f"""
+country_code=KR
 interface={IFACE}
 driver=nl80211
 ssid={AP_SSID}
 hw_mode=g
 channel=6
+ieee80211n=1
 wmm_enabled=0
 auth_algs=1
 ignore_broadcast_ssid=0
@@ -172,7 +181,7 @@ address=/#/{AP_IP}
     with open("/tmp/dnsmasq.conf", "w") as f:
         f.write(dnsmasq_conf.strip() + "\n")
 
-    # dnsmasq (캡티브 포털 느낌: 모든 도메인을 AP_IP로)
+    # dnsmasq
     subprocess.Popen(["sudo", "dnsmasq", "-C", "/tmp/dnsmasq.conf", "-d"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -180,7 +189,7 @@ address=/#/{AP_IP}
     subprocess.Popen(["sudo", "hostapd", "/tmp/hostapd.conf"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-def stop_ap_and_connect(ssid, psk, wait_sec=30):
+def stop_ap_and_connect(ssid, psk, wait_sec=35):
     try:
         _write_wpa_network(ssid, psk)
     except Exception as e:
@@ -196,8 +205,11 @@ def stop_ap_and_connect(ssid, psk, wait_sec=30):
     _run(["sudo", "ip", "link", "set", IFACE, "down"])
     _run(["sudo", "ip", "link", "set", IFACE, "up"])
 
-    # 재연결 트리거 (wpa_supplicant 기반)
+    # wpa_supplicant 직접 올리고 reconfigure
+    _run(["sudo", "pkill", "-f", f"wpa_supplicant.*{IFACE}"], check=False)
+    _run(["sudo", "wpa_supplicant", "-B", "-i", IFACE, "-c", WPA_CONF], check=False)
     _run(["sudo", "wpa_cli", "-i", IFACE, "reconfigure"], check=False)
+
     _run(["sudo", "dhclient", "-r", IFACE], check=False)
     _run(["sudo", "dhclient", IFACE], check=False)
 
@@ -234,6 +246,7 @@ def connect():
     """
 
 def run_portal(block=True, host="0.0.0.0", port=80):
+    # 서버는 1번만 띄우고, AP만 on/off 하는 방식으로도 쓸 수 있음
     if block:
         app.run(host=host, port=port, debug=False, use_reloader=False)
     else:
@@ -247,7 +260,7 @@ def run_portal(block=True, host="0.0.0.0", port=80):
 def ensure_wifi_connected(auto_start_ap=True):
     """
     인터넷이 없으면 AP+포털을 켜고,
-    사용자가 SSID/PSK 제출하면 연결 시도 후 종료.
+    사용자가 SSID/PSK 제출하면 연결 시도.
     """
     if has_internet():
         return True
@@ -256,7 +269,10 @@ def ensure_wifi_connected(auto_start_ap=True):
         return False
 
     start_ap()
-    run_portal(block=False)
+    # 포털 서버는 백그라운드로
+    if not _state["server_started"]:
+        run_portal(block=False)
+        _state["server_started"] = True
 
     # 사용자가 제출할 때까지 대기
     while _state["running"]:
@@ -267,9 +283,8 @@ def ensure_wifi_connected(auto_start_ap=True):
             if ok:
                 return True
             else:
-                # 실패하면 다시 AP 켜서 재시도
+                # 실패하면 다시 AP 켜서 재시도 가능하게
                 start_ap()
-                run_portal(block=False)
         time.sleep(0.5)
 
     return has_internet()
