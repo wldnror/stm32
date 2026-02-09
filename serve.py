@@ -33,6 +33,7 @@ stm32_poll_enabled = True
 auto_flash_done_connection = False
 
 GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)  # ✅ GPIO 경고 제거
 
 last_time_button_next_pressed = 0.0
 last_time_button_execute_pressed = 0.0
@@ -275,7 +276,7 @@ def select_battery_icon(percentage):
 
 
 FIRMWARE_DIR = "/home/user/stm32/Program"
-OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
+OUT_SCRIPT_PATH = "/home/user/stm32/out.py"  # ✅ out.py 실행 메뉴용
 
 
 def parse_order_and_name(name: str, is_dir: bool):
@@ -338,12 +339,13 @@ def build_menu_for_dir(dir_path, is_root=False):
             extras_local.append(None)
 
     if is_root:
-        # out.py 실행 메뉴(루트에만)
+        # ✅ out.py 실행 메뉴 추가 (루트에서만)
         commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
         names_local.append("펌웨어 추출(OUT)")
         types_local.append("script")
         extras_local.append(None)
 
+        # 기존 시스템 업데이트
         commands_local.append("git_pull")
         names_local.append("시스템 업데이트")
         types_local.append("system")
@@ -523,7 +525,7 @@ def execute_command(command_index):
     global is_executing, is_command_executing
     global current_menu, commands, command_names, command_types, menu_extras
     global current_command_index, menu_stack, need_update
-    global connection_success, connection_failed_since_last_success
+    global connection_success, connection_failed_since_last_success  # ✅ 여기서만 global 선언
 
     is_executing = True
     is_command_executing = True
@@ -575,7 +577,6 @@ def execute_command(command_index):
     if item_type == "system":
         kill_openocd()
         with stm32_state_lock:
-            global connection_success, connection_failed_since_last_success
             connection_success = False
             connection_failed_since_last_success = False
         git_pull()
@@ -584,11 +585,10 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    # out.py 실행(추출/FTP 업로드)
+    # ✅ out.py 실행 (펌웨어 추출/FTP 업로드)
     if item_type == "script":
         kill_openocd()
         with stm32_state_lock:
-            global connection_success, connection_failed_since_last_success
             connection_success = False
             connection_failed_since_last_success = False
 
@@ -647,6 +647,7 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
+    # ✅ bin 플래시 처리
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
