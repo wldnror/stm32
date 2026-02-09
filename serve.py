@@ -318,7 +318,7 @@ def build_menu_for_dir(dir_path, is_root=False):
 
     if is_root:
         commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
-        names_local.append("펌웨어 추출(OUT)")
+        names_local.append("펌웨어 OUT")
         types_local.append("script")
         extras_local.append(None)
 
