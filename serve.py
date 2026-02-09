@@ -523,6 +523,7 @@ def execute_command(command_index):
     global is_executing, is_command_executing
     global current_menu, commands, command_names, command_types, menu_extras
     global current_command_index, menu_stack, need_update
+    global connection_success, connection_failed_since_last_success
 
     is_executing = True
     is_command_executing = True
