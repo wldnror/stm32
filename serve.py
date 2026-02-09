@@ -88,9 +88,76 @@ wifi_cancel_requested = False
 cached_ip = "0.0.0.0"
 cached_wifi_level = 0
 
+# previous wifi connection profile name (for restore)
+prev_wifi_conn_name = None
+
 
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _has_cmd(cmd):
+    try:
+        r = subprocess.run(["which", cmd], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def capture_prev_wifi_connection():
+    """
+    현재 활성 Wi-Fi 연결 프로파일 이름 저장 (NetworkManager 기준).
+    nmcli 없으면 저장 불가(추후 fallback은 reconfigure).
+    """
+    global prev_wifi_conn_name
+    prev_wifi_conn_name = None
+
+    if not _has_cmd("nmcli"):
+        return
+
+    try:
+        r = subprocess.run(
+            ["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show", "--active"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.6
+        )
+        if r.returncode != 0:
+            return
+
+        for line in r.stdout.splitlines():
+            parts = line.split(":")
+            if len(parts) >= 2 and parts[1].strip() == "wifi":
+                prev_wifi_conn_name = parts[0].strip()
+                return
+    except Exception:
+        prev_wifi_conn_name = None
+
+
+def restore_prev_wifi_connection():
+    """
+    취소/실패 시 이전 Wi-Fi로 복구 시도
+    1) nmcli 프로파일 up
+    2) fallback: wpa_cli reconfigure + dhcpcd restart
+    """
+    global prev_wifi_conn_name
+
+    if _has_cmd("nmcli") and prev_wifi_conn_name:
+        try:
+            subprocess.run(["nmcli", "radio", "wifi", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["nmcli", "con", "up", prev_wifi_conn_name],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4)
+            return
+        except Exception:
+            pass
+
+    try:
+        if _has_cmd("wpa_cli"):
+            subprocess.run(["sudo", "wpa_cli", "-i", "wlan0", "reconfigure"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if _has_cmd("systemctl"):
+            subprocess.run(["sudo", "systemctl", "restart", "dhcpcd"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
 
 
 def init_ina219():
@@ -135,7 +202,7 @@ def button_next_edge(channel):
 
     now = time.time()
 
-    # soft debounce (추가 안전장치)
+    # soft debounce
     if (now - last_time_button_next_pressed) < 0.18:
         return
     last_time_button_next_pressed = now
@@ -317,18 +384,26 @@ def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_si
         draw.text((center_x, center_y), text, font=f, fill=255)
 
 
-def draw_wifi_bars(draw, x, y, level):  # level 0~4
-    w = 2
-    gap = 1
-    base_h = 2
+def draw_wifi_bars(draw, x, y, level, scale=2):
+    """
+    level: 0~4
+    x,y: 아이콘의 '하단 기준선' 위치
+    scale: 1~3 추천
+    """
+    bar_w = 2 * scale
+    gap = 1 * scale
+    base_h = 2 * scale
+
     for i in range(4):
-        h = base_h + i * 2
-        xx = x + i * (w + gap)
-        yy = y + (8 - h)
+        h = base_h + i * (2 * scale)
+        xx = x + i * (bar_w + gap)
+        y_top = y - h
+        y_bot = y
+
         if level >= (i + 1):
-            draw.rectangle([xx, yy, xx + w, y + 8], fill=255, outline=255)
+            draw.rectangle([xx, y_top, xx + bar_w, y_bot], fill=255, outline=255)
         else:
-            draw.rectangle([xx, yy, xx + w, y + 8], fill=0, outline=255)
+            draw.rectangle([xx, y_top, xx + bar_w, y_bot], fill=0, outline=255)
 
 
 FIRMWARE_DIR = "/home/user/stm32/Program"
@@ -395,7 +470,6 @@ def build_menu_for_dir(dir_path, is_root=False):
 
         if online:
             commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
-            # 메뉴명이 길면 오토핏이 처리하지만, 짧게도 가능
             names_local.append("FW 추출(OUT)")
             types_local.append("script")
             extras_local.append(None)
@@ -593,6 +667,10 @@ def _portal_loop_until_connected_or_cancel():
     global wifi_cancel_requested
 
     wifi_cancel_requested = False
+
+    # 기존 Wi-Fi 연결 저장 (취소/실패 시 복구)
+    capture_prev_wifi_connection()
+
     wifi_portal.start_ap()
     if not getattr(wifi_portal, "_state", {}).get("server_started", False):
         wifi_portal.run_portal(block=False)
@@ -622,7 +700,7 @@ def _portal_loop_until_connected_or_cancel():
         if time.time() - t0 > 600:
             return False
 
-        time.sleep(0.2)  # 반응성 개선
+        time.sleep(0.2)
 
 
 def wifi_worker_thread():
@@ -648,7 +726,7 @@ def wifi_worker_thread():
                     need_update = True
                     time.sleep(2.0)
                 else:
-                    status_message = "WiFi 설정 모드\nAP: GDSENG-SETUP\nPW: 12345678\n192.168.4.1:8080\n(NEXT 길게:취소)"
+                    status_message = "WiFi 설정 모드"
                     message_position = (0, 0)
                     message_font_size = 12
                     need_update = True
@@ -659,6 +737,7 @@ def wifi_worker_thread():
                     need_update = True
 
                     if wifi_cancel_requested:
+                        restore_prev_wifi_connection()
                         status_message = "WiFi 설정 취소"
                         message_position = (12, 10)
                         message_font_size = 15
@@ -671,6 +750,7 @@ def wifi_worker_thread():
                         need_update = True
                         time.sleep(1.5)
                     else:
+                        restore_prev_wifi_connection()
                         status_message = "WiFi 연결 실패"
                         message_position = (12, 10)
                         message_font_size = 15
@@ -880,7 +960,8 @@ def get_wifi_level():
     iwconfig wlan0에서 Signal level(dBm) 읽어서 0~4 단계로 변환
     """
     try:
-        r = subprocess.run(["iwconfig", "wlan0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.4)
+        r = subprocess.run(["iwconfig", "wlan0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           text=True, timeout=0.4)
         m = re.search(r"Signal level=(-?\d+)\s*dBm", r.stdout)
         if not m:
             return 0
@@ -940,8 +1021,8 @@ def update_oled_display():
                     draw.text((99, 3), perc_text, font=font_st, fill=255)
                     draw.text((2, 1), current_time, font=font_time, fill=255)
 
-                    # Wi-Fi bars (배터리 아이콘 왼쪽)
-                    draw_wifi_bars(draw, 72, 2, wifi_level)
+                    # Wi-Fi bars: 크기 키우고, 시계 기준선에 맞춤
+                    draw_wifi_bars(draw, x=66, y=13, level=wifi_level, scale=2)
 
                 else:
                     ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
@@ -959,11 +1040,19 @@ def update_oled_display():
 
                 if wifi_running:
                     draw.rectangle(device.bounding_box, outline="white", fill="black")
-                    draw.text((0, 0),  "WiFi 설정 모드",    font=get_font(15), fill=255)
-                    draw.text((0, 16), "AP: GDSENG-SETUP",  font=get_font(12), fill=255)
-                    draw.text((0, 30), "PW: 12345678",      font=get_font(12), fill=255)
-                    draw.text((0, 42), "192.168.4.1:8080",  font=get_font(12), fill=255)
-                    draw.text((0, 54), current_time,        font=font_small,   fill=255)
+
+                    # 64px 높이에 안정적으로 맞는 레이아웃(행간 조절)
+                    y0 = 0
+                    lh = 12
+                    f_title = get_font(14)
+                    f_line = get_font(11)
+                    f_hint = get_font(10)
+
+                    draw.text((0, y0),               "WiFi 설정 모드",   font=f_title, fill=255)
+                    draw.text((0, y0 + 14),          "AP: GDSENG-SETUP", font=f_line,  fill=255)
+                    draw.text((0, y0 + 14 + lh),     "PW: 12345678",     font=f_line,  fill=255)
+                    draw.text((0, y0 + 14 + lh * 2), "192.168.4.1:8080", font=f_line,  fill=255)
+                    draw.text((0, 54), "(NEXT 길게:취소)", font=f_hint, fill=255)
                     return
 
                 center_x = device.width // 2 + VISUAL_X_OFFSET
