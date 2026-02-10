@@ -27,7 +27,7 @@ _state = {
 PAGE = r"""
 <!doctype html><html lang="ko"><head>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Wi-Fi 설정</title>
+<title>와이파이 설정</title>
 <style>
 :root{--bd:#e6e6e6;--fg:#111;--mut:#666;--ok:#0a7a2f;--er:#b00020;}
 *{box-sizing:border-box}
@@ -51,6 +51,7 @@ input,select,button{
 button{font-weight:700;cursor:pointer}
 button:active{transform:translateY(1px)}
 button.primary{background:#111;border-color:#111;color:#fff}
+button:disabled{opacity:.6;cursor:default}
 
 .small{color:var(--mut);font-size:13px;line-height:1.35}
 .err{color:var(--er);font-size:13px;margin-top:10px;white-space:pre-line}
@@ -69,7 +70,6 @@ button.primary{background:#111;border-color:#111;color:#fff}
   padding:0;margin:0;
 }
 .pw-btn svg{width:20px;height:20px}
-.note{margin-top:10px}
 
 form.inline{
   display:flex;
@@ -88,16 +88,44 @@ form.inline button{
   width:120px;
   margin-top:0;
 }
+
+#loading{
+  position:fixed; inset:0;
+  background:rgba(0,0,0,.35);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+}
+.loading-box{
+  width:min(320px, 92vw);
+  background:#fff;
+  border-radius:16px;
+  padding:18px 16px;
+  border:1px solid var(--bd);
+  box-shadow:0 10px 30px rgba(0,0,0,.18);
+  text-align:center;
+}
+.spinner{
+  width:34px; height:34px;
+  border:3px solid #e6e6e6;
+  border-top-color:#111;
+  border-radius:50%;
+  margin:0 auto 10px auto;
+  animation:spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text{ font-weight:800; }
 </style>
 </head><body>
 
 <div class="row" style="align-items:baseline">
-  <h2>라즈베리파이 Wi-Fi 설정</h2>
+  <h2>와이파이 설정</h2>
   <div style="text-align:right"><span class="badge">{{ status }}</span></div>
 </div>
 
 <div class="card">
-  <div class="small">주변 Wi-Fi 목록</div>
+  <div class="small">주변 와이파이</div>
   {% if ssids and ssids|length > 0 %}
   <form method="post" action="/connect" onsubmit="return onSubmitConnect(this)">
     <select name="ssid" required>
@@ -114,17 +142,11 @@ form.inline button{
     </div>
 
     <button type="submit" class="primary">연결하기</button>
-
-    <div class="small note">
-      스캔 방식: {{ scan_mode }}
-    </div>
   </form>
   {% else %}
     <div class="small" style="margin-top:10px">
-      주변 목록을 못 가져왔습니다.<br>
-      (iwlist / nmcli 둘 다 실패)
+      주변 와이파이를 찾지 못했습니다.
     </div>
-    <div class="small note">에러: {{ scan_error }}</div>
   {% endif %}
 
   {% if msg %}
@@ -133,26 +155,10 @@ form.inline button{
 </div>
 
 <div class="card">
-  <div class="small">직접 입력</div>
-  <form method="post" action="/connect" onsubmit="return onSubmitConnect(this)">
-    <input name="ssid" placeholder="SSID" required />
-
-    <div class="pw-wrap">
-      <input name="psk" id="psk2" type="password" placeholder="비밀번호 (없으면 빈칸)" autocomplete="current-password" />
-      <button class="pw-btn" type="button" aria-label="비밀번호 보기" aria-pressed="false" onclick="togglePw('psk2', this)">
-        <span class="icon"></span>
-      </button>
-    </div>
-
-    <button type="submit" class="primary">연결하기</button>
-  </form>
-</div>
-
-<div class="card">
-  <div class="small">저장된 Wi-Fi 관리</div>
+  <div class="small">저장된 와이파이</div>
 
   {% if saved_wpa and saved_wpa|length > 0 %}
-    <div class="small" style="margin-top:10px">wpa_supplicant 저장</div>
+    <div class="small" style="margin-top:10px">wpa_supplicant</div>
     {% for s in saved_wpa %}
       <form method="post" action="/delete" class="inline">
         <input name="ssid" value="{{s}}" readonly />
@@ -164,7 +170,7 @@ form.inline button{
   {% endif %}
 
   {% if saved_nm and saved_nm|length > 0 %}
-    <div class="small" style="margin-top:10px">NetworkManager 저장</div>
+    <div class="small" style="margin-top:10px">NetworkManager</div>
     {% for item in saved_nm %}
       <form method="post" action="/delete" class="inline">
         <input value="{{ item.display }}" readonly />
@@ -178,17 +184,21 @@ form.inline button{
   {% endif %}
 
   {% if (not saved_wpa or saved_wpa|length==0) and (not saved_nm or saved_nm|length==0) %}
-    <div class="small" style="margin-top:10px">저장된 Wi-Fi가 없습니다.</div>
+    <div class="small" style="margin-top:10px">저장된 와이파이가 없습니다.</div>
     <div class="hr"></div>
   {% endif %}
 
-  <form method="post" action="/reset" onsubmit="return confirm('저장된 Wi-Fi를 전부 삭제할까요?')">
+  <form method="post" action="/reset" onsubmit="return confirm('저장된 와이파이를 전부 삭제할까요?')">
     <button type="submit" class="primary">전체 초기화</button>
   </form>
 </div>
 
-<div class="small">
-AP: <b>{{ap}}</b> / 접속: <b>http://{{ip}}:8080/</b>
+<div id="loading">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">처리 중입니다…</div>
+    <div class="small" style="margin-top:8px;color:var(--mut)">잠시만 기다려주세요.</div>
+  </div>
 </div>
 
 <script>
@@ -221,9 +231,54 @@ function togglePw(id, btn){
 
 function onSubmitConnect(form){
   const ssid = (form.ssid && form.ssid.value || "").trim();
-  if(!ssid){ alert("SSID를 입력하세요."); return false; }
+  if(!ssid){ alert("SSID를 선택하세요."); return false; }
   return true;
 }
+
+function showLoading(text){
+  const el = document.getElementById("loading");
+  const tx = document.getElementById("loadingText");
+  if(tx) tx.textContent = text || "처리 중입니다…";
+  if(el) el.style.display = "flex";
+}
+
+function loadingSlowHint(){
+  setTimeout(() => {
+    const el = document.getElementById("loading");
+    const tx = document.getElementById("loadingText");
+    if(el && el.style.display === "flex" && tx){
+      tx.textContent = "조금만 더 기다려주세요…";
+    }
+  }, 2500);
+}
+
+function disableButtons(form){
+  form.querySelectorAll("button").forEach(b => b.disabled = true);
+}
+
+document.querySelectorAll('form[action="/delete"]').forEach(f => {
+  f.addEventListener("submit", () => {
+    disableButtons(f);
+    showLoading("삭제 중입니다…");
+    loadingSlowHint();
+  });
+});
+
+document.querySelectorAll('form[action="/reset"]').forEach(f => {
+  f.addEventListener("submit", () => {
+    disableButtons(f);
+    showLoading("전체 초기화 중입니다…");
+    loadingSlowHint();
+  });
+});
+
+document.querySelectorAll('form[action="/connect"]').forEach(f => {
+  f.addEventListener("submit", () => {
+    disableButtons(f);
+    showLoading("연결 설정 적용 중입니다…");
+    loadingSlowHint();
+  });
+});
 </script>
 
 </body></html>
@@ -260,7 +315,7 @@ def _scan_iwlist():
     for s in ssids:
         if s not in out:
             out.append(s)
-    return out[:40], txt
+    return out[:40]
 
 def _scan_nmcli():
     p = _run(["sudo", "nmcli", "-t", "-f", "SSID,SIGNAL", "dev", "wifi", "list", "ifname", IFACE], timeout=12.0)
@@ -285,27 +340,22 @@ def _scan_nmcli():
             best[s] = sig
     uniq = [(s, best[s]) for s in best]
     uniq.sort(key=lambda x: (-x[1], x[0]))
-    return [s for s, _ in uniq[:40]], (p.stdout or "") + "\n" + (p.stderr or "")
+    return [s for s, _ in uniq[:40]]
 
 def scan_ssids():
-    scan_error = ""
     try:
-        nm, _ = _scan_nmcli()
+        nm = _scan_nmcli()
         if nm:
-            return nm, "nmcli(신호세기 정렬)", ""
-        scan_error += "nmcli empty\n"
-    except Exception as e:
-        scan_error += f"nmcli fail: {e}\n"
-
+            return nm
+    except Exception:
+        pass
     try:
-        iw, _ = _scan_iwlist()
+        iw = _scan_iwlist()
         if iw:
-            return iw, "iwlist", ""
-        scan_error += "iwlist empty\n"
-    except Exception as e:
-        scan_error += f"iwlist fail: {e}\n"
-
-    return [], "none", scan_error.strip()
+            return iw
+    except Exception:
+        pass
+    return []
 
 def list_saved_wpa():
     try:
@@ -321,13 +371,6 @@ def list_saved_wpa():
         return []
 
 def _parse_nmconnection_files():
-    """
-    /etc/NetworkManager/system-connections/*.nmconnection
-    내부에:
-      [wifi]
-      ssid=XXXX
-    같은 형식이 있을 때 ssid 추출
-    """
     items = []
     try:
         if not os.path.isdir(NM_CONN_DIR):
@@ -340,10 +383,7 @@ def _parse_nmconnection_files():
                 txt = _run(["sudo", "cat", path], timeout=3.5).stdout
             except Exception:
                 continue
-
-            # 파일명에서 connection id 추정 (대부분 name과 비슷)
             nm_id = os.path.splitext(fn)[0].strip()
-
             m = re.search(r"(?m)^\s*ssid\s*=\s*(.+?)\s*$", txt)
             ssid = m.group(1).strip() if m else ""
             if ssid:
@@ -353,11 +393,6 @@ def _parse_nmconnection_files():
     return items
 
 def list_saved_nm():
-    """
-    안정적으로 "저장된 Wi-Fi"를 보여주기 위해
-    1) sudo nmcli에서 SSID 컬럼(802-11-wireless.ssid)을 우선 사용
-    2) 안 되면 nmconnection 파일에서 ssid 파싱 (폴백)
-    """
     items = []
     try:
         p = _run(["sudo", "nmcli", "-t", "-f", "NAME,TYPE,802-11-wireless.ssid", "connection", "show"], timeout=6.0)
@@ -365,12 +400,11 @@ def list_saved_nm():
             parts = line.strip().split(":")
             if len(parts) < 2:
                 continue
-            name = (parts[0] or "").strip()        # connection id
+            name = (parts[0] or "").strip()
             ctype = (parts[1] or "").strip()
             if ctype != "wifi" or not name:
                 continue
             ssid = (parts[2] if len(parts) >= 3 else "").strip()
-            # ssid가 비어있을 수 있어요(숨김/손상/권한/드라이버 등). 그럴 땐 name만이라도 표시.
             display = ssid if ssid else name
             if ssid and ssid != name:
                 display = f"{ssid} ({name})"
@@ -378,21 +412,17 @@ def list_saved_nm():
     except Exception:
         items = []
 
-    # nmcli로 못 얻었거나 너무 빈 경우 파일 파싱으로 보강
     if not items:
         items = _parse_nmconnection_files()
     else:
-        # 일부라도 ssid가 공백이면 파일 파싱으로 추가 보강
         has_real_ssid = any(("(" in it["display"]) or (it["ssid"] and it["ssid"] != it["nm_id"]) for it in items)
         if not has_real_ssid:
             fb = _parse_nmconnection_files()
-            # 중복 방지( nm_id 기준 )
             known = set([it["nm_id"] for it in items if it.get("nm_id")])
             for it in fb:
                 if it["nm_id"] not in known:
                     items.append(it)
 
-    # display 기준으로 중복 제거
     uniq = []
     seen = set()
     for it in items:
@@ -423,9 +453,6 @@ def delete_saved_wpa(ssid):
         return False, f"삭제 실패: {e}"
 
 def delete_saved_nm(nm_id: str):
-    """
-    NetworkManager는 SSID가 아니라 "connection id(NAME)"로 삭제해야 확실합니다.
-    """
     if not nm_id:
         return False, "NM id empty"
     try:
@@ -439,20 +466,15 @@ def delete_saved_nm(nm_id: str):
 
 def reset_wifi_config():
     errs = []
-
-    # NM 전체 삭제
     for it in list_saved_nm():
         nm_id = it.get("nm_id", "")
         ok, _ = delete_saved_nm(nm_id)
         if not ok:
             errs.append(f"NM:{nm_id}")
-
-    # WPA 전체 삭제
     for s in list_saved_wpa():
         ok, _ = delete_saved_wpa(s)
         if not ok:
             errs.append(f"WPA:{s}")
-
     if errs:
         return False, "일부 삭제 실패: " + ", ".join(errs)
     return True, "초기화 완료"
@@ -560,36 +582,32 @@ def stop_ap_and_connect(ssid, psk, wait_sec=35):
         if has_internet():
             _state["done"] = True
             _state["running"] = False
-            _state["last_ok"] = f"연결 성공: {ssid}"
+            _state["last_ok"] = f"연결 완료"
             _state["last_error"] = ""
             return True
         time.sleep(1)
 
-    _state["last_error"] = "연결 시간 초과(인터넷 확인 실패)"
+    _state["last_error"] = "연결 시간 초과"
     return False
 
 @app.route("/", methods=["GET"])
 def index():
-    ssids, scan_mode, scan_error = scan_ssids()
+    ssids = scan_ssids()
     saved_wpa = list_saved_wpa()
     saved_nm = list_saved_nm()
 
     msg = _state["last_error"] or _state["last_ok"] or ""
     ok = bool(_state["last_ok"]) and not _state["last_error"]
-    status = "인터넷 연결됨" if has_internet() else "설정 모드"
+    status = "연결됨" if has_internet() else "설정 모드"
 
     return render_template_string(
         PAGE,
         ssids=ssids,
         saved_wpa=saved_wpa,
         saved_nm=saved_nm,
-        ap=AP_SSID,
-        ip=AP_IP,
         msg=msg,
         ok=ok,
         status=status,
-        scan_mode=scan_mode,
-        scan_error=scan_error,
     )
 
 @app.route("/connect", methods=["POST"])
@@ -599,10 +617,8 @@ def connect():
     if not ssid:
         return "SSID가 비어있습니다.", 400
     _state["requested"] = {"ssid": ssid, "psk": psk}
-    return f"""
-    연결 요청을 받았습니다.<br>
-    SSID: <b>{ssid}</b><br>
-    잠시 후 자동으로 재연결됩니다. (AP가 꺼질 수 있어요)
+    return """
+    적용 중입니다. 잠시 후 연결됩니다.
     <br><br>
     <a href="/">돌아가기</a>
     """
