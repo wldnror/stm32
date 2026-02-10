@@ -361,6 +361,11 @@ GPIO.setup(LED_ERROR1, GPIO.OUT)
 def detect_stm32_variant():
     if is_command_executing:
         return None, None
+
+    # 256KB 끝(-4), 512KB 끝(-4)
+    ADDR_256_END = "0x0803FFFC"
+    ADDR_512_END = "0x0807FFFC"
+
     cmd = [
         "sudo", "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
@@ -370,27 +375,33 @@ def detect_stm32_variant():
         "-c", "halt",
         "-c", "soft_reset_halt",
         "-c", "sleep 200",
-        "-c", "flash probe 0",
-        "-c", "flash info 0",
+        # 끝주소 읽기 시도
+        "-c", f"mdw {ADDR_512_END} 1",
+        "-c", f"mdw {ADDR_256_END} 1",
         "-c", "shutdown"
     ]
+
     rc, out, err = run_capture(cmd, timeout=6.5)
     if rc != 0:
         return None, None
 
-    mk = re.search(r"flash size\s*=\s*(\d+)\s*KiB", out, re.IGNORECASE)
-    if mk:
-        flash_kb = int(mk.group(1))
-        variant = "TFTP" if flash_kb >= 384 else "NORMAL"
+    # 512K 끝주소 읽기 성공 여부로 판단
+    # 성공 패턴: "0x0807fffc: XXXXXXXX"
+    m512 = re.search(r"0x0807fffc:\s*([0-9a-fA-F]{8})", out, re.IGNORECASE)
+
+    if m512:
+        flash_kb = 512
+        variant = "TFTP"   # 너의 표기상 RET쪽으로 쓰고 있던 분기
         return flash_kb, variant
 
-    m2 = re.search(r"size\s*0x([0-9a-fA-F]+)", out)
-    if m2:
-        size_bytes = int(m2.group(1), 16)
-        flash_kb = int(size_bytes // 1024)
-        variant = "TFTP" if flash_kb >= 384 else "NORMAL"
+    # 512K는 실패했지만 256K는 읽히면 256K로 판단
+    m256 = re.search(r"0x0803fffc:\s*([0-9a-fA-F]{8})", out, re.IGNORECASE)
+    if m256:
+        flash_kb = 256
+        variant = "NORMAL"
         return flash_kb, variant
 
+    # 둘 다 안되면 통신상태가 불안정/리셋/보호 등의 가능성
     return None, None
 
 def check_stm32_connection():
