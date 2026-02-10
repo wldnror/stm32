@@ -43,10 +43,12 @@ wifi_stage = {
     "spinner": 0,
 }
 
-wifi_ap_lock = threading.Lock()
-wifi_ap = {
-    "clients": 0,
-    "just_connected_until": 0.0,
+ap_state_lock = threading.Lock()
+ap_state = {
+    "last_clients": 0,
+    "flash_until": 0.0,
+    "poll_next": 0.0,
+    "spinner": 0,
 }
 
 def wifi_stage_set(percent, line1, line2=""):
@@ -69,16 +71,18 @@ def wifi_stage_clear():
 
 def wifi_stage_tick():
     with wifi_stage_lock:
-        if wifi_stage["active"]:
-            t = wifi_stage["target_percent"]
-            d = wifi_stage["display_percent"]
-            if d < t:
-                step = 1
-                if t - d > 25:
-                    step = 3
-                elif t - d > 12:
-                    step = 2
-                wifi_stage["display_percent"] = min(t, d + step)
+        if not wifi_stage["active"]:
+            wifi_stage["spinner"] = (wifi_stage["spinner"] + 1) % 4
+            return
+        t = wifi_stage["target_percent"]
+        d = wifi_stage["display_percent"]
+        if d < t:
+            step = 1
+            if t - d > 25:
+                step = 3
+            elif t - d > 12:
+                step = 2
+            wifi_stage["display_percent"] = min(t, d + step)
         wifi_stage["spinner"] = (wifi_stage["spinner"] + 1) % 4
 
 BUTTON_PIN_NEXT = 27
@@ -150,8 +154,10 @@ last_good_wifi_profile = None
 cached_online = False
 last_menu_online = None
 
+
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
 def run_quiet(cmd, timeout=3.0, shell=False):
     try:
@@ -160,12 +166,14 @@ def run_quiet(cmd, timeout=3.0, shell=False):
     except Exception:
         return False
 
+
 def run_capture(cmd, timeout=4.0, shell=False):
     try:
         r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout, shell=shell)
         return r.returncode, (r.stdout or ""), (r.stderr or "")
     except Exception as e:
         return 999, "", str(e)
+
 
 def set_ui_progress(percent, message, pos=(0, 0), font_size=15):
     with ui_override_lock:
@@ -177,6 +185,7 @@ def set_ui_progress(percent, message, pos=(0, 0), font_size=15):
         ui_override["font_size"] = font_size
         ui_override["line2"] = ""
 
+
 def set_ui_text(line1, line2="", pos=(0, 0), font_size=15):
     with ui_override_lock:
         ui_override["active"] = True
@@ -187,6 +196,7 @@ def set_ui_text(line1, line2="", pos=(0, 0), font_size=15):
         ui_override["font_size"] = font_size
         ui_override["percent"] = 0
 
+
 def clear_ui_override():
     with ui_override_lock:
         ui_override["active"] = False
@@ -194,6 +204,7 @@ def clear_ui_override():
         ui_override["message"] = ""
         ui_override["line2"] = ""
         ui_override["percent"] = 0
+
 
 def has_real_internet(timeout=1.5):
     try:
@@ -207,20 +218,25 @@ def has_real_internet(timeout=1.5):
     except Exception:
         return False
 
+
 def nm_is_active():
     rc, out, _ = run_capture(["systemctl", "is-active", "NetworkManager"], timeout=2.0)
     return (rc == 0) and ("active" in out.strip())
+
 
 def nm_restart():
     run_quiet(["sudo", "systemctl", "enable", "--now", "NetworkManager"], timeout=6.0)
     run_quiet(["sudo", "systemctl", "restart", "NetworkManager"], timeout=6.0)
 
+
 def nm_set_managed(managed: bool):
     v = "yes" if managed else "no"
     run_quiet(["sudo", "nmcli", "dev", "set", "wlan0", "managed", v], timeout=4.0)
 
+
 def nm_disconnect_wlan0():
     run_quiet(["sudo", "nmcli", "dev", "disconnect", "wlan0"], timeout=4.0)
+
 
 def nm_get_active_wifi_profile():
     rc, out, _ = run_capture(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"], timeout=3.0)
@@ -234,6 +250,7 @@ def nm_get_active_wifi_profile():
                 return name
     return None
 
+
 def nm_autoconnect(timeout=25):
     t0 = time.time()
     while time.time() - t0 < timeout:
@@ -241,6 +258,7 @@ def nm_autoconnect(timeout=25):
             return True
         time.sleep(0.7)
     return has_real_internet()
+
 
 def nm_connect(ssid: str, psk: str, timeout=30):
     run_quiet(["sudo", "nmcli", "dev", "wifi", "rescan", "ifname", "wlan0"], timeout=6.0)
@@ -257,6 +275,7 @@ def nm_connect(ssid: str, psk: str, timeout=30):
     )
     return rc2 == 0
 
+
 def kill_portal_tmp_procs():
     cmd = r"""sudo bash -lc '
 pids=$(pgrep -a hostapd | awk "/\/tmp\/hostapd\.conf/{print \$1}" | xargs)
@@ -266,12 +285,14 @@ pids=$(pgrep -a dnsmasq | awk "/\/tmp\/dnsmasq\.conf/{print \$1}" | xargs)
 '"""
     run_quiet(cmd, timeout=6.0, shell=True)
 
+
 def wlan0_soft_reset():
     run_quiet(["sudo", "ip", "addr", "flush", "dev", "wlan0"], timeout=3.0)
     run_quiet(["sudo", "ip", "link", "set", "wlan0", "down"], timeout=3.0)
     time.sleep(1)
     run_quiet(["sudo", "ip", "link", "set", "wlan0", "up"], timeout=3.0)
     time.sleep(1)
+
 
 def init_ina219():
     global ina
@@ -280,6 +301,7 @@ def init_ina219():
         ina.configure()
     except Exception:
         ina = None
+
 
 def read_ina219_percentage():
     global ina
@@ -295,11 +317,13 @@ def read_ina219_percentage():
     except Exception:
         return -1
 
+
 def battery_monitor_thread():
     global battery_percentage
     while not stop_threads:
         battery_percentage = read_ina219_percentage()
         time.sleep(2)
+
 
 def button_next_edge(channel):
     global last_time_button_next_pressed
@@ -322,6 +346,7 @@ def button_next_edge(channel):
         next_is_down = False
         next_press_time = None
 
+
 def button_execute_callback(channel):
     global last_time_button_execute_pressed, execute_press_time, execute_is_down, execute_long_handled
     now = time.time()
@@ -332,6 +357,7 @@ def button_execute_callback(channel):
     execute_is_down = True
     execute_long_handled = False
 
+
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
@@ -341,6 +367,7 @@ GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
+
 
 def check_stm32_connection():
     global connection_success, connection_failed_since_last_success, is_command_executing
@@ -387,6 +414,7 @@ def check_stm32_connection():
             connection_success = False
         return False
 
+
 def stm32_poll_thread():
     global last_stm32_check_time, auto_flash_done_connection
     while not stop_threads:
@@ -418,6 +446,7 @@ def stm32_poll_thread():
         if cur_state and (not prev_state):
             auto_flash_done_connection = False
 
+
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
 
@@ -434,10 +463,12 @@ def get_font(size: int):
         font_cache[size] = f
     return f
 
+
 low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+
 
 def select_battery_icon(percentage):
     if percentage < 20:
@@ -447,6 +478,7 @@ def select_battery_icon(percentage):
     if percentage < 100:
         return high_battery_icon
     return full_battery_icon
+
 
 def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_size, min_size=10):
     size = start_size
@@ -474,6 +506,7 @@ def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_si
     except TypeError:
         draw.text((center_x, center_y), text, font=f, fill=255)
 
+
 def draw_wifi_bars(draw, x, y, level):
     bar_w = 3
     gap = 2
@@ -489,8 +522,10 @@ def draw_wifi_bars(draw, x, y, level):
         else:
             draw.rectangle([xx, y + max_h - 1, xx + bar_w, y + max_h], fill=255)
 
+
 FIRMWARE_DIR = "/home/user/stm32/Program"
 OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
+
 
 def parse_order_and_name(name: str, is_dir: bool):
     raw = name if is_dir else os.path.splitext(name)[0]
@@ -502,6 +537,7 @@ def parse_order_and_name(name: str, is_dir: bool):
         order = 9999
         display = raw
     return order, display
+
 
 def build_menu_for_dir(dir_path, is_root=False):
     entries = []
@@ -579,6 +615,7 @@ def build_menu_for_dir(dir_path, is_root=False):
         "extras": extras_local,
     }
 
+
 def refresh_root_menu(reset_index=False):
     global current_menu, commands, command_names, command_types, menu_extras, current_command_index
     current_menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
@@ -588,6 +625,7 @@ def refresh_root_menu(reset_index=False):
     menu_extras = current_menu["extras"]
     if reset_index or (current_command_index >= len(commands)):
         current_command_index = 0
+
 
 refresh_root_menu(reset_index=True)
 
@@ -731,6 +769,7 @@ def request_wifi_setup():
     with wifi_action_lock:
         wifi_action_requested = True
 
+
 def prepare_for_ap_mode():
     global last_good_wifi_profile
     try:
@@ -745,15 +784,16 @@ def prepare_for_ap_mode():
         nm_set_managed(False)
         time.sleep(0.3)
 
+
 def restore_after_ap_mode(timeout=25):
     global last_good_wifi_profile
 
-    wifi_stage_set(5, "WiFi 종료", "정리 중")
+    wifi_stage_set(5, "WiFi 종료 중", "프로세스 정리")
     kill_portal_tmp_procs()
     run_quiet(["sudo", "systemctl", "stop", "hostapd"], timeout=3.0)
     run_quiet(["sudo", "systemctl", "stop", "dnsmasq"], timeout=3.0)
 
-    wifi_stage_set(25, "WiFi 재시작", "초기화")
+    wifi_stage_set(25, "WiFi 재시작", "인터페이스 초기화")
     wlan0_soft_reset()
 
     wifi_stage_set(45, "WiFi 재시작", "NetworkManager")
@@ -762,7 +802,7 @@ def restore_after_ap_mode(timeout=25):
     time.sleep(1.2)
 
     if last_good_wifi_profile:
-        wifi_stage_set(60, "재연결", last_good_wifi_profile[:18])
+        wifi_stage_set(60, "재연결 중", last_good_wifi_profile[:18])
         run_quiet(["sudo", "nmcli", "connection", "up", last_good_wifi_profile], timeout=12.0)
 
     wifi_stage_set(75, "인터넷 확인", "")
@@ -770,7 +810,7 @@ def restore_after_ap_mode(timeout=25):
     while time.time() - t0 < timeout:
         if has_real_internet():
             wifi_stage_set(100, "완료", "")
-            time.sleep(0.35)
+            time.sleep(0.4)
             wifi_stage_clear()
             return True
         p = 75 + int(25 * ((time.time() - t0) / max(1.0, timeout)))
@@ -782,6 +822,7 @@ def restore_after_ap_mode(timeout=25):
     time.sleep(0.6)
     wifi_stage_clear()
     return ok
+
 
 def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     wifi_stage_set(10, "연결 준비", "AP 종료")
@@ -795,7 +836,7 @@ def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     run_quiet(["sudo", "systemctl", "stop", "hostapd"], timeout=3.0)
     run_quiet(["sudo", "systemctl", "stop", "dnsmasq"], timeout=3.0)
 
-    wifi_stage_set(30, "연결 준비", "초기화")
+    wifi_stage_set(30, "연결 준비", "인터페이스 초기화")
     wlan0_soft_reset()
 
     wifi_stage_set(50, "연결 준비", "NetworkManager")
@@ -803,7 +844,7 @@ def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     nm_restart()
     time.sleep(1.5)
 
-    wifi_stage_set(70, "WiFi 연결", ssid[:18])
+    wifi_stage_set(70, "WiFi 연결 중", ssid[:18])
     ok = nm_connect(ssid, psk, timeout=timeout)
     if not ok:
         wifi_stage_set(0, "연결 실패", "")
@@ -814,42 +855,17 @@ def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     wifi_stage_set(85, "인터넷 확인", "")
     ok2 = nm_autoconnect(timeout=20)
     wifi_stage_set(100 if ok2 else 0, "완료" if ok2 else "실패", "")
-    time.sleep(0.55)
+    time.sleep(0.6)
     wifi_stage_clear()
     return ok2
 
-def ap_client_count():
-    rc, out, _ = run_capture(["iw", "dev", "wlan0", "station", "dump"], timeout=0.8)
-    if rc != 0:
-        return 0
-    return out.count("Station ")
-
-def ap_client_poll_thread():
-    prev = 0
-    while not stop_threads:
-        with wifi_action_lock:
-            running = wifi_action_running
-        if running:
-            c = ap_client_count()
-            now = time.time()
-            with wifi_ap_lock:
-                wifi_ap["clients"] = c
-                if c > prev and c > 0:
-                    wifi_ap["just_connected_until"] = now + 1.2
-            prev = c
-        else:
-            with wifi_ap_lock:
-                wifi_ap["clients"] = 0
-                wifi_ap["just_connected_until"] = 0.0
-            prev = 0
-        time.sleep(0.6)
 
 def _portal_loop_until_connected_or_cancel():
     global wifi_cancel_requested
 
     prepare_for_ap_mode()
-    wifi_stage_clear()
 
+    wifi_stage_clear()
     wifi_portal.start_ap()
     if not getattr(wifi_portal, "_state", {}).get("server_started", False):
         wifi_portal.run_portal(block=False)
@@ -887,6 +903,7 @@ def _portal_loop_until_connected_or_cancel():
 
         time.sleep(0.2)
 
+
 def wifi_worker_thread():
     global wifi_action_requested, wifi_action_running
     global status_message, message_position, message_font_size, need_update, wifi_cancel_requested
@@ -903,6 +920,11 @@ def wifi_worker_thread():
             try:
                 wifi_cancel_requested = False
                 wifi_stage_clear()
+                with ap_state_lock:
+                    ap_state["last_clients"] = 0
+                    ap_state["flash_until"] = 0.0
+                    ap_state["poll_next"] = 0.0
+                    ap_state["spinner"] = 0
 
                 r1 = subprocess.run(["which", "hostapd"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 r2 = subprocess.run(["which", "dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -922,7 +944,7 @@ def wifi_worker_thread():
                     need_update = True
 
                     if result == "cancel":
-                        wifi_stage_set(10, "취소", "재연결")
+                        wifi_stage_set(10, "취소 처리중", "재연결 준비")
                         ok_restore = restore_after_ap_mode(timeout=25)
                         set_ui_text("재연결 완료" if ok_restore else "재연결 실패", "", pos=(15, 18), font_size=15)
                         time.sleep(1.0)
@@ -948,6 +970,7 @@ def wifi_worker_thread():
                     wifi_action_running = False
 
         time.sleep(0.05)
+
 
 def execute_command(command_index):
     global is_executing, is_command_executing
@@ -1120,6 +1143,9 @@ def execute_command(command_index):
 
     clear_ui_override()
     need_update = True
+    is_executing = False
+    is_command_executing = False
+
 
 def get_ip_address():
     try:
@@ -1131,6 +1157,7 @@ def get_ip_address():
         return ip
     except Exception:
         return "0.0.0.0"
+
 
 def get_wifi_level():
     try:
@@ -1155,10 +1182,12 @@ def get_wifi_level():
     except Exception:
         return 0
 
+
 def net_poll_thread():
     global cached_ip, cached_wifi_level, cached_online, last_menu_online, need_update
     while not stop_threads:
         cached_ip = get_ip_address()
+
         online_now = has_real_internet()
         cached_online = online_now
         cached_wifi_level = get_wifi_level() if online_now else 0
@@ -1169,6 +1198,7 @@ def net_poll_thread():
             need_update = True
 
         time.sleep(1.5)
+
 
 def _draw_override(draw):
     with ui_override_lock:
@@ -1203,7 +1233,41 @@ def _draw_override(draw):
 
     return False
 
+
+def get_ap_station_count():
+    try:
+        r = subprocess.run(["iw", "dev", "wlan0", "station", "dump"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.7)
+        if r.returncode != 0:
+            return 0
+        return sum(1 for line in (r.stdout or "").splitlines() if line.strip().startswith("Station "))
+    except Exception:
+        return 0
+
+
+def ap_client_tick(wifi_running: bool):
+    now = time.time()
+    with ap_state_lock:
+        ap_state["spinner"] = (ap_state["spinner"] + 1) % 4
+        if not wifi_running:
+            ap_state["last_clients"] = 0
+            ap_state["flash_until"] = 0.0
+            ap_state["poll_next"] = 0.0
+            return
+        if now < ap_state["poll_next"]:
+            return
+        ap_state["poll_next"] = now + 0.8
+        prev = ap_state["last_clients"]
+
+    cnt = get_ap_station_count()
+
+    with ap_state_lock:
+        ap_state["last_clients"] = cnt
+        if cnt > 0 and prev == 0:
+            ap_state["flash_until"] = now + 1.3
+
+
 last_oled_update_time = 0.0
+
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
@@ -1218,8 +1282,8 @@ def update_oled_display():
         with wifi_action_lock:
             wifi_running = wifi_action_running
 
-        now = datetime.now()
-        current_time = now.strftime("%H시 %M분")
+        now_dt = datetime.now()
+        current_time = now_dt.strftime("%H시 %M분")
         voltage_percentage = battery_percentage
         ip_address = cached_ip
         wifi_level = cached_wifi_level
@@ -1239,6 +1303,14 @@ def update_oled_display():
                     draw.text((99, 3), perc_text, font=font_st, fill=255)
                     draw.text((2, 1), current_time, font=font_time, fill=255)
                     draw_wifi_bars(draw, 70, 0, wifi_level)
+                else:
+                    ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
+                    draw.text((0, 51), ip_display, font=font_big, fill=255)
+                    draw.text((80, -3), "GDSENG", font=font_big, fill=255)
+                    draw.text((83, 50), "ver 3.71", font=font_big, fill=255)
+                    draw.text((0, -3), current_time, font=font_time, fill=255)
+                    if not has_real_internet():
+                        draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
 
                 if status_message:
                     draw.rectangle(device.bounding_box, fill="black")
@@ -1248,19 +1320,6 @@ def update_oled_display():
                 if wifi_running:
                     draw.rectangle(device.bounding_box, fill="black")
                     x = 2
-                    nowt = time.time()
-
-                    with wifi_ap_lock:
-                        just_until = wifi_ap["just_connected_until"]
-                        clients = wifi_ap["clients"]
-
-                    if just_until > nowt:
-                        t = just_until - nowt
-                        pulse = 1 if int(t * 10) % 2 == 0 else 0
-                        txt = "기기 연결됨" if pulse else "기기 연결됨 "
-                        draw.text((x, 14), txt, font=get_font(16), fill=255)
-                        draw.text((x, 36), "설정 페이지 열기", font=get_font(12), fill=255)
-                        return
 
                     with wifi_stage_lock:
                         st_active = wifi_stage["active"]
@@ -1269,35 +1328,48 @@ def update_oled_display():
                         st2 = wifi_stage["line2"]
                         sp = wifi_stage["spinner"]
 
+                    with ap_state_lock:
+                        flash_until = ap_state["flash_until"]
+                        ap_sp = ap_state["spinner"]
+
                     dots = "." * sp
+                    dots2 = "." * ap_sp
+                    now = time.time()
 
                     if st_active:
-                        draw.text((x, 2), (st1 or "")[:16], font=get_font(14), fill=255)
+                        draw.text((x, 0), (st1 or "")[:16], font=get_font(13), fill=255)
                         line2 = (st2 or "")
                         if line2:
-                            draw.text((x, 20), (line2 + dots)[:18], font=get_font(12), fill=255)
+                            draw.text((x, 16), (line2 + dots)[:18], font=get_font(11), fill=255)
                         else:
-                            draw.text((x, 20), ("처리중" + dots)[:18], font=get_font(12), fill=255)
+                            draw.text((x, 16), ("처리중" + dots)[:18], font=get_font(11), fill=255)
 
-                        x1, y1, x2, y2 = 8, 46, 120, 60
+                        x1, y1, x2, y2 = 8, 48, 120, 60
                         draw.rectangle([(x1, y1), (x2, y2)], outline=255, fill=0)
                         fill_w = int((x2 - x1) * (st_p / 100.0))
                         if fill_w > 0:
                             draw.rectangle([(x1, y1), (x1 + fill_w, y2)], fill=255)
 
-                        draw.text((x, 34), "NEXT 길게: 취소", font=get_font(12), fill=255)
+                        draw.text((x, 32), "NEXT 길게: 취소", font=get_font(11), fill=255)
                     else:
-                        draw.text((x, 0), "WiFi 설정 모드", font=get_font(14), fill=255)
+                        if now < flash_until:
+                            draw.text((x, 0), ("연결됨!" + dots2)[:16], font=get_font(14), fill=255)
+                        else:
+                            draw.text((x, 0), "WiFi 설정 모드", font=get_font(14), fill=255)
+
                         draw.text((x, 18), "AP: GDSENG-SETUP", font=get_font(12), fill=255)
                         draw.text((x, 34), "PW: 12345678", font=get_font(12), fill=255)
-                        draw.text((x, 50), "IP: 192.168.4.1:8080", font=get_font(10), fill=255)
-                        if clients > 0:
-                            draw.text((100, 0), f"+{clients}", font=get_font(10), fill=255)
+                        draw.text((x, 50), "IP: 192.168.4.1:8080", font=get_font(12), fill=255)
                     return
 
                 center_x = device.width // 2 + VISUAL_X_OFFSET
-                center_y = 42
-                start_size = 21
+                if item_type == "system":
+                    center_y = 33
+                    start_size = 17
+                else:
+                    center_y = 42
+                    start_size = 21
+
                 max_w = device.width - 4
                 draw_center_text_autofit(draw, title, center_x, center_y, max_w, start_size, min_size=11)
 
@@ -1307,16 +1379,23 @@ def update_oled_display():
     finally:
         display_lock.release()
 
+
 def realtime_update_display():
     global need_update, last_oled_update_time
     while not stop_threads:
+        with wifi_action_lock:
+            wifi_running = wifi_action_running
+
         wifi_stage_tick()
+        ap_client_tick(wifi_running)
+
         now = time.time()
         if need_update or (now - last_oled_update_time >= 0.2):
             update_oled_display()
             last_oled_update_time = now
             need_update = False
         time.sleep(0.03)
+
 
 def shutdown_system():
     set_ui_text("배터리 부족", "시스템 종료 중...", pos=(10, 18), font_size=15)
@@ -1325,6 +1404,7 @@ def shutdown_system():
         os.system("sudo shutdown -h now")
     except Exception:
         pass
+
 
 def execute_button_logic():
     global current_command_index, need_update
@@ -1346,7 +1426,7 @@ def execute_button_logic():
             if now - next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
                 next_long_handled = True
                 wifi_cancel_requested = True
-                wifi_stage_set(5, "취소 처리", "잠시만")
+                wifi_stage_set(5, "취소 처리중", "잠시만")
                 need_update = True
 
         if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
@@ -1354,7 +1434,7 @@ def execute_button_logic():
                 execute_long_handled = True
                 if commands and (not is_executing):
                     item_type = command_types[current_command_index]
-                    if item_type in ("wifi",):
+                    if item_type in ("system", "dir", "back", "script", "wifi", "bin"):
                         execute_command(current_command_index)
                         need_update = True
 
@@ -1389,9 +1469,11 @@ def execute_button_logic():
                 and cs
                 and (not auto_flash_done_connection)
             ):
+                execute_command(current_command_index)
                 auto_flash_done_connection = True
 
         time.sleep(0.03)
+
 
 init_ina219()
 
@@ -1407,13 +1489,11 @@ stm32_thread.start()
 wifi_thread = threading.Thread(target=wifi_worker_thread, daemon=True)
 wifi_thread.start()
 
-ap_poll_thread = threading.Thread(target=ap_client_poll_thread, daemon=True)
-ap_poll_thread.start()
-
 net_thread = threading.Thread(target=net_poll_thread, daemon=True)
 net_thread.start()
 
 need_update = True
+
 
 try:
     execute_button_logic()
