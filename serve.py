@@ -160,7 +160,7 @@ TFTP_DIR = os.path.join(FIRMWARE_DIR, "TFTP")
 NORMAL_DIR = os.path.join(FIRMWARE_DIR, "1.일반")
 
 STM32_INFO_LOCK = threading.Lock()
-STM32_INFO = {"flash_kb": None, "variant": None}
+STM32_INFO = {"flash_kb": None, "variant": None, "dev_id": None}
 
 LAST_PROGRAM_VARIANT_LOCK = threading.Lock()
 LAST_PROGRAM_VARIANT = ""   # "TFTP" 또는 "일반"
@@ -358,19 +358,18 @@ GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
 
-def detect_stm32_variant():
-    """
-    끝주소 읽기 기반 감지:
-      - 0x0807FFFC 읽히면 512KB(TFTP/RET)
-      - 0x0803FFFC만 읽히면 256KB(NORMAL/RC)
-      - 둘 다 실패하면 None
-    """
-    global is_command_executing
-    if is_command_executing:
-        return None, None
+# -----------------------------
+# ✅ STM32 감지 로직 (교체)
+# -----------------------------
 
-    ADDR_256_END = "0x0803FFFC"
-    ADDR_512_END = "0x0807FFFC"
+def _openocd_read_once(read_cmd: str, timeout=5.0):
+    """
+    read_cmd 예:
+      - "mdw 0xE0042000 1"
+      - "mdh 0x1FFFF7E0 1"
+    """
+    if is_command_executing:
+        return None
 
     cmd = [
         "sudo", "openocd",
@@ -381,23 +380,79 @@ def detect_stm32_variant():
         "-c", "halt",
         "-c", "soft_reset_halt",
         "-c", "sleep 200",
-        "-c", f"mdw {ADDR_512_END} 1",
-        "-c", f"mdw {ADDR_256_END} 1",
-        "-c", "shutdown"
+        "-c", read_cmd,
+        "-c", "shutdown",
     ]
-
-    rc, out, _ = run_capture(cmd, timeout=6.5)
+    rc, out, _ = run_capture(cmd, timeout=timeout)
     if rc != 0:
+        return None
+    return out
+
+def _parse_mem_value(out: str, addr_hex: str):
+    """
+    openocd 출력 형태:
+      0xe0042000: 10036414
+      0x1ffff7e0: 00ff
+    """
+    m = re.search(rf"{re.escape(addr_hex.lower())}:\s*([0-9a-fA-F]+)", (out or "").lower())
+    if not m:
+        return None
+    try:
+        return int(m.group(1), 16)
+    except Exception:
+        return None
+
+def detect_stm32_variant():
+    """
+    ✅ 메모리 잠금(RDP)에도 최대한 동작하도록 감지 방식 변경
+
+    1) DBGMCU_IDCODE(0xE0042000) 읽어서 dev_id 기록
+    2) Flash size register(0x1FFFF7E0, 16-bit) 읽어서 flash_kb 결정
+    3) flash_kb 기반으로:
+         - 512KB 이상이면 TFTP(RET)
+         - 256KB면 NORMAL(RC)
+       (그 외는 None 처리)
+    """
+    global is_command_executing
+    if is_command_executing:
         return None, None
 
-    m512 = re.search(r"0x0807fffc:\s*([0-9a-fA-F]{8})", out, re.IGNORECASE)
-    if m512:
-        return 512, "TFTP"
+    dev_id = None
+    flash_kb = None
 
-    m256 = re.search(r"0x0803fffc:\s*([0-9a-fA-F]{8})", out, re.IGNORECASE)
-    if m256:
-        return 256, "NORMAL"
+    # 1) DBGMCU_IDCODE
+    out = _openocd_read_once("mdw 0xE0042000 1", timeout=5.5)
+    if out:
+        v = _parse_mem_value(out, "0xe0042000")
+        if v is not None:
+            # 하위 12비트가 Device ID (F1 계열)
+            dev_id = (v & 0xFFF)
 
+    # 2) FLASH_SIZE (16-bit) @ 0x1FFFF7E0
+    out2 = _openocd_read_once("mdh 0x1FFFF7E0 1", timeout=5.5)
+    if out2:
+        v2 = _parse_mem_value(out2, "0x1ffff7e0")
+        if v2 is not None:
+            # mdh 결과는 이미 16-bit 값 (KB 단위)
+            # 일부 환경에서 mdh가 32-bit로 찍히면 하위 16bit만 사용
+            flash_kb = (v2 & 0xFFFF)
+
+    # 결과 저장(표시용)
+    with STM32_INFO_LOCK:
+        STM32_INFO["dev_id"] = dev_id
+
+    # 3) 판정
+    if flash_kb is not None and flash_kb > 0:
+        # 256/512 중심으로만 구분
+        if flash_kb >= 512:
+            return int(flash_kb), "TFTP"
+        if 240 <= flash_kb <= 320:
+            return int(flash_kb), "NORMAL"
+        # 다른 용량이면 일단 정보만 표시하고 자동 선택은 막는다
+        return int(flash_kb), None
+
+    # flash size 못 읽으면, dev_id 기반 추정(정확도 낮음)
+    # (클론칩/리마킹 보드가 섞이면 dev_id만으로는 용량 구분이 어려움)
     return None, None
 
 def check_stm32_connection():
@@ -1122,6 +1177,7 @@ def execute_command(command_index):
     paths = menu_extras[command_index] or {}
     pick, fk, used_variant = pick_bin_path(paths)
 
+    # ✅ 감지 실패(그리고 마지막 성공도 없음)인 상태에서 "기본값 일반"으로 타는 사고 방지
     if not pick:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
