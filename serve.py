@@ -163,7 +163,7 @@ STM32_INFO_LOCK = threading.Lock()
 STM32_INFO = {"flash_kb": None, "variant": None, "dev_id": None}
 
 LAST_PROGRAM_VARIANT_LOCK = threading.Lock()
-LAST_PROGRAM_VARIANT = ""   # "TFTP" 또는 "일반"
+LAST_PROGRAM_VARIANT = ""
 LAST_PROGRAM_KEY = ""
 
 def kill_openocd():
@@ -358,42 +358,42 @@ GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
 
-# -----------------------------
-# ✅ STM32 감지 로직 (교체)
-# -----------------------------
-
-def _openocd_read_once(read_cmd: str, timeout=5.0):
-    """
-    read_cmd 예:
-      - "mdw 0xE0042000 1"
-      - "mdh 0x1FFFF7E0 1"
-    """
+def _openocd_read_once(read_cmd: str, timeout=5.0, speed_khz=50, reset_mode="soft"):
     if is_command_executing:
         return None
 
-    cmd = [
+    base = [
         "sudo", "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
         "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", "adapter speed 50",
+        "-c", f"adapter speed {int(speed_khz)}",
         "-c", "init",
-        "-c", "halt",
-        "-c", "soft_reset_halt",
-        "-c", "sleep 200",
+    ]
+
+    if reset_mode == "hard":
+        base += [
+            "-c", "reset_config srst_only srst_nogate connect_assert_srst",
+            "-c", "reset halt",
+            "-c", "sleep 350",
+        ]
+    else:
+        base += [
+            "-c", "halt",
+            "-c", "soft_reset_halt",
+            "-c", "sleep 250",
+        ]
+
+    base += [
         "-c", read_cmd,
         "-c", "shutdown",
     ]
-    rc, out, _ = run_capture(cmd, timeout=timeout)
+
+    rc, out, _ = run_capture(base, timeout=timeout)
     if rc != 0:
         return None
     return out
 
 def _parse_mem_value(out: str, addr_hex: str):
-    """
-    openocd 출력 형태:
-      0xe0042000: 10036414
-      0x1ffff7e0: 00ff
-    """
     m = re.search(rf"{re.escape(addr_hex.lower())}:\s*([0-9a-fA-F]+)", (out or "").lower())
     if not m:
         return None
@@ -403,56 +403,45 @@ def _parse_mem_value(out: str, addr_hex: str):
         return None
 
 def detect_stm32_variant():
-    """
-    ✅ 메모리 잠금(RDP)에도 최대한 동작하도록 감지 방식 변경
-
-    1) DBGMCU_IDCODE(0xE0042000) 읽어서 dev_id 기록
-    2) Flash size register(0x1FFFF7E0, 16-bit) 읽어서 flash_kb 결정
-    3) flash_kb 기반으로:
-         - 512KB 이상이면 TFTP(RET)
-         - 256KB면 NORMAL(RC)
-       (그 외는 None 처리)
-    """
-    global is_command_executing
     if is_command_executing:
         return None, None
 
     dev_id = None
     flash_kb = None
 
-    # 1) DBGMCU_IDCODE
-    out = _openocd_read_once("mdw 0xE0042000 1", timeout=5.5)
-    if out:
-        v = _parse_mem_value(out, "0xe0042000")
-        if v is not None:
-            # 하위 12비트가 Device ID (F1 계열)
-            dev_id = (v & 0xFFF)
+    tries = [
+        {"speed": 50, "reset": "soft", "t": 5.5},
+        {"speed": 50, "reset": "hard", "t": 6.5},
+        {"speed": 20, "reset": "hard", "t": 7.5},
+        {"speed": 10, "reset": "hard", "t": 8.5},
+    ]
 
-    # 2) FLASH_SIZE (16-bit) @ 0x1FFFF7E0
-    out2 = _openocd_read_once("mdh 0x1FFFF7E0 1", timeout=5.5)
-    if out2:
-        v2 = _parse_mem_value(out2, "0x1ffff7e0")
-        if v2 is not None:
-            # mdh 결과는 이미 16-bit 값 (KB 단위)
-            # 일부 환경에서 mdh가 32-bit로 찍히면 하위 16bit만 사용
-            flash_kb = (v2 & 0xFFFF)
+    for tr in tries:
+        out = _openocd_read_once("mdw 0xE0042000 1", timeout=tr["t"], speed_khz=tr["speed"], reset_mode=tr["reset"])
+        if out:
+            v = _parse_mem_value(out, "0xe0042000")
+            if v is not None:
+                dev_id = (v & 0xFFF)
 
-    # 결과 저장(표시용)
+        out2 = _openocd_read_once("mdh 0x1FFFF7E0 1", timeout=tr["t"], speed_khz=tr["speed"], reset_mode=tr["reset"])
+        if out2:
+            v2 = _parse_mem_value(out2, "0x1ffff7e0")
+            if v2 is not None:
+                flash_kb = (v2 & 0xFFFF)
+
+        if flash_kb is not None and flash_kb > 0:
+            break
+
     with STM32_INFO_LOCK:
         STM32_INFO["dev_id"] = dev_id
 
-    # 3) 판정
     if flash_kb is not None and flash_kb > 0:
-        # 256/512 중심으로만 구분
         if flash_kb >= 512:
             return int(flash_kb), "TFTP"
         if 240 <= flash_kb <= 320:
             return int(flash_kb), "NORMAL"
-        # 다른 용량이면 일단 정보만 표시하고 자동 선택은 막는다
         return int(flash_kb), None
 
-    # flash size 못 읽으면, dev_id 기반 추정(정확도 낮음)
-    # (클론칩/리마킹 보드가 섞이면 dev_id만으로는 용량 구분이 어려움)
     return None, None
 
 def check_stm32_connection():
@@ -474,7 +463,7 @@ def check_stm32_connection():
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=1.2
+            timeout=1.6
         )
 
         ok = (result.returncode == 0)
@@ -1044,12 +1033,6 @@ def wifi_worker_thread():
         time.sleep(0.05)
 
 def pick_bin_path(paths: dict):
-    """
-    안전 선택 로직:
-      1) STM32 감지 결과(variant)가 확실하면 그걸 우선
-      2) 감지 실패(None)면 마지막 성공 타입(LAST_PROGRAM_VARIANT) 우선
-      3) 마지막 성공도 없으면 자동 선택 금지(None 리턴)
-    """
     with STM32_INFO_LOCK:
         variant = STM32_INFO.get("variant")
         flash_kb = STM32_INFO.get("flash_kb")
@@ -1177,7 +1160,6 @@ def execute_command(command_index):
     paths = menu_extras[command_index] or {}
     pick, fk, used_variant = pick_bin_path(paths)
 
-    # ✅ 감지 실패(그리고 마지막 성공도 없음)인 상태에서 "기본값 일반"으로 타는 사고 방지
     if not pick:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -1427,22 +1409,23 @@ def update_oled_display():
                     with STM32_INFO_LOCK:
                         fk = STM32_INFO.get("flash_kb")
                         v = STM32_INFO.get("variant")
+                        did = STM32_INFO.get("dev_id")
 
                     with LAST_PROGRAM_VARIANT_LOCK:
                         pv = LAST_PROGRAM_VARIANT
 
-                    tag = ""
+                    tag = "??"
                     if v == "TFTP":
                         tag = "RET"
                     elif v == "NORMAL":
                         tag = "RC"
-                    else:
-                        tag = "??"
 
                     s = ""
-                    if fk is not None and tag:
-                        s = f"{tag} {int(fk)}K" if tag != "??" else f"{tag} ???"
-                    elif tag:
+                    if fk is not None and tag != "??":
+                        s = f"{tag} {int(fk)}K"
+                    elif did is not None:
+                        s = f"{tag} ID{did:03X}"
+                    else:
                         s = f"{tag} ???"
 
                     if pv:
