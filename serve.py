@@ -358,43 +358,11 @@ GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
 
-def _openocd_read_once(read_cmd: str, timeout=5.0, speed_khz=50, reset_mode="soft"):
-    if is_command_executing:
+def _parse_mem_value(txt: str, addr_hex: str):
+    if not txt:
         return None
-
-    base = [
-        "sudo", "openocd",
-        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", f"adapter speed {int(speed_khz)}",
-        "-c", "init",
-    ]
-
-    if reset_mode == "hard":
-        base += [
-            "-c", "reset_config srst_only srst_nogate connect_assert_srst",
-            "-c", "reset halt",
-            "-c", "sleep 350",
-        ]
-    else:
-        base += [
-            "-c", "halt",
-            "-c", "soft_reset_halt",
-            "-c", "sleep 250",
-        ]
-
-    base += [
-        "-c", read_cmd,
-        "-c", "shutdown",
-    ]
-
-    rc, out, _ = run_capture(base, timeout=timeout)
-    if rc != 0:
-        return None
-    return out
-
-def _parse_mem_value(out: str, addr_hex: str):
-    m = re.search(rf"{re.escape(addr_hex.lower())}:\s*([0-9a-fA-F]+)", (out or "").lower())
+    s = txt.lower()
+    m = re.search(rf"{re.escape(addr_hex.lower())}:\s*([0-9a-fA-F]+)", s)
     if not m:
         return None
     try:
@@ -402,7 +370,58 @@ def _parse_mem_value(out: str, addr_hex: str):
     except Exception:
         return None
 
+def _openocd_read_pair_once(timeout=7.5, speed_khz=10, sleep_ms=800, hard_reset=True):
+    global is_command_executing
+    if is_command_executing:
+        return None, None, None
+
+    kill_openocd()
+    time.sleep(0.15)
+
+    cmd = [
+        "sudo", "openocd",
+        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "gdb_port disabled",
+        "-c", "tcl_port disabled",
+        "-c", "telnet_port disabled",
+        "-c", "transport select swd",
+        "-c", f"adapter speed {int(speed_khz)}",
+        "-c", "init",
+    ]
+
+    if hard_reset:
+        cmd += [
+            "-c", "reset_config srst_only srst_nogate connect_assert_srst",
+            "-c", "reset halt",
+        ]
+    else:
+        cmd += [
+            "-c", "halt",
+            "-c", "soft_reset_halt",
+        ]
+
+    cmd += [
+        "-c", f"sleep {int(sleep_ms)}",
+        "-c", "mdw 0xE0042000 1",
+        "-c", "mdh 0x1FFFF7E0 1",
+        "-c", "shutdown",
+    ]
+
+    rc, out, err = run_capture(cmd, timeout=timeout)
+    if rc != 0:
+        txt = (out or "") + "\n" + (err or "")
+        v_id = _parse_mem_value(txt, "0xe0042000")
+        v_fs = _parse_mem_value(txt, "0x1ffff7e0")
+        return None if v_id is None else v_id, None if v_fs is None else v_fs, txt
+
+    txt = (out or "") + "\n" + (err or "")
+    v_id = _parse_mem_value(txt, "0xe0042000")
+    v_fs = _parse_mem_value(txt, "0x1ffff7e0")
+    return v_id, v_fs, txt
+
 def detect_stm32_variant():
+    global is_command_executing
     if is_command_executing:
         return None, None
 
@@ -410,24 +429,27 @@ def detect_stm32_variant():
     flash_kb = None
 
     tries = [
-        {"speed": 50, "reset": "soft", "t": 5.5},
-        {"speed": 50, "reset": "hard", "t": 6.5},
-        {"speed": 20, "reset": "hard", "t": 7.5},
-        {"speed": 10, "reset": "hard", "t": 8.5},
+        {"speed": 10, "sleep": 800, "hard": True,  "t": 9.0},
+        {"speed": 10, "sleep": 1200, "hard": True, "t": 10.5},
+        {"speed": 5,  "sleep": 1200, "hard": True, "t": 12.0},
+        {"speed": 2,  "sleep": 1500, "hard": True, "t": 14.0},
+        {"speed": 10, "sleep": 800, "hard": False,"t": 9.0},
+        {"speed": 5,  "sleep": 1000, "hard": False,"t": 10.5},
     ]
 
     for tr in tries:
-        out = _openocd_read_once("mdw 0xE0042000 1", timeout=tr["t"], speed_khz=tr["speed"], reset_mode=tr["reset"])
-        if out:
-            v = _parse_mem_value(out, "0xe0042000")
-            if v is not None:
-                dev_id = (v & 0xFFF)
+        vid_raw, vfs_raw, _ = _openocd_read_pair_once(
+            timeout=tr["t"],
+            speed_khz=tr["speed"],
+            sleep_ms=tr["sleep"],
+            hard_reset=tr["hard"]
+        )
 
-        out2 = _openocd_read_once("mdh 0x1FFFF7E0 1", timeout=tr["t"], speed_khz=tr["speed"], reset_mode=tr["reset"])
-        if out2:
-            v2 = _parse_mem_value(out2, "0x1ffff7e0")
-            if v2 is not None:
-                flash_kb = (v2 & 0xFFFF)
+        if vid_raw is not None:
+            dev_id = (vid_raw & 0xFFF)
+
+        if vfs_raw is not None:
+            flash_kb = (vfs_raw & 0xFFFF)
 
         if flash_kb is not None and flash_kb > 0:
             break
@@ -451,10 +473,18 @@ def check_stm32_connection():
         return False
 
     try:
+        kill_openocd()
+        time.sleep(0.12)
+
         command = [
             "sudo", "openocd",
             "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
             "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+            "-c", "gdb_port disabled",
+            "-c", "tcl_port disabled",
+            "-c", "telnet_port disabled",
+            "-c", "transport select swd",
+            "-c", "adapter speed 10",
             "-c", "init",
             "-c", "exit"
         ]
@@ -463,7 +493,7 @@ def check_stm32_connection():
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=1.6
+            timeout=2.2
         )
 
         ok = (result.returncode == 0)
@@ -761,6 +791,11 @@ def unlock_memory(retries=3):
             "sudo", "openocd",
             "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
             "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+            "-c", "gdb_port disabled",
+            "-c", "tcl_port disabled",
+            "-c", "telnet_port disabled",
+            "-c", "transport select swd",
+            "-c", "adapter speed 10",
             "-c", "init",
             "-c", "reset halt",
             "-c", "stm32f1x unlock 0",
@@ -768,7 +803,7 @@ def unlock_memory(retries=3):
             "-c", "shutdown"
         ]
         try:
-            r = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=4.0)
+            r = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=6.0)
             if r.returncode == 0:
                 set_ui_progress(30, "메모리 잠금\n 해제 성공!", pos=(20, 0), font_size=15)
                 time.sleep(0.5)
@@ -801,6 +836,11 @@ def lock_memory_procedure():
         "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
         "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "gdb_port disabled",
+        "-c", "tcl_port disabled",
+        "-c", "telnet_port disabled",
+        "-c", "transport select swd",
+        "-c", "adapter speed 10",
         "-c", "init",
         "-c", "reset halt",
         "-c", "stm32f1x lock 0",
@@ -1194,6 +1234,11 @@ def execute_command(command_index):
         "sudo openocd "
         "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
         "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+        "-c \"gdb_port disabled\" "
+        "-c \"tcl_port disabled\" "
+        "-c \"telnet_port disabled\" "
+        "-c \"transport select swd\" "
+        "-c \"adapter speed 10\" "
         f"-c \"program {pick} verify reset exit 0x08000000\""
     )
 
