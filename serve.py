@@ -365,20 +365,33 @@ def detect_stm32_variant():
         "sudo", "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
         "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "adapter speed 50",
         "-c", "init",
-        "-c", "reset halt",
-        "-c", "mdh 0x1FFFF7E0 1",
+        "-c", "halt",
+        "-c", "soft_reset_halt",
+        "-c", "sleep 200",
+        "-c", "flash probe 0",
+        "-c", "flash info 0",
         "-c", "shutdown"
     ]
-    rc, out, err = run_capture(cmd, timeout=3.5)
+    rc, out, err = run_capture(cmd, timeout=6.5)
     if rc != 0:
         return None, None
-    m = re.search(r"0x1FFFF7E0:\s*([0-9a-fA-F]{4})", out)
-    if not m:
-        return None, None
-    flash_kb = int(m.group(1), 16)
-    variant = "TFTP" if flash_kb >= 384 else "NORMAL"
-    return flash_kb, variant
+
+    mk = re.search(r"flash size\s*=\s*(\d+)\s*KiB", out, re.IGNORECASE)
+    if mk:
+        flash_kb = int(mk.group(1))
+        variant = "TFTP" if flash_kb >= 384 else "NORMAL"
+        return flash_kb, variant
+
+    m2 = re.search(r"size\s*0x([0-9a-fA-F]+)", out)
+    if m2:
+        size_bytes = int(m2.group(1), 16)
+        flash_kb = int(size_bytes // 1024)
+        variant = "TFTP" if flash_kb >= 384 else "NORMAL"
+        return flash_kb, variant
+
+    return None, None
 
 def check_stm32_connection():
     global connection_success, connection_failed_since_last_success, is_command_executing
@@ -994,6 +1007,7 @@ def execute_command(command_index):
     global current_menu, commands, command_names, command_types, menu_extras
     global current_command_index, menu_stack, need_update
     global connection_success, connection_failed_since_last_success
+    global LAST_PROGRAM_VARIANT, LAST_PROGRAM_KEY
 
     item_type = command_types[command_index]
     if item_type == "wifi":
@@ -1452,6 +1466,7 @@ def execute_button_logic():
     global next_pressed_event
     global auto_flash_done_connection
     global next_long_handled, wifi_cancel_requested
+    global next_is_down, next_press_time
 
     while True:
         now = time.time()
