@@ -1122,7 +1122,6 @@ def execute_command(command_index):
     paths = menu_extras[command_index] or {}
     pick, fk, used_variant = pick_bin_path(paths)
 
-    # ✅ 감지 실패(그리고 마지막 성공도 없음)인 상태에서 "기본값 일반"으로 타는 사고 방지
     if not pick:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
