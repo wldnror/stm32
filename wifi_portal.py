@@ -1,9 +1,10 @@
 import os
 import re
 import time
+import json
 import subprocess
 import threading
-from flask import Flask, request, render_template_string, redirect
+from flask import Flask, request, render_template_string, redirect, jsonify
 
 AP_SSID = "GDSENG-SETUP"
 AP_PASS = "12345678"
@@ -22,6 +23,8 @@ _state = {
     "last_error": "",
     "server_started": False,
     "last_ok": "",
+    "connect_stage": "",
+    "connect_started_at": 0.0,
 }
 
 PAGE = r"""
@@ -48,7 +51,7 @@ input,select,button{
   appearance:none;
 }
 
-button{font-weight:700;cursor:pointer}
+button{font-weight:800;cursor:pointer}
 button:active{transform:translateY(1px)}
 button.primary{background:#111;border-color:#111;color:#fff}
 button:disabled{opacity:.6;cursor:default}
@@ -62,12 +65,13 @@ button:disabled{opacity:.6;cursor:default}
 .hr{height:1px;background:#eee;margin:12px 0}
 
 .pw-wrap{position:relative}
-.pw-wrap input{padding-right:46px}
+.pw-wrap input{padding-right:52px}
 .pw-btn{
   position:absolute;right:10px;top:50%;transform:translateY(-50%);
-  width:34px;height:34px;border-radius:10px;border:1px solid var(--bd);
+  width:36px;height:36px;border-radius:10px;border:1px solid var(--bd);
   background:#fff;display:flex;align-items:center;justify-content:center;
   padding:0;margin:0;
+  z-index:2;
 }
 .pw-btn svg{width:20px;height:20px}
 
@@ -98,7 +102,7 @@ form.inline button{
   z-index:9999;
 }
 .loading-box{
-  width:min(320px, 92vw);
+  width:min(340px, 92vw);
   background:#fff;
   border-radius:16px;
   padding:18px 16px;
@@ -115,20 +119,20 @@ form.inline button{
   animation:spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-text{ font-weight:800; }
+.loading-text{ font-weight:900; }
 </style>
 </head><body>
 
 <div class="row" style="align-items:baseline">
   <h2>와이파이 설정</h2>
-  <div style="text-align:right"><span class="badge">{{ status }}</span></div>
+  <div style="text-align:right"><span class="badge" id="badge">{{ status }}</span></div>
 </div>
 
 <div class="card">
   <div class="small">주변 와이파이</div>
   {% if ssids and ssids|length > 0 %}
-  <form method="post" action="/connect" onsubmit="return onSubmitConnect(this)">
-    <select name="ssid" required>
+  <form method="post" action="/connect" id="connectForm" onsubmit="return onSubmitConnect(this)">
+    <select name="ssid" required id="ssidSelect">
       {% for s in ssids %}
         <option value="{{s}}">{{s}}</option>
       {% endfor %}
@@ -147,6 +151,7 @@ form.inline button{
     <div class="small" style="margin-top:10px">
       주변 와이파이를 찾지 못했습니다.
     </div>
+    <button class="primary" style="margin-top:12px" type="button" onclick="manualRefreshScan()">다시 스캔</button>
   {% endif %}
 
   {% if msg %}
@@ -174,7 +179,6 @@ form.inline button{
     {% for item in saved_nm %}
       <form method="post" action="/delete" class="inline">
         <input value="{{ item.display }}" readonly />
-        <input type="hidden" name="ssid" value="{{ item.ssid }}" />
         <input type="hidden" name="nm_id" value="{{ item.nm_id }}" />
         <input type="hidden" name="src" value="nm" />
         <button type="submit">삭제</button>
@@ -197,7 +201,7 @@ form.inline button{
   <div class="loading-box">
     <div class="spinner"></div>
     <div class="loading-text" id="loadingText">처리 중입니다…</div>
-    <div class="small" style="margin-top:8px;color:var(--mut)">잠시만 기다려주세요.</div>
+    <div class="small" style="margin-top:8px;color:var(--mut)" id="loadingSub">잠시만 기다려주세요.</div>
   </div>
 </div>
 
@@ -235,10 +239,12 @@ function onSubmitConnect(form){
   return true;
 }
 
-function showLoading(text){
+function showLoading(text, sub){
   const el = document.getElementById("loading");
   const tx = document.getElementById("loadingText");
+  const sb = document.getElementById("loadingSub");
   if(tx) tx.textContent = text || "처리 중입니다…";
+  if(sb) sb.textContent = sub || "잠시만 기다려주세요.";
   if(el) el.style.display = "flex";
 }
 
@@ -252,13 +258,13 @@ function loadingSlowHint(){
   }, 2500);
 }
 
-function disableButtons(form){
-  form.querySelectorAll("button").forEach(b => b.disabled = true);
+function disableSubmitButtons(form){
+  form.querySelectorAll('button[type="submit"]').forEach(b => b.disabled = true);
 }
 
 document.querySelectorAll('form[action="/delete"]').forEach(f => {
   f.addEventListener("submit", () => {
-    disableButtons(f);
+    disableSubmitButtons(f);
     showLoading("삭제 중입니다…");
     loadingSlowHint();
   });
@@ -266,7 +272,7 @@ document.querySelectorAll('form[action="/delete"]').forEach(f => {
 
 document.querySelectorAll('form[action="/reset"]').forEach(f => {
   f.addEventListener("submit", () => {
-    disableButtons(f);
+    disableSubmitButtons(f);
     showLoading("전체 초기화 중입니다…");
     loadingSlowHint();
   });
@@ -274,13 +280,151 @@ document.querySelectorAll('form[action="/reset"]').forEach(f => {
 
 document.querySelectorAll('form[action="/connect"]').forEach(f => {
   f.addEventListener("submit", () => {
-    disableButtons(f);
-    showLoading("연결 설정 적용 중입니다…");
+    disableSubmitButtons(f);
+    showLoading("연결 적용 중입니다…", "연결 화면으로 이동합니다.");
     loadingSlowHint();
   });
 });
+
+let lastScanSig = "";
+let scanBusy = false;
+
+function applyScan(ssids){
+  const sel = document.getElementById("ssidSelect");
+  if(!sel) return;
+  const cur = sel.value;
+  const sig = JSON.stringify(ssids || []);
+  if(sig === lastScanSig) return;
+  lastScanSig = sig;
+
+  const opts = new Set();
+  Array.from(sel.options).forEach(o => opts.add(o.value));
+
+  sel.innerHTML = "";
+  (ssids || []).forEach(s => {
+    const o = document.createElement("option");
+    o.value = s;
+    o.textContent = s;
+    sel.appendChild(o);
+  });
+
+  const exists = (ssids || []).includes(cur);
+  if(exists) sel.value = cur;
+}
+
+async function refreshScan(){
+  if(scanBusy) return;
+  scanBusy = true;
+  try{
+    const r = await fetch("/api/scan", {cache:"no-store"});
+    if(!r.ok) return;
+    const j = await r.json();
+    if(j && Array.isArray(j.ssids)) applyScan(j.ssids);
+  }catch(e){}
+  finally{
+    scanBusy = false;
+  }
+}
+
+function manualRefreshScan(){
+  showLoading("스캔 중입니다…");
+  refreshScan().finally(() => location.reload());
+}
+
+setInterval(refreshScan, 5000);
+
+async function refreshBadge(){
+  try{
+    const r = await fetch("/api/state", {cache:"no-store"});
+    if(!r.ok) return;
+    const j = await r.json();
+    const badge = document.getElementById("badge");
+    if(badge){
+      badge.textContent = j.internet ? "연결됨" : "설정 모드";
+    }
+  }catch(e){}
+}
+setInterval(refreshBadge, 3000);
 </script>
 
+</body></html>
+"""
+
+CONNECTING = r"""
+<!doctype html><html lang="ko"><head>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>와이파이 설정</title>
+<style>
+:root{--bd:#e6e6e6;--fg:#111;--mut:#666;--er:#b00020;}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;margin:16px;color:var(--fg);background:#fff}
+.card{border:1px solid var(--bd);border-radius:14px;padding:16px;margin-bottom:12px;background:#fff}
+h2{margin:0 0 10px 0;font-size:18px}
+.small{color:var(--mut);font-size:13px;line-height:1.35}
+.err{color:var(--er);font-size:13px;margin-top:10px;white-space:pre-line}
+button{
+  width:100%;
+  padding:12px;
+  margin-top:12px;
+  font-size:16px;
+  border-radius:12px;
+  border:1px solid var(--bd);
+  background:#111;
+  color:#fff;
+  font-weight:900;
+  cursor:pointer;
+}
+.spinner{
+  width:36px;height:36px;
+  border:3px solid #e6e6e6;
+  border-top-color:#111;
+  border-radius:50%;
+  animation:spin .8s linear infinite;
+  margin:8px auto 12px auto;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head><body>
+<div class="card">
+  <h2>연결 중</h2>
+  <div class="spinner"></div>
+  <div class="small" id="stage">잠시만 기다려주세요.</div>
+  <div class="err" id="err" style="display:none"></div>
+  <button id="back" style="display:none" onclick="location.href='/'">돌아가기</button>
+</div>
+
+<script>
+async function tick(){
+  try{
+    const r = await fetch("/api/state", {cache:"no-store"});
+    if(!r.ok) return;
+    const j = await r.json();
+
+    const stage = document.getElementById("stage");
+    const err = document.getElementById("err");
+    const back = document.getElementById("back");
+
+    if(stage){
+      const s = j.connect_stage || "";
+      stage.textContent = s ? s : "연결 확인 중…";
+    }
+
+    if(j.internet){
+      location.href = "/";
+      return;
+    }
+
+    if(j.last_error){
+      err.style.display = "block";
+      err.textContent = j.last_error;
+      back.style.display = "block";
+      return;
+    }
+  }catch(e){}
+}
+setInterval(tick, 1000);
+tick();
+</script>
 </body></html>
 """
 
@@ -515,6 +659,8 @@ def start_ap():
     _state["last_error"] = ""
     _state["last_ok"] = ""
     _state["requested"] = None
+    _state["connect_stage"] = ""
+    _state["connect_started_at"] = 0.0
 
     _kill_wifi_owners()
 
@@ -557,37 +703,46 @@ address=/#/{AP_IP}
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def stop_ap_and_connect(ssid, psk, wait_sec=35):
+    _state["connect_started_at"] = time.time()
+    _state["connect_stage"] = "설정 저장 중…"
     try:
         _write_wpa_network(ssid, psk)
     except Exception as e:
-        _state["last_error"] = f"WPA 저장 실패: {e}"
+        _state["last_error"] = f"설정 저장 실패: {e}"
         return False
 
+    _state["connect_stage"] = "설정 모드 종료 중…"
     _run(["sudo", "pkill", "-f", "hostapd"], timeout=4.0)
     _run(["sudo", "pkill", "-f", "dnsmasq"], timeout=4.0)
 
+    _state["connect_stage"] = "인터페이스 초기화 중…"
     _run(["sudo", "ip", "addr", "flush", "dev", IFACE], timeout=4.0)
     _run(["sudo", "ip", "link", "set", IFACE, "down"], timeout=4.0)
     _run(["sudo", "ip", "link", "set", IFACE, "up"], timeout=4.0)
 
+    _state["connect_stage"] = "무선 연결 시도 중…"
     _run(["sudo", "pkill", "-f", f"wpa_supplicant.*{IFACE}"], timeout=4.0)
     _run(["sudo", "wpa_supplicant", "-B", "-i", IFACE, "-c", WPA_CONF], timeout=10.0)
     _run(["sudo", "wpa_cli", "-i", IFACE, "reconfigure"], timeout=6.0)
 
+    _state["connect_stage"] = "IP 받는 중…"
     _run(["sudo", "dhclient", "-r", IFACE], timeout=8.0)
     _run(["sudo", "dhclient", IFACE], timeout=12.0)
 
+    _state["connect_stage"] = "인터넷 확인 중…"
     t0 = time.time()
     while time.time() - t0 < wait_sec:
         if has_internet():
             _state["done"] = True
             _state["running"] = False
-            _state["last_ok"] = f"연결 완료"
+            _state["last_ok"] = "연결 완료"
             _state["last_error"] = ""
+            _state["connect_stage"] = "연결 완료"
             return True
         time.sleep(1)
 
     _state["last_error"] = "연결 시간 초과"
+    _state["connect_stage"] = ""
     return False
 
 @app.route("/", methods=["GET"])
@@ -610,6 +765,26 @@ def index():
         status=status,
     )
 
+@app.route("/connecting", methods=["GET"])
+def connecting():
+    return render_template_string(CONNECTING)
+
+@app.route("/api/scan", methods=["GET"])
+def api_scan():
+    return jsonify({"ssids": scan_ssids()})
+
+@app.route("/api/state", methods=["GET"])
+def api_state():
+    return jsonify({
+        "internet": has_internet(),
+        "running": bool(_state.get("running")),
+        "requested": bool(_state.get("requested")),
+        "last_ok": _state.get("last_ok",""),
+        "last_error": _state.get("last_error",""),
+        "connect_stage": _state.get("connect_stage",""),
+        "connect_started_at": _state.get("connect_started_at", 0.0),
+    })
+
 @app.route("/connect", methods=["POST"])
 def connect():
     ssid = (request.form.get("ssid") or "").strip()
@@ -617,11 +792,11 @@ def connect():
     if not ssid:
         return "SSID가 비어있습니다.", 400
     _state["requested"] = {"ssid": ssid, "psk": psk}
-    return """
-    적용 중입니다. 잠시 후 연결됩니다.
-    <br><br>
-    <a href="/">돌아가기</a>
-    """
+    _state["last_error"] = ""
+    _state["last_ok"] = ""
+    _state["connect_stage"] = "연결 준비 중…"
+    _state["connect_started_at"] = time.time()
+    return redirect("/connecting")
 
 @app.route("/delete", methods=["POST"])
 def delete():
