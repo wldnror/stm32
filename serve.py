@@ -163,7 +163,7 @@ STM32_INFO_LOCK = threading.Lock()
 STM32_INFO = {"flash_kb": None, "variant": None}
 
 LAST_PROGRAM_VARIANT_LOCK = threading.Lock()
-LAST_PROGRAM_VARIANT = ""
+LAST_PROGRAM_VARIANT = ""   # "TFTP" 또는 "일반"
 LAST_PROGRAM_KEY = ""
 
 def kill_openocd():
@@ -359,10 +359,16 @@ GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
 
 def detect_stm32_variant():
+    """
+    끝주소 읽기 기반 감지:
+      - 0x0807FFFC 읽히면 512KB(TFTP/RET)
+      - 0x0803FFFC만 읽히면 256KB(NORMAL/RC)
+      - 둘 다 실패하면 None
+    """
+    global is_command_executing
     if is_command_executing:
         return None, None
 
-    # 256KB 끝(-4), 512KB 끝(-4)
     ADDR_256_END = "0x0803FFFC"
     ADDR_512_END = "0x0807FFFC"
 
@@ -375,33 +381,23 @@ def detect_stm32_variant():
         "-c", "halt",
         "-c", "soft_reset_halt",
         "-c", "sleep 200",
-        # 끝주소 읽기 시도
         "-c", f"mdw {ADDR_512_END} 1",
         "-c", f"mdw {ADDR_256_END} 1",
         "-c", "shutdown"
     ]
 
-    rc, out, err = run_capture(cmd, timeout=6.5)
+    rc, out, _ = run_capture(cmd, timeout=6.5)
     if rc != 0:
         return None, None
 
-    # 512K 끝주소 읽기 성공 여부로 판단
-    # 성공 패턴: "0x0807fffc: XXXXXXXX"
     m512 = re.search(r"0x0807fffc:\s*([0-9a-fA-F]{8})", out, re.IGNORECASE)
-
     if m512:
-        flash_kb = 512
-        variant = "TFTP"   # 너의 표기상 RET쪽으로 쓰고 있던 분기
-        return flash_kb, variant
+        return 512, "TFTP"
 
-    # 512K는 실패했지만 256K는 읽히면 256K로 판단
     m256 = re.search(r"0x0803fffc:\s*([0-9a-fA-F]{8})", out, re.IGNORECASE)
     if m256:
-        flash_kb = 256
-        variant = "NORMAL"
-        return flash_kb, variant
+        return 256, "NORMAL"
 
-    # 둘 다 안되면 통신상태가 불안정/리셋/보호 등의 가능성
     return None, None
 
 def check_stm32_connection():
@@ -590,7 +586,6 @@ def build_root_menu():
     normal_map = scan_bins(NORMAL_DIR)
 
     keys = set(tftp_map.keys()) | set(normal_map.keys())
-
     merged = []
     for k in keys:
         o = 9999
@@ -599,7 +594,6 @@ def build_root_menu():
         if k in tftp_map:
             o = min(o, tftp_map[k]["order"])
         merged.append((o, k))
-
     merged.sort(key=lambda x: (x[0], x[1]))
 
     commands_local = []
@@ -674,7 +668,6 @@ def git_pull():
             os.fsync(script_file.fileno())
 
     os.chmod(shell_script_path, 0o755)
-
     set_ui_text("시스템", "업데이트 중", pos=(20, 10), font_size=15)
 
     try:
@@ -996,6 +989,12 @@ def wifi_worker_thread():
         time.sleep(0.05)
 
 def pick_bin_path(paths: dict):
+    """
+    안전 선택 로직:
+      1) STM32 감지 결과(variant)가 확실하면 그걸 우선
+      2) 감지 실패(None)면 마지막 성공 타입(LAST_PROGRAM_VARIANT) 우선
+      3) 마지막 성공도 없으면 자동 선택 금지(None 리턴)
+    """
     with STM32_INFO_LOCK:
         variant = STM32_INFO.get("variant")
         flash_kb = STM32_INFO.get("flash_kb")
@@ -1007,10 +1006,17 @@ def pick_bin_path(paths: dict):
         if other in paths:
             return paths[other], flash_kb, other
 
-    if "NORMAL" in paths:
-        return paths["NORMAL"], flash_kb, "NORMAL"
-    if "TFTP" in paths:
-        return paths["TFTP"], flash_kb, "TFTP"
+    with LAST_PROGRAM_VARIANT_LOCK:
+        last = (LAST_PROGRAM_VARIANT or "").strip()
+
+    if last:
+        prefer = "TFTP" if last == "TFTP" else "NORMAL"
+        if prefer in paths:
+            return paths[prefer], flash_kb, prefer
+        other = "NORMAL" if prefer == "TFTP" else "TFTP"
+        if other in paths:
+            return paths[other], flash_kb, other
+
     return None, flash_kb, variant
 
 def execute_command(command_index):
@@ -1116,7 +1122,21 @@ def execute_command(command_index):
     paths = menu_extras[command_index] or {}
     pick, fk, used_variant = pick_bin_path(paths)
 
-    if not pick or not os.path.isfile(pick):
+    # ✅ 감지 실패(그리고 마지막 성공도 없음)인 상태에서 "기본값 일반"으로 타는 사고 방지
+    if not pick:
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_text("STM32 감지 실패", "RET/RC 확인 필요", pos=(6, 18), font_size=14)
+        time.sleep(1.6)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        is_executing = False
+        is_command_executing = False
+        need_update = True
+        return
+
+    if not os.path.isfile(pick):
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         set_ui_text("BIN 없음", "", pos=(20, 18), font_size=15)
@@ -1361,10 +1381,15 @@ def update_oled_display():
                         tag = "RET"
                     elif v == "NORMAL":
                         tag = "RC"
+                    else:
+                        tag = "??"
 
                     s = ""
                     if fk is not None and tag:
-                        s = f"{tag} {int(fk)}K"
+                        s = f"{tag} {int(fk)}K" if tag != "??" else f"{tag} ???"
+                    elif tag:
+                        s = f"{tag} ???"
+
                     if pv:
                         s = (s + " " + pv).strip()
 
