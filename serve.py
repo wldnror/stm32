@@ -591,6 +591,141 @@ def refresh_root_menu(reset_index=False):
 
 refresh_root_menu(reset_index=True)
 
+
+def git_pull():
+    shell_script_path = "/home/user/stm32/git-pull.sh"
+    if not os.path.isfile(shell_script_path):
+        with open(shell_script_path, "w") as script_file:
+            script_file.write("#!/bin/bash\n")
+            script_file.write("cd /home/user/stm32\n")
+            script_file.write("git remote update\n")
+            script_file.write("if git status -uno | grep -q 'Your branch is up to date'; then\n")
+            script_file.write("   echo '이미 최신 상태입니다.'\n")
+            script_file.write("   exit 0\n")
+            script_file.write("fi\n")
+            script_file.write("git stash\n")
+            script_file.write("git pull\n")
+            script_file.write("git stash pop\n")
+            script_file.flush()
+            os.fsync(script_file.fileno())
+
+    os.chmod(shell_script_path, 0o755)
+
+    set_ui_text("시스템", "업데이트 중", pos=(20, 10), font_size=15)
+
+    try:
+        result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        GPIO.output(LED_SUCCESS, False)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+
+        if result.returncode == 0:
+            if "이미 최신 상태" in result.stdout:
+                set_ui_text("이미 최신 상태", "", pos=(10, 18), font_size=15)
+                time.sleep(1.0)
+            else:
+                GPIO.output(LED_SUCCESS, True)
+                set_ui_text("업데이트 성공!", "", pos=(10, 18), font_size=15)
+                time.sleep(1.0)
+                GPIO.output(LED_SUCCESS, False)
+                restart_script()
+        else:
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            set_ui_text("업데이트 실패", "", pos=(10, 18), font_size=15)
+            time.sleep(1.2)
+
+    except Exception:
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_text("오류 발생", "", pos=(20, 18), font_size=15)
+        time.sleep(1.2)
+
+    finally:
+        GPIO.output(LED_SUCCESS, False)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+
+
+def unlock_memory():
+    set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
+
+    openocd_command = [
+        "sudo", "openocd",
+        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "init",
+        "-c", "reset halt",
+        "-c", "stm32f1x unlock 0",
+        "-c", "reset run",
+        "-c", "shutdown"
+    ]
+    result = subprocess.run(openocd_command)
+
+    if result.returncode == 0:
+        set_ui_progress(30, "메모리 잠금\n 해제 성공!", pos=(20, 0), font_size=15)
+        time.sleep(1)
+        return True
+
+    set_ui_progress(0, "메모리 잠금\n 해제 실패!", pos=(20, 0), font_size=15)
+    time.sleep(1)
+
+    global need_update
+    need_update = True
+    return False
+
+
+def restart_script():
+    set_ui_progress(25, "재시작 중", pos=(20, 10), font_size=15)
+
+    def restart():
+        time.sleep(1)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    threading.Thread(target=restart, daemon=True).start()
+
+
+def lock_memory_procedure():
+    global need_update
+    set_ui_progress(80, "메모리 잠금 중", pos=(3, 10), font_size=15)
+
+    openocd_command = [
+        "sudo",
+        "openocd",
+        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "init",
+        "-c", "reset halt",
+        "-c", "stm32f1x lock 0",
+        "-c", "reset run",
+        "-c", "shutdown",
+    ]
+    try:
+        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            GPIO.output(LED_SUCCESS, True)
+            set_ui_progress(100, "메모리 잠금\n    성공", pos=(20, 0), font_size=15)
+            time.sleep(1)
+            GPIO.output(LED_SUCCESS, False)
+        else:
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            set_ui_progress(0, "메모리 잠금\n    실패", pos=(20, 0), font_size=15)
+            time.sleep(1)
+    except Exception:
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_progress(0, "오류 발생", pos=(20, 10), font_size=15)
+        time.sleep(1)
+    finally:
+        GPIO.output(LED_SUCCESS, False)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        need_update = True
+
+
 def request_wifi_setup():
     global wifi_action_requested
     with wifi_action_lock:
@@ -863,8 +998,127 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    is_executing = False
-    is_command_executing = False
+    if item_type == "system":
+        kill_openocd()
+        with stm32_state_lock:
+            connection_success = False
+            connection_failed_since_last_success = False
+        git_pull()
+        refresh_root_menu(reset_index=True)
+        need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "script":
+        kill_openocd()
+        with stm32_state_lock:
+            connection_success = False
+            connection_failed_since_last_success = False
+
+        GPIO.output(LED_SUCCESS, False)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+
+        if not os.path.isfile(OUT_SCRIPT_PATH):
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            set_ui_text("out.py 없음", "", pos=(15, 18), font_size=15)
+            time.sleep(1.5)
+            GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
+            clear_ui_override()
+            need_update = True
+            is_executing = False
+            is_command_executing = False
+            return
+
+        set_ui_progress(10, "추출/업로드\n 실행 중...", pos=(10, 5), font_size=15)
+
+        try:
+            result = subprocess.run(
+                commands[command_index],
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+
+            if result.returncode == 0:
+                GPIO.output(LED_SUCCESS, True)
+                set_ui_progress(100, "완료!", pos=(35, 10), font_size=15)
+                time.sleep(1)
+                GPIO.output(LED_SUCCESS, False)
+            else:
+                GPIO.output(LED_ERROR, True)
+                GPIO.output(LED_ERROR1, True)
+                set_ui_progress(0, "실패!", pos=(35, 10), font_size=15)
+                time.sleep(1.2)
+                GPIO.output(LED_ERROR, False)
+                GPIO.output(LED_ERROR1, False)
+
+        except Exception:
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            set_ui_progress(0, "오류 발생", pos=(25, 10), font_size=15)
+            time.sleep(1.2)
+            GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
+
+        clear_ui_override()
+        refresh_root_menu(reset_index=True)
+        need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
+    GPIO.output(LED_SUCCESS, False)
+    GPIO.output(LED_ERROR, False)
+    GPIO.output(LED_ERROR1, False)
+
+    if not unlock_memory():
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_text("메모리 잠금", "해제 실패", pos=(20, 12), font_size=15)
+        time.sleep(2)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        is_executing = False
+        is_command_executing = False
+        need_update = True
+        return
+
+    set_ui_progress(30, "업데이트 중...", pos=(12, 10), font_size=15)
+    process = subprocess.Popen(commands[command_index], shell=True)
+
+    start_time = time.time()
+    max_duration = 6
+    progress_increment = 20 / max_duration
+
+    while process.poll() is None:
+        elapsed = time.time() - start_time
+        current_progress = 30 + (elapsed * progress_increment)
+        current_progress = min(current_progress, 80)
+        set_ui_progress(current_progress, "업데이트 중...", pos=(12, 10), font_size=15)
+        time.sleep(0.2)
+
+    result = process.returncode
+    if result == 0:
+        set_ui_progress(80, "업데이트 성공!", pos=(7, 10), font_size=15)
+        time.sleep(1.0)
+        lock_memory_procedure()
+    else:
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_progress(0, "업데이트 실패", pos=(7, 10), font_size=15)
+        time.sleep(1)
+
+    GPIO.output(LED_SUCCESS, False)
+    GPIO.output(LED_ERROR, False)
+    GPIO.output(LED_ERROR1, False)
+
+    clear_ui_override()
     need_update = True
 
 def get_ip_address():
