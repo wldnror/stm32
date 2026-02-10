@@ -34,21 +34,48 @@ ui_override = {
 }
 
 wifi_stage_lock = threading.Lock()
-wifi_stage = {"active": False, "percent": 0, "line1": "", "line2": ""}
+wifi_stage = {
+    "active": False,
+    "target_percent": 0,
+    "display_percent": 0,
+    "line1": "",
+    "line2": "",
+    "spinner": 0,
+}
 
 def wifi_stage_set(percent, line1, line2=""):
     with wifi_stage_lock:
         wifi_stage["active"] = True
-        wifi_stage["percent"] = int(max(0, min(100, percent)))
+        wifi_stage["target_percent"] = int(max(0, min(100, percent)))
+        if wifi_stage["display_percent"] > wifi_stage["target_percent"]:
+            wifi_stage["display_percent"] = wifi_stage["target_percent"]
         wifi_stage["line1"] = line1 or ""
         wifi_stage["line2"] = line2 or ""
 
 def wifi_stage_clear():
     with wifi_stage_lock:
         wifi_stage["active"] = False
-        wifi_stage["percent"] = 0
+        wifi_stage["target_percent"] = 0
+        wifi_stage["display_percent"] = 0
         wifi_stage["line1"] = ""
         wifi_stage["line2"] = ""
+        wifi_stage["spinner"] = 0
+
+def wifi_stage_tick():
+    with wifi_stage_lock:
+        if not wifi_stage["active"]:
+            wifi_stage["spinner"] = (wifi_stage["spinner"] + 1) % 4
+            return
+        t = wifi_stage["target_percent"]
+        d = wifi_stage["display_percent"]
+        if d < t:
+            step = 1
+            if t - d > 25:
+                step = 3
+            elif t - d > 12:
+                step = 2
+            wifi_stage["display_percent"] = min(t, d + step)
+        wifi_stage["spinner"] = (wifi_stage["spinner"] + 1) % 4
 
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
@@ -417,11 +444,7 @@ device = sh1107(serial, rotate=1)
 
 font_path = "/usr/share/fonts/truetype/malgun/malgunbd.ttf"
 font_big = ImageFont.truetype(font_path, 12)
-font_small = ImageFont.truetype(font_path, 11)
 font_st = ImageFont.truetype(font_path, 11)
-font = ImageFont.truetype(font_path, 17)
-font_1 = ImageFont.truetype(font_path, 21)
-font_sysupdate = ImageFont.truetype(font_path, 17)
 font_time = ImageFont.truetype(font_path, 12)
 
 font_cache = {}
@@ -757,44 +780,44 @@ def prepare_for_ap_mode():
 def restore_after_ap_mode(timeout=25):
     global last_good_wifi_profile
 
-    wifi_stage_set(5, "WiFi 종료 중…", "프로세스 정리")
+    wifi_stage_set(5, "WiFi 종료 중", "프로세스 정리")
     kill_portal_tmp_procs()
     run_quiet(["sudo", "systemctl", "stop", "hostapd"], timeout=3.0)
     run_quiet(["sudo", "systemctl", "stop", "dnsmasq"], timeout=3.0)
 
-    wifi_stage_set(25, "WiFi 재시작…", "인터페이스 초기화")
+    wifi_stage_set(25, "WiFi 재시작", "인터페이스 초기화")
     wlan0_soft_reset()
 
-    wifi_stage_set(45, "WiFi 재시작…", "NetworkManager")
+    wifi_stage_set(45, "WiFi 재시작", "NetworkManager")
     nm_set_managed(True)
     nm_restart()
     time.sleep(1.2)
 
     if last_good_wifi_profile:
-        wifi_stage_set(60, "재연결 중…", last_good_wifi_profile[:18])
+        wifi_stage_set(60, "재연결 중", last_good_wifi_profile[:18])
         run_quiet(["sudo", "nmcli", "connection", "up", last_good_wifi_profile], timeout=12.0)
 
-    wifi_stage_set(75, "인터넷 확인…", "")
+    wifi_stage_set(75, "인터넷 확인", "")
     t0 = time.time()
     while time.time() - t0 < timeout:
         if has_real_internet():
             wifi_stage_set(100, "완료", "")
-            time.sleep(0.5)
+            time.sleep(0.4)
             wifi_stage_clear()
             return True
         p = 75 + int(25 * ((time.time() - t0) / max(1.0, timeout)))
-        wifi_stage_set(min(99, p), "인터넷 확인…", "")
-        time.sleep(0.7)
+        wifi_stage_set(min(99, p), "인터넷 확인", "")
+        time.sleep(0.35)
 
     ok = has_real_internet()
     wifi_stage_set(100 if ok else 0, "완료" if ok else "실패", "")
-    time.sleep(0.7)
+    time.sleep(0.6)
     wifi_stage_clear()
     return ok
 
 
 def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
-    wifi_stage_set(10, "연결 준비…", "AP 종료")
+    wifi_stage_set(10, "연결 준비", "AP 종료")
     try:
         if hasattr(wifi_portal, "stop_ap"):
             wifi_portal.stop_ap()
@@ -805,15 +828,15 @@ def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     run_quiet(["sudo", "systemctl", "stop", "hostapd"], timeout=3.0)
     run_quiet(["sudo", "systemctl", "stop", "dnsmasq"], timeout=3.0)
 
-    wifi_stage_set(30, "연결 준비…", "인터페이스 초기화")
+    wifi_stage_set(30, "연결 준비", "인터페이스 초기화")
     wlan0_soft_reset()
 
-    wifi_stage_set(50, "연결 준비…", "NetworkManager")
+    wifi_stage_set(50, "연결 준비", "NetworkManager")
     nm_set_managed(True)
     nm_restart()
     time.sleep(1.5)
 
-    wifi_stage_set(70, "WiFi 연결 중…", ssid[:18])
+    wifi_stage_set(70, "WiFi 연결 중", ssid[:18])
     ok = nm_connect(ssid, psk, timeout=timeout)
     if not ok:
         wifi_stage_set(0, "연결 실패", "")
@@ -821,7 +844,7 @@ def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
         wifi_stage_clear()
         return False
 
-    wifi_stage_set(85, "인터넷 확인…", "")
+    wifi_stage_set(85, "인터넷 확인", "")
     ok2 = nm_autoconnect(timeout=20)
     wifi_stage_set(100 if ok2 else 0, "완료" if ok2 else "실패", "")
     time.sleep(0.6)
@@ -908,21 +931,21 @@ def wifi_worker_thread():
                     need_update = True
 
                     if result == "cancel":
-                        wifi_stage_set(10, "취소 처리중…", "재연결 준비")
+                        wifi_stage_set(10, "취소 처리중", "재연결 준비")
                         ok_restore = restore_after_ap_mode(timeout=25)
                         set_ui_text("재연결 완료" if ok_restore else "재연결 실패", "", pos=(15, 18), font_size=15)
-                        time.sleep(1.1)
+                        time.sleep(1.0)
                         clear_ui_override()
                         wifi_stage_clear()
 
                     elif result is True:
                         set_ui_text("WiFi 연결 완료", "", pos=(12, 18), font_size=15)
-                        time.sleep(1.2)
+                        time.sleep(1.1)
                         clear_ui_override()
                         wifi_stage_clear()
                     else:
                         set_ui_text("WiFi 연결 실패", "", pos=(12, 18), font_size=15)
-                        time.sleep(1.2)
+                        time.sleep(1.1)
                         clear_ui_override()
                         wifi_stage_clear()
 
@@ -1198,6 +1221,9 @@ def _draw_override(draw):
     return False
 
 
+last_oled_update_time = 0.0
+
+
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
 
@@ -1248,31 +1274,37 @@ def update_oled_display():
 
                 if wifi_running:
                     draw.rectangle(device.bounding_box, fill="black")
-
+                    x = 2
                     with wifi_stage_lock:
                         st_active = wifi_stage["active"]
-                        st_p = wifi_stage["percent"]
+                        st_p = wifi_stage["display_percent"]
                         st1 = wifi_stage["line1"]
                         st2 = wifi_stage["line2"]
+                        sp = wifi_stage["spinner"]
+
+                    dots = "." * sp
 
                     if st_active:
-                        draw.text((0, 0), (st1 or "")[:16], font=get_font(13), fill=255)
-                        if st2:
-                            draw.text((0, 14), (st2 or "")[:18], font=get_font(11), fill=255)
+                        draw.text((x, 0), (st1 or "")[:16], font=get_font(13), fill=255)
+                        line2 = (st2 or "")
+                        if line2:
+                            draw.text((x, 16), (line2 + dots)[:18], font=get_font(11), fill=255)
+                        else:
+                            draw.text((x, 16), ("처리중" + dots)[:18], font=get_font(11), fill=255)
 
-                        x1, y1, x2, y2 = 8, 50, 120, 60
+                        x1, y1, x2, y2 = 8, 48, 120, 60
                         draw.rectangle([(x1, y1), (x2, y2)], outline=255, fill=0)
                         fill_w = int((x2 - x1) * (st_p / 100.0))
                         if fill_w > 0:
                             draw.rectangle([(x1, y1), (x1 + fill_w, y2)], fill=255)
 
-                        draw.text((0, 34), "NEXT 길게: 취소", font=get_font(11), fill=255)
+                        draw.text((x, 32), "NEXT 길게: 취소", font=get_font(11), fill=255)
                     else:
-                        draw.text((0, 0), "WiFi 설정 모드", font=get_font(13), fill=255)
-                        draw.text((0, 14), "접속: 192.168.4.1:8080", font=get_font(11), fill=255)
-                        draw.text((0, 34), "NEXT 길게: 취소", font=get_font(11), fill=255)
-                        dots = int(time.time() * 2) % 4
-                        draw.text((0, 50), "대기 중" + "." * dots, font=get_font(11), fill=255)
+                        draw.text((x, 0), "WiFi 설정 모드", font=get_font(13), fill=255)
+                        draw.text((x, 16), "AP: GDSENG-SETUP", font=get_font(11), fill=255)
+                        draw.text((x, 28), "PW: 12345678", font=get_font(11), fill=255)
+                        draw.text((x, 40), "IP: 192.168.4.1:8080", font=get_font(11), fill=255)
+                        draw.text((x, 52), ("대기중" + dots)[:16], font=get_font(11), fill=255)
                     return
 
                 center_x = device.width // 2 + VISUAL_X_OFFSET
@@ -1293,12 +1325,10 @@ def update_oled_display():
         display_lock.release()
 
 
-last_oled_update_time = 0.0
-
-
 def realtime_update_display():
     global need_update, last_oled_update_time
     while not stop_threads:
+        wifi_stage_tick()
         now = time.time()
         if need_update or (now - last_oled_update_time >= 0.2):
             update_oled_display()
@@ -1316,27 +1346,13 @@ def shutdown_system():
         pass
 
 
-init_ina219()
+def execute_button_logic():
+    global current_command_index, need_update
+    global execute_is_down, execute_long_handled, execute_press_time
+    global next_pressed_event
+    global auto_flash_done_connection
+    global next_long_handled, wifi_cancel_requested
 
-battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
-battery_thread.start()
-
-realtime_update_thread = threading.Thread(target=realtime_update_display, daemon=True)
-realtime_update_thread.start()
-
-stm32_thread = threading.Thread(target=stm32_poll_thread, daemon=True)
-stm32_thread.start()
-
-wifi_thread = threading.Thread(target=wifi_worker_thread, daemon=True)
-wifi_thread.start()
-
-net_thread = threading.Thread(target=net_poll_thread, daemon=True)
-net_thread.start()
-
-need_update = True
-
-
-try:
     while True:
         now = time.time()
 
@@ -1350,7 +1366,7 @@ try:
             if now - next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
                 next_long_handled = True
                 wifi_cancel_requested = True
-                wifi_stage_set(5, "취소 처리중…", "잠시만")
+                wifi_stage_set(5, "취소 처리중", "잠시만")
                 need_update = True
 
         if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
@@ -1398,6 +1414,29 @@ try:
 
         time.sleep(0.03)
 
+
+init_ina219()
+
+battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
+battery_thread.start()
+
+realtime_update_thread = threading.Thread(target=realtime_update_display, daemon=True)
+realtime_update_thread.start()
+
+stm32_thread = threading.Thread(target=stm32_poll_thread, daemon=True)
+stm32_thread.start()
+
+wifi_thread = threading.Thread(target=wifi_worker_thread, daemon=True)
+wifi_thread.start()
+
+net_thread = threading.Thread(target=net_poll_thread, daemon=True)
+net_thread.start()
+
+need_update = True
+
+
+try:
+    execute_button_logic()
 except KeyboardInterrupt:
     pass
 finally:
