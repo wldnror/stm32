@@ -33,6 +33,23 @@ ui_override = {
     "line2": "",
 }
 
+wifi_stage_lock = threading.Lock()
+wifi_stage = {"active": False, "percent": 0, "line1": "", "line2": ""}
+
+def wifi_stage_set(percent, line1, line2=""):
+    with wifi_stage_lock:
+        wifi_stage["active"] = True
+        wifi_stage["percent"] = int(max(0, min(100, percent)))
+        wifi_stage["line1"] = line1 or ""
+        wifi_stage["line2"] = line2 or ""
+
+def wifi_stage_clear():
+    with wifi_stage_lock:
+        wifi_stage["active"] = False
+        wifi_stage["percent"] = 0
+        wifi_stage["line1"] = ""
+        wifi_stage["line2"] = ""
+
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
 LED_SUCCESS = 24
@@ -740,29 +757,44 @@ def prepare_for_ap_mode():
 def restore_after_ap_mode(timeout=25):
     global last_good_wifi_profile
 
+    wifi_stage_set(5, "WiFi 종료 중…", "프로세스 정리")
     kill_portal_tmp_procs()
     run_quiet(["sudo", "systemctl", "stop", "hostapd"], timeout=3.0)
     run_quiet(["sudo", "systemctl", "stop", "dnsmasq"], timeout=3.0)
 
+    wifi_stage_set(25, "WiFi 재시작…", "인터페이스 초기화")
     wlan0_soft_reset()
 
+    wifi_stage_set(45, "WiFi 재시작…", "NetworkManager")
     nm_set_managed(True)
     nm_restart()
     time.sleep(1.2)
 
     if last_good_wifi_profile:
+        wifi_stage_set(60, "재연결 중…", last_good_wifi_profile[:18])
         run_quiet(["sudo", "nmcli", "connection", "up", last_good_wifi_profile], timeout=12.0)
 
+    wifi_stage_set(75, "인터넷 확인…", "")
     t0 = time.time()
     while time.time() - t0 < timeout:
         if has_real_internet():
+            wifi_stage_set(100, "완료", "")
+            time.sleep(0.5)
+            wifi_stage_clear()
             return True
+        p = 75 + int(25 * ((time.time() - t0) / max(1.0, timeout)))
+        wifi_stage_set(min(99, p), "인터넷 확인…", "")
         time.sleep(0.7)
 
-    return has_real_internet()
+    ok = has_real_internet()
+    wifi_stage_set(100 if ok else 0, "완료" if ok else "실패", "")
+    time.sleep(0.7)
+    wifi_stage_clear()
+    return ok
 
 
 def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
+    wifi_stage_set(10, "연결 준비…", "AP 종료")
     try:
         if hasattr(wifi_portal, "stop_ap"):
             wifi_portal.stop_ap()
@@ -773,17 +805,28 @@ def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     run_quiet(["sudo", "systemctl", "stop", "hostapd"], timeout=3.0)
     run_quiet(["sudo", "systemctl", "stop", "dnsmasq"], timeout=3.0)
 
+    wifi_stage_set(30, "연결 준비…", "인터페이스 초기화")
     wlan0_soft_reset()
 
+    wifi_stage_set(50, "연결 준비…", "NetworkManager")
     nm_set_managed(True)
     nm_restart()
     time.sleep(1.5)
 
+    wifi_stage_set(70, "WiFi 연결 중…", ssid[:18])
     ok = nm_connect(ssid, psk, timeout=timeout)
     if not ok:
+        wifi_stage_set(0, "연결 실패", "")
+        time.sleep(0.8)
+        wifi_stage_clear()
         return False
 
-    return nm_autoconnect(timeout=20)
+    wifi_stage_set(85, "인터넷 확인…", "")
+    ok2 = nm_autoconnect(timeout=20)
+    wifi_stage_set(100 if ok2 else 0, "완료" if ok2 else "실패", "")
+    time.sleep(0.6)
+    wifi_stage_clear()
+    return ok2
 
 
 def _portal_loop_until_connected_or_cancel():
@@ -791,6 +834,7 @@ def _portal_loop_until_connected_or_cancel():
 
     prepare_for_ap_mode()
 
+    wifi_stage_clear()
     wifi_portal.start_ap()
     if not getattr(wifi_portal, "_state", {}).get("server_started", False):
         wifi_portal.run_portal(block=False)
@@ -820,6 +864,7 @@ def _portal_loop_until_connected_or_cancel():
                 return True
 
             prepare_for_ap_mode()
+            wifi_stage_clear()
             wifi_portal.start_ap()
 
         if time.time() - t0 > 600:
@@ -843,6 +888,7 @@ def wifi_worker_thread():
         if do:
             try:
                 wifi_cancel_requested = False
+                wifi_stage_clear()
 
                 r1 = subprocess.run(["which", "hostapd"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 r2 = subprocess.run(["which", "dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -862,20 +908,23 @@ def wifi_worker_thread():
                     need_update = True
 
                     if result == "cancel":
-                        set_ui_text("WiFi 설정 취소", "재연결 중...", pos=(0, 10), font_size=13)
+                        wifi_stage_set(10, "취소 처리중…", "재연결 준비")
                         ok_restore = restore_after_ap_mode(timeout=25)
                         set_ui_text("재연결 완료" if ok_restore else "재연결 실패", "", pos=(15, 18), font_size=15)
-                        time.sleep(1.4)
+                        time.sleep(1.1)
                         clear_ui_override()
+                        wifi_stage_clear()
 
                     elif result is True:
                         set_ui_text("WiFi 연결 완료", "", pos=(12, 18), font_size=15)
-                        time.sleep(1.5)
+                        time.sleep(1.2)
                         clear_ui_override()
+                        wifi_stage_clear()
                     else:
                         set_ui_text("WiFi 연결 실패", "", pos=(12, 18), font_size=15)
-                        time.sleep(1.5)
+                        time.sleep(1.2)
                         clear_ui_override()
+                        wifi_stage_clear()
 
                 status_message = ""
                 need_update = True
@@ -1199,16 +1248,31 @@ def update_oled_display():
 
                 if wifi_running:
                     draw.rectangle(device.bounding_box, fill="black")
-                    draw.text((0, 0), "WiFi 설정 모드", font=get_font(13), fill=255)
 
-                    body_font = get_font(11)
-                    y0 = 14
-                    line = 12
+                    with wifi_stage_lock:
+                        st_active = wifi_stage["active"]
+                        st_p = wifi_stage["percent"]
+                        st1 = wifi_stage["line1"]
+                        st2 = wifi_stage["line2"]
 
-                    draw.text((0, y0 + line * 0), "AP: GDSENG-SETUP",  font=body_font, fill=255)
-                    draw.text((0, y0 + line * 1), "PW: 12345678",      font=body_font, fill=255)
-                    draw.text((0, y0 + line * 2), "192.168.4.1:8080",  font=body_font, fill=255)
-                    draw.text((0, 52), "NEXT 길게: 취소", font=body_font, fill=255)
+                    if st_active:
+                        draw.text((0, 0), (st1 or "")[:16], font=get_font(13), fill=255)
+                        if st2:
+                            draw.text((0, 14), (st2 or "")[:18], font=get_font(11), fill=255)
+
+                        x1, y1, x2, y2 = 8, 50, 120, 60
+                        draw.rectangle([(x1, y1), (x2, y2)], outline=255, fill=0)
+                        fill_w = int((x2 - x1) * (st_p / 100.0))
+                        if fill_w > 0:
+                            draw.rectangle([(x1, y1), (x1 + fill_w, y2)], fill=255)
+
+                        draw.text((0, 34), "NEXT 길게: 취소", font=get_font(11), fill=255)
+                    else:
+                        draw.text((0, 0), "WiFi 설정 모드", font=get_font(13), fill=255)
+                        draw.text((0, 14), "접속: 192.168.4.1:8080", font=get_font(11), fill=255)
+                        draw.text((0, 34), "NEXT 길게: 취소", font=get_font(11), fill=255)
+                        dots = int(time.time() * 2) % 4
+                        draw.text((0, 50), "대기 중" + "." * dots, font=get_font(11), fill=255)
                     return
 
                 center_x = device.width // 2 + VISUAL_X_OFFSET
@@ -1281,10 +1345,12 @@ try:
 
         with wifi_action_lock:
             wifi_running = wifi_action_running
+
         if wifi_running and next_is_down and (not next_long_handled) and (next_press_time is not None):
             if now - next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
                 next_long_handled = True
                 wifi_cancel_requested = True
+                wifi_stage_set(5, "취소 처리중…", "잠시만")
                 need_update = True
 
         if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
@@ -1341,4 +1407,3 @@ finally:
     except Exception:
         pass
     GPIO.cleanup()
-
