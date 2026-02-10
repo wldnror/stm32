@@ -4,7 +4,6 @@ import time
 import os
 import sys
 import socket
-import math
 from PIL import Image, ImageFont
 from luma.core.interface.serial import i2c
 from luma.oled.device import sh1107
@@ -33,9 +32,6 @@ ui_override = {
     "font_size": 15,
     "line2": "",
 }
-
-anim_tick = 0
-anim_lock = threading.Lock()
 
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
@@ -105,61 +101,6 @@ last_good_wifi_profile = None
 
 cached_online = False
 last_menu_online = None
-
-
-def _t():
-    with anim_lock:
-        return anim_tick
-
-
-def _dots(period=18, max_dots=3):
-    n = (_t() // period) % (max_dots + 1)
-    return "." * n
-
-
-def draw_spinner(draw, cx, cy, r=7, spokes=8):
-    tt = _t()
-    phase = tt % spokes
-    for i in range(spokes):
-        a = (i * 2.0 * math.pi) / spokes
-        x = int(cx + r * (0.85 * math.cos(a)))
-        y = int(cy + r * (0.85 * math.sin(a)))
-        size = 2 if i == phase else 1
-        fill = 255 if i == phase else 120
-        draw.rectangle([x - size, y - size, x + size, y + size], fill=fill)
-
-
-def draw_progress_bar(draw, x1, y1, x2, y2, percent):
-    w = x2 - x1
-    p = max(0, min(100, int(percent)))
-    fill_w = int(w * (p / 100.0))
-    draw.rectangle([(x1, y1), (x2, y2)], outline=255, fill=0)
-    if fill_w > 0:
-        draw.rectangle([(x1 + 1, y1 + 1), (x1 + fill_w, y2 - 1)], fill=255)
-    tt = _t()
-    if fill_w > 8:
-        stripe = (tt // 2) % 16
-        sx = x1 + 2 + stripe
-        ex = min(x1 + fill_w - 2, sx + 6)
-        if ex > sx:
-            draw.rectangle([(sx, y1 + 2), (ex, y2 - 2)], fill=0)
-
-
-def draw_marquee(draw, text, y, font, pad=8):
-    try:
-        bbox = draw.textbbox((0, 0), text, font=font)
-        tw = bbox[2] - bbox[0]
-    except Exception:
-        tw = len(text) * 6
-    w = device.width
-    if tw <= w:
-        draw.text((0, y), text, font=font, fill=255)
-        return
-    tt = _t()
-    span = tw + pad + w
-    off = (tt // 2) % span
-    x = w - off
-    draw.text((x, y), text, font=font, fill=255)
 
 
 def kill_openocd():
@@ -608,7 +549,7 @@ def build_menu_for_dir(dir_path, is_root=False):
             extras_local.append(None)
 
         commands_local.append("wifi_setup")
-        names_local.append("와이파이 설정")
+        names_local.append("Wi-Fi 설정")
         types_local.append("wifi")
         extras_local.append(None)
 
@@ -921,18 +862,18 @@ def wifi_worker_thread():
                     need_update = True
 
                     if result == "cancel":
-                        set_ui_text("와이파이 취소", "재연결 중", pos=(0, 10), font_size=13)
+                        set_ui_text("WiFi 설정 취소", "재연결 중...", pos=(0, 10), font_size=13)
                         ok_restore = restore_after_ap_mode(timeout=25)
                         set_ui_text("재연결 완료" if ok_restore else "재연결 실패", "", pos=(15, 18), font_size=15)
                         time.sleep(1.4)
                         clear_ui_override()
 
                     elif result is True:
-                        set_ui_text("연결 완료", "", pos=(22, 18), font_size=15)
+                        set_ui_text("WiFi 연결 완료", "", pos=(12, 18), font_size=15)
                         time.sleep(1.5)
                         clear_ui_override()
                     else:
-                        set_ui_text("연결 실패", "", pos=(22, 18), font_size=15)
+                        set_ui_text("WiFi 연결 실패", "", pos=(12, 18), font_size=15)
                         time.sleep(1.5)
                         clear_ui_override()
 
@@ -1030,7 +971,7 @@ def execute_command(command_index):
             is_command_executing = False
             return
 
-        set_ui_progress(10, "추출/업로드\n실행 중", pos=(12, 5), font_size=15)
+        set_ui_progress(10, "추출/업로드\n 실행 중...", pos=(10, 5), font_size=15)
 
         try:
             result = subprocess.run(
@@ -1043,13 +984,13 @@ def execute_command(command_index):
 
             if result.returncode == 0:
                 GPIO.output(LED_SUCCESS, True)
-                set_ui_progress(100, "완료", pos=(45, 10), font_size=15)
+                set_ui_progress(100, "완료!", pos=(35, 10), font_size=15)
                 time.sleep(1)
                 GPIO.output(LED_SUCCESS, False)
             else:
                 GPIO.output(LED_ERROR, True)
                 GPIO.output(LED_ERROR1, True)
-                set_ui_progress(0, "실패", pos=(45, 10), font_size=15)
+                set_ui_progress(0, "실패!", pos=(35, 10), font_size=15)
                 time.sleep(1.2)
                 GPIO.output(LED_ERROR, False)
                 GPIO.output(LED_ERROR1, False)
@@ -1086,7 +1027,7 @@ def execute_command(command_index):
         need_update = True
         return
 
-    set_ui_progress(30, "업데이트 중", pos=(18, 10), font_size=15)
+    set_ui_progress(30, "업데이트 중...", pos=(12, 10), font_size=15)
     process = subprocess.Popen(commands[command_index], shell=True)
 
     start_time = time.time()
@@ -1097,18 +1038,18 @@ def execute_command(command_index):
         elapsed = time.time() - start_time
         current_progress = 30 + (elapsed * progress_increment)
         current_progress = min(current_progress, 80)
-        set_ui_progress(current_progress, "업데이트 중", pos=(18, 10), font_size=15)
+        set_ui_progress(current_progress, "업데이트 중...", pos=(12, 10), font_size=15)
         time.sleep(0.2)
 
     result = process.returncode
     if result == 0:
-        set_ui_progress(80, "업데이트 성공", pos=(10, 10), font_size=15)
+        set_ui_progress(80, "업데이트 성공!", pos=(7, 10), font_size=15)
         time.sleep(1.0)
         lock_memory_procedure()
     else:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        set_ui_progress(0, "업데이트 실패", pos=(10, 10), font_size=15)
+        set_ui_progress(0, "업데이트 실패", pos=(7, 10), font_size=15)
         time.sleep(1)
 
     GPIO.output(LED_SUCCESS, False)
@@ -1190,17 +1131,19 @@ def _draw_override(draw):
     draw.rectangle(device.bounding_box, fill="black")
 
     if kind == "progress":
-        f = get_font(fs)
-        draw.text(pos, msg + _dots(), font=f, fill=255)
-        draw_spinner(draw, 110, 12, r=6, spokes=8)
-        draw_progress_bar(draw, 10, 50, 110, 60, percent)
+        draw.text(pos, msg, font=get_font(fs), fill=255)
+        x1, y1, x2, y2 = 10, 50, 110, 60
+        draw.rectangle([(x1, y1), (x2, y2)], fill=0)
+        fill_w = int((x2 - x1) * (percent / 100.0))
+        fill_w = int(max(0, min((x2 - x1), fill_w)))
+        if fill_w > 0:
+            draw.rectangle([(x1, y1), (x1 + fill_w, y2)], fill=255)
         return True
 
     if kind == "text":
-        f = get_font(fs)
-        draw.text(pos, msg + _dots(), font=f, fill=255)
+        draw.text(pos, msg, font=get_font(fs), fill=255)
         if line2:
-            draw.text((pos[0], pos[1] + 18), line2, font=f, fill=255)
+            draw.text((pos[0], pos[1] + 18), line2, font=get_font(fs), fill=255)
         return True
 
     return False
@@ -1256,25 +1199,28 @@ def update_oled_display():
 
                 if wifi_running:
                     draw.rectangle(device.bounding_box, fill="black")
-                    head_f = get_font(13)
-                    body_f = get_font(11)
+                    draw.text((0, 0), "WiFi 설정 모드", font=get_font(13), fill=255)
 
-                    draw.text((0, 0), "와이파이 설정", font=head_f, fill=255)
-                    draw_spinner(draw, 115, 8, r=6, spokes=8)
+                    body_font = get_font(11)
+                    y0 = 14
+                    line = 12
 
-                    draw.text((0, 14), "AP: GDSENG-SETUP", font=body_f, fill=255)
-                    draw.text((0, 26), "PW: 12345678", font=body_f, fill=255)
-                    draw.text((0, 38), "접속: 192.168.4.1:8080", font=body_f, fill=255)
-
-                    blink = ((_t() // 10) % 2) == 0
-                    hint = "NEXT 길게: 취소" if blink else " "
-                    draw.text((0, 52), hint, font=body_f, fill=255)
+                    draw.text((0, y0 + line * 0), "AP: GDSENG-SETUP",  font=body_font, fill=255)
+                    draw.text((0, y0 + line * 1), "PW: 12345678",      font=body_font, fill=255)
+                    draw.text((0, y0 + line * 2), "192.168.4.1:8080",  font=body_font, fill=255)
+                    draw.text((0, 52), "NEXT 길게: 취소", font=body_font, fill=255)
                     return
 
+                center_x = device.width // 2 + VISUAL_X_OFFSET
                 if item_type == "system":
-                    draw_marquee(draw, title, 26, get_font(17))
+                    center_y = 33
+                    start_size = 17
                 else:
-                    draw_marquee(draw, title, 34, get_font(19))
+                    center_y = 42
+                    start_size = 21
+
+                max_w = device.width - 4
+                draw_center_text_autofit(draw, title, center_x, center_y, max_w, start_size, min_size=11)
 
         except Exception:
             return
@@ -1287,10 +1233,8 @@ last_oled_update_time = 0.0
 
 
 def realtime_update_display():
-    global need_update, last_oled_update_time, anim_tick
+    global need_update, last_oled_update_time
     while not stop_threads:
-        with anim_lock:
-            anim_tick = (anim_tick + 1) % 1000000
         now = time.time()
         if need_update or (now - last_oled_update_time >= 0.2):
             update_oled_display()
@@ -1300,7 +1244,7 @@ def realtime_update_display():
 
 
 def shutdown_system():
-    set_ui_text("배터리 부족", "시스템 종료 중", pos=(10, 18), font_size=15)
+    set_ui_text("배터리 부족", "시스템 종료 중...", pos=(10, 18), font_size=15)
     time.sleep(2)
     try:
         os.system("sudo shutdown -h now")
@@ -1397,3 +1341,4 @@ finally:
     except Exception:
         pass
     GPIO.cleanup()
+
