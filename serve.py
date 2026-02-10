@@ -162,6 +162,10 @@ NORMAL_DIR = os.path.join(FIRMWARE_DIR, "1.일반")
 STM32_INFO_LOCK = threading.Lock()
 STM32_INFO = {"flash_kb": None, "variant": None}
 
+LAST_PROGRAM_VARIANT_LOCK = threading.Lock()
+LAST_PROGRAM_VARIANT = ""
+LAST_PROGRAM_KEY = ""
+
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -684,30 +688,37 @@ def git_pull():
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
 
-def unlock_memory():
-    set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
+def unlock_memory(retries=3):
+    global need_update
+    for _ in range(retries):
+        kill_openocd()
+        time.sleep(0.15)
 
-    openocd_command = [
-        "sudo", "openocd",
-        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", "init",
-        "-c", "reset halt",
-        "-c", "stm32f1x unlock 0",
-        "-c", "reset run",
-        "-c", "shutdown"
-    ]
-    result = subprocess.run(openocd_command)
+        set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
 
-    if result.returncode == 0:
-        set_ui_progress(30, "메모리 잠금\n 해제 성공!", pos=(20, 0), font_size=15)
-        time.sleep(1)
-        return True
+        openocd_command = [
+            "sudo", "openocd",
+            "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+            "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+            "-c", "init",
+            "-c", "reset halt",
+            "-c", "stm32f1x unlock 0",
+            "-c", "reset run",
+            "-c", "shutdown"
+        ]
+        try:
+            r = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=4.0)
+            if r.returncode == 0:
+                set_ui_progress(30, "메모리 잠금\n 해제 성공!", pos=(20, 0), font_size=15)
+                time.sleep(0.5)
+                return True
+        except Exception:
+            pass
+
+        time.sleep(0.25)
 
     set_ui_progress(0, "메모리 잠금\n 해제 실패!", pos=(20, 0), font_size=15)
-    time.sleep(1)
-
-    global need_update
+    time.sleep(0.8)
     need_update = True
     return False
 
@@ -1093,6 +1104,10 @@ def execute_command(command_index):
         need_update = True
         return
 
+    with LAST_PROGRAM_VARIANT_LOCK:
+        LAST_PROGRAM_VARIANT = "TFTP" if used_variant == "TFTP" else "일반"
+        LAST_PROGRAM_KEY = command_names[command_index]
+
     openocd_cmd = (
         "sudo openocd "
         "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
@@ -1104,7 +1119,7 @@ def execute_command(command_index):
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-    if not unlock_memory():
+    if not unlock_memory(retries=3):
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         set_ui_text("메모리 잠금", "해제 실패", pos=(20, 12), font_size=15)
@@ -1117,7 +1132,11 @@ def execute_command(command_index):
         need_update = True
         return
 
-    set_ui_progress(30, "업데이트 중...", pos=(12, 10), font_size=15)
+    with LAST_PROGRAM_VARIANT_LOCK:
+        pv = LAST_PROGRAM_VARIANT
+        pk = LAST_PROGRAM_KEY
+
+    set_ui_progress(30, f"{pk}\n{pv} 업데이트", pos=(12, 10), font_size=15)
     process = subprocess.Popen(openocd_cmd, shell=True)
 
     start_time = time.time()
@@ -1128,7 +1147,7 @@ def execute_command(command_index):
         elapsed = time.time() - start_time
         current_progress = 30 + (elapsed * progress_increment)
         current_progress = min(current_progress, 80)
-        set_ui_progress(current_progress, "업데이트 중...", pos=(12, 10), font_size=15)
+        set_ui_progress(current_progress, f"{pk}\n{pv} 업데이트", pos=(12, 10), font_size=15)
         time.sleep(0.2)
 
     result = process.returncode
@@ -1309,14 +1328,23 @@ def update_oled_display():
                         fk = STM32_INFO.get("flash_kb")
                         v = STM32_INFO.get("variant")
 
+                    with LAST_PROGRAM_VARIANT_LOCK:
+                        pv = LAST_PROGRAM_VARIANT
+
                     tag = ""
                     if v == "TFTP":
                         tag = "RET"
                     elif v == "NORMAL":
                         tag = "RC"
+
+                    s = ""
                     if fk is not None and tag:
                         s = f"{tag} {int(fk)}K"
-                        draw.text((2, 13), s[:12], font=get_font(11), fill=255)
+                    if pv:
+                        s = (s + " " + pv).strip()
+
+                    if s:
+                        draw.text((2, 13), s[:16], font=get_font(11), fill=255)
 
                 else:
                     ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
@@ -1516,4 +1544,3 @@ finally:
     except Exception:
         pass
     GPIO.cleanup()
-
