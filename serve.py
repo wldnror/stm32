@@ -1298,9 +1298,9 @@ def update_oled_display():
 
                 if item_type != "system":
                     battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
-                    draw.bitmap((90, -9), battery_icon, fill=255)
+                    draw.bitmap((90, -11), battery_icon, fill=255)
                     perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
-                    draw.text((99, 3), perc_text, font=font_st, fill=255)
+                    draw.text((99, 1), perc_text, font=font_st, fill=255)
                     draw.text((2, 1), current_time, font=font_time, fill=255)
                     draw_wifi_bars(draw, 70, 3, wifi_level)
                 else:
