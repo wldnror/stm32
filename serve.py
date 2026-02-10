@@ -154,20 +154,10 @@ last_good_wifi_profile = None
 cached_online = False
 last_menu_online = None
 
-FIRMWARE_DIR = "/home/user/stm32/Program"
-OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
-TFTP_DIR = os.path.join(FIRMWARE_DIR, "TFTP")
-NORMAL_DIR = os.path.join(FIRMWARE_DIR, "1.일반")
-
-STM32_INFO_LOCK = threading.Lock()
-STM32_INFO = {"flash_kb": None, "variant": None, "dev_id": None}
-
-LAST_PROGRAM_VARIANT_LOCK = threading.Lock()
-LAST_PROGRAM_VARIANT = ""
-LAST_PROGRAM_KEY = ""
 
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
 def run_quiet(cmd, timeout=3.0, shell=False):
     try:
@@ -176,12 +166,14 @@ def run_quiet(cmd, timeout=3.0, shell=False):
     except Exception:
         return False
 
+
 def run_capture(cmd, timeout=4.0, shell=False):
     try:
         r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout, shell=shell)
         return r.returncode, (r.stdout or ""), (r.stderr or "")
     except Exception as e:
         return 999, "", str(e)
+
 
 def set_ui_progress(percent, message, pos=(0, 0), font_size=15):
     with ui_override_lock:
@@ -193,6 +185,7 @@ def set_ui_progress(percent, message, pos=(0, 0), font_size=15):
         ui_override["font_size"] = font_size
         ui_override["line2"] = ""
 
+
 def set_ui_text(line1, line2="", pos=(0, 0), font_size=15):
     with ui_override_lock:
         ui_override["active"] = True
@@ -203,6 +196,7 @@ def set_ui_text(line1, line2="", pos=(0, 0), font_size=15):
         ui_override["font_size"] = font_size
         ui_override["percent"] = 0
 
+
 def clear_ui_override():
     with ui_override_lock:
         ui_override["active"] = False
@@ -210,6 +204,7 @@ def clear_ui_override():
         ui_override["message"] = ""
         ui_override["line2"] = ""
         ui_override["percent"] = 0
+
 
 def has_real_internet(timeout=1.5):
     try:
@@ -223,20 +218,25 @@ def has_real_internet(timeout=1.5):
     except Exception:
         return False
 
+
 def nm_is_active():
     rc, out, _ = run_capture(["systemctl", "is-active", "NetworkManager"], timeout=2.0)
     return (rc == 0) and ("active" in out.strip())
+
 
 def nm_restart():
     run_quiet(["sudo", "systemctl", "enable", "--now", "NetworkManager"], timeout=6.0)
     run_quiet(["sudo", "systemctl", "restart", "NetworkManager"], timeout=6.0)
 
+
 def nm_set_managed(managed: bool):
     v = "yes" if managed else "no"
     run_quiet(["sudo", "nmcli", "dev", "set", "wlan0", "managed", v], timeout=4.0)
 
+
 def nm_disconnect_wlan0():
     run_quiet(["sudo", "nmcli", "dev", "disconnect", "wlan0"], timeout=4.0)
+
 
 def nm_get_active_wifi_profile():
     rc, out, _ = run_capture(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"], timeout=3.0)
@@ -250,6 +250,7 @@ def nm_get_active_wifi_profile():
                 return name
     return None
 
+
 def nm_autoconnect(timeout=25):
     t0 = time.time()
     while time.time() - t0 < timeout:
@@ -257,6 +258,7 @@ def nm_autoconnect(timeout=25):
             return True
         time.sleep(0.7)
     return has_real_internet()
+
 
 def nm_connect(ssid: str, psk: str, timeout=30):
     run_quiet(["sudo", "nmcli", "dev", "wifi", "rescan", "ifname", "wlan0"], timeout=6.0)
@@ -273,6 +275,7 @@ def nm_connect(ssid: str, psk: str, timeout=30):
     )
     return rc2 == 0
 
+
 def kill_portal_tmp_procs():
     cmd = r"""sudo bash -lc '
 pids=$(pgrep -a hostapd | awk "/\/tmp\/hostapd\.conf/{print \$1}" | xargs)
@@ -282,12 +285,14 @@ pids=$(pgrep -a dnsmasq | awk "/\/tmp\/dnsmasq\.conf/{print \$1}" | xargs)
 '"""
     run_quiet(cmd, timeout=6.0, shell=True)
 
+
 def wlan0_soft_reset():
     run_quiet(["sudo", "ip", "addr", "flush", "dev", "wlan0"], timeout=3.0)
     run_quiet(["sudo", "ip", "link", "set", "wlan0", "down"], timeout=3.0)
     time.sleep(1)
     run_quiet(["sudo", "ip", "link", "set", "wlan0", "up"], timeout=3.0)
     time.sleep(1)
+
 
 def init_ina219():
     global ina
@@ -296,6 +301,7 @@ def init_ina219():
         ina.configure()
     except Exception:
         ina = None
+
 
 def read_ina219_percentage():
     global ina
@@ -311,11 +317,13 @@ def read_ina219_percentage():
     except Exception:
         return -1
 
+
 def battery_monitor_thread():
     global battery_percentage
     while not stop_threads:
         battery_percentage = read_ina219_percentage()
         time.sleep(2)
+
 
 def button_next_edge(channel):
     global last_time_button_next_pressed
@@ -338,6 +346,7 @@ def button_next_edge(channel):
         next_is_down = False
         next_press_time = None
 
+
 def button_execute_callback(channel):
     global last_time_button_execute_pressed, execute_press_time, execute_is_down, execute_long_handled
     now = time.time()
@@ -347,6 +356,7 @@ def button_execute_callback(channel):
     execute_press_time = now
     execute_is_down = True
     execute_long_handled = False
+
 
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -358,113 +368,6 @@ GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
 
-def _parse_mem_value(txt: str, addr_hex: str):
-    if not txt:
-        return None
-    s = txt.lower()
-    m = re.search(rf"{re.escape(addr_hex.lower())}:\s*([0-9a-fA-F]+)", s)
-    if not m:
-        return None
-    try:
-        return int(m.group(1), 16)
-    except Exception:
-        return None
-
-def _openocd_read_pair_once(timeout=7.5, speed_khz=10, sleep_ms=800, hard_reset=True):
-    global is_command_executing
-    if is_command_executing:
-        return None, None, None
-
-    kill_openocd()
-    time.sleep(0.15)
-
-    cmd = [
-        "sudo", "openocd",
-        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", "gdb_port disabled",
-        "-c", "tcl_port disabled",
-        "-c", "telnet_port disabled",
-        "-c", "transport select swd",
-        "-c", f"adapter speed {int(speed_khz)}",
-        "-c", "init",
-    ]
-
-    if hard_reset:
-        cmd += [
-            "-c", "reset_config srst_only srst_nogate connect_assert_srst",
-            "-c", "reset halt",
-        ]
-    else:
-        cmd += [
-            "-c", "halt",
-            "-c", "soft_reset_halt",
-        ]
-
-    cmd += [
-        "-c", f"sleep {int(sleep_ms)}",
-        "-c", "mdw 0xE0042000 1",
-        "-c", "mdh 0x1FFFF7E0 1",
-        "-c", "shutdown",
-    ]
-
-    rc, out, err = run_capture(cmd, timeout=timeout)
-    if rc != 0:
-        txt = (out or "") + "\n" + (err or "")
-        v_id = _parse_mem_value(txt, "0xe0042000")
-        v_fs = _parse_mem_value(txt, "0x1ffff7e0")
-        return None if v_id is None else v_id, None if v_fs is None else v_fs, txt
-
-    txt = (out or "") + "\n" + (err or "")
-    v_id = _parse_mem_value(txt, "0xe0042000")
-    v_fs = _parse_mem_value(txt, "0x1ffff7e0")
-    return v_id, v_fs, txt
-
-def detect_stm32_variant():
-    global is_command_executing
-    if is_command_executing:
-        return None, None
-
-    dev_id = None
-    flash_kb = None
-
-    tries = [
-        {"speed": 10, "sleep": 800, "hard": True,  "t": 9.0},
-        {"speed": 10, "sleep": 1200, "hard": True, "t": 10.5},
-        {"speed": 5,  "sleep": 1200, "hard": True, "t": 12.0},
-        {"speed": 2,  "sleep": 1500, "hard": True, "t": 14.0},
-        {"speed": 10, "sleep": 800, "hard": False,"t": 9.0},
-        {"speed": 5,  "sleep": 1000, "hard": False,"t": 10.5},
-    ]
-
-    for tr in tries:
-        vid_raw, vfs_raw, _ = _openocd_read_pair_once(
-            timeout=tr["t"],
-            speed_khz=tr["speed"],
-            sleep_ms=tr["sleep"],
-            hard_reset=tr["hard"]
-        )
-
-        if vid_raw is not None:
-            dev_id = (vid_raw & 0xFFF)
-
-        if vfs_raw is not None:
-            flash_kb = (vfs_raw & 0xFFFF)
-
-        if flash_kb is not None and flash_kb > 0:
-            break
-
-    with STM32_INFO_LOCK:
-        STM32_INFO["dev_id"] = dev_id
-
-    if flash_kb is not None and flash_kb > 0:
-        if flash_kb >= 512:
-            return int(flash_kb), "TFTP"
-        if 240 <= flash_kb <= 320:
-            return int(flash_kb), "NORMAL"
-        return int(flash_kb), None
-
-    return None, None
 
 def check_stm32_connection():
     global connection_success, connection_failed_since_last_success, is_command_executing
@@ -473,18 +376,10 @@ def check_stm32_connection():
         return False
 
     try:
-        kill_openocd()
-        time.sleep(0.12)
-
         command = [
             "sudo", "openocd",
             "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
             "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-            "-c", "gdb_port disabled",
-            "-c", "tcl_port disabled",
-            "-c", "telnet_port disabled",
-            "-c", "transport select swd",
-            "-c", "adapter speed 10",
             "-c", "init",
             "-c", "exit"
         ]
@@ -493,7 +388,7 @@ def check_stm32_connection():
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=2.2
+            timeout=1.2
         )
 
         ok = (result.returncode == 0)
@@ -518,6 +413,7 @@ def check_stm32_connection():
             connection_failed_since_last_success = True
             connection_success = False
         return False
+
 
 def stm32_poll_thread():
     global last_stm32_check_time, auto_flash_done_connection
@@ -549,10 +445,7 @@ def stm32_poll_thread():
 
         if cur_state and (not prev_state):
             auto_flash_done_connection = False
-            fk, v = detect_stm32_variant()
-            with STM32_INFO_LOCK:
-                STM32_INFO["flash_kb"] = fk
-                STM32_INFO["variant"] = v
+
 
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
@@ -570,10 +463,12 @@ def get_font(size: int):
         font_cache[size] = f
     return f
 
+
 low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+
 
 def select_battery_icon(percentage):
     if percentage < 20:
@@ -583,6 +478,7 @@ def select_battery_icon(percentage):
     if percentage < 100:
         return high_battery_icon
     return full_battery_icon
+
 
 def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_size, min_size=10):
     size = start_size
@@ -610,6 +506,7 @@ def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_si
     except TypeError:
         draw.text((center_x, center_y), text, font=f, fill=255)
 
+
 def draw_wifi_bars(draw, x, y, level):
     bar_w = 3
     gap = 2
@@ -625,8 +522,13 @@ def draw_wifi_bars(draw, x, y, level):
         else:
             draw.rectangle([xx, y + max_h - 1, xx + bar_w, y + max_h], fill=255)
 
-def parse_order_and_name(name: str):
-    raw = os.path.splitext(name)[0]
+
+FIRMWARE_DIR = "/home/user/stm32/Program"
+OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
+
+
+def parse_order_and_name(name: str, is_dir: bool):
+    raw = name if is_dir else os.path.splitext(name)[0]
     m = re.match(r"^(\d+)\.(.*)$", raw)
     if m:
         order = int(m.group(1))
@@ -634,87 +536,89 @@ def parse_order_and_name(name: str):
     else:
         order = 9999
         display = raw
-    return order, display.strip()
+    return order, display
 
-def scan_bins(dir_path: str):
-    out = {}
-    if not dir_path or not os.path.isdir(dir_path):
-        return out
+
+def build_menu_for_dir(dir_path, is_root=False):
+    entries = []
     try:
         for fname in os.listdir(dir_path):
-            if not fname.lower().endswith(".bin"):
-                continue
-            full = os.path.join(dir_path, fname)
-            if not os.path.isfile(full):
-                continue
-            order, key = parse_order_and_name(fname)
-            cur = out.get(key)
-            if cur is None or order < cur["order"]:
-                out[key] = {"order": order, "path": full}
-    except Exception:
-        return out
-    return out
+            full_path = os.path.join(dir_path, fname)
 
-def build_root_menu():
-    tftp_map = scan_bins(TFTP_DIR)
-    normal_map = scan_bins(NORMAL_DIR)
+            if os.path.isdir(full_path):
+                order, display_name = parse_order_and_name(fname, is_dir=True)
+                display_name = "▶ " + display_name
+                entries.append((order, 0, display_name, "dir", full_path))
 
-    keys = set(tftp_map.keys()) | set(normal_map.keys())
-    merged = []
-    for k in keys:
-        o = 9999
-        if k in normal_map:
-            o = min(o, normal_map[k]["order"])
-        if k in tftp_map:
-            o = min(o, tftp_map[k]["order"])
-        merged.append((o, k))
-    merged.sort(key=lambda x: (x[0], x[1]))
+            elif fname.lower().endswith(".bin"):
+                order, display_name = parse_order_and_name(fname, is_dir=False)
+                openocd_cmd = (
+                    "sudo openocd "
+                    "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+                    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+                    f"-c \"program {full_path} verify reset exit 0x08000000\""
+                )
+                entries.append((order, 1, display_name, "bin", openocd_cmd))
+
+    except FileNotFoundError:
+        entries = []
+
+    entries.sort(key=lambda x: (x[0], x[1], x[2]))
 
     commands_local = []
     names_local = []
     types_local = []
     extras_local = []
 
-    for _, key in merged:
-        paths = {}
-        if key in normal_map:
-            paths["NORMAL"] = normal_map[key]["path"]
-        if key in tftp_map:
-            paths["TFTP"] = tftp_map[key]["path"]
+    for order, type_pri, display_name, item_type, extra in entries:
+        if item_type == "dir":
+            commands_local.append(None)
+            names_local.append(display_name)
+            types_local.append("dir")
+            extras_local.append(extra)
+        elif item_type == "bin":
+            commands_local.append(extra)
+            names_local.append(display_name)
+            types_local.append("bin")
+            extras_local.append(None)
+
+    if is_root:
+        online = has_real_internet()
+
+        if online:
+            commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
+            names_local.append("FW 추출(OUT)")
+            types_local.append("script")
+            extras_local.append(None)
+
+            commands_local.append("git_pull")
+            names_local.append("시스템 업데이트")
+            types_local.append("system")
+            extras_local.append(None)
+
+        commands_local.append("wifi_setup")
+        names_local.append("Wi-Fi 설정")
+        types_local.append("wifi")
+        extras_local.append(None)
+
+    else:
         commands_local.append(None)
-        names_local.append(key)
-        types_local.append("bin_auto")
-        extras_local.append(paths)
-
-    online = has_real_internet()
-
-    if online:
-        commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
-        names_local.append("FW 추출(OUT)")
-        types_local.append("script")
+        names_local.append("◀ 이전으로")
+        types_local.append("back")
         extras_local.append(None)
-
-        commands_local.append("git_pull")
-        names_local.append("시스템 업데이트")
-        types_local.append("system")
-        extras_local.append(None)
-
-    commands_local.append("wifi_setup")
-    names_local.append("Wi-Fi 설정")
-    types_local.append("wifi")
-    extras_local.append(None)
 
     return {
-        "dir": FIRMWARE_DIR,
+        "dir": dir_path,
         "commands": commands_local,
         "names": names_local,
         "types": types_local,
         "extras": extras_local,
     }
 
+
 def refresh_root_menu(reset_index=False):
     global current_menu, commands, command_names, command_types, menu_extras, current_command_index
-    current_menu = build_root_menu()
+    current_menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
     commands = current_menu["commands"]
     command_names = current_menu["names"]
     command_types = current_menu["types"]
@@ -722,7 +626,9 @@ def refresh_root_menu(reset_index=False):
     if reset_index or (current_command_index >= len(commands)):
         current_command_index = 0
 
+
 refresh_root_menu(reset_index=True)
+
 
 def git_pull():
     shell_script_path = "/home/user/stm32/git-pull.sh"
@@ -742,6 +648,7 @@ def git_pull():
             os.fsync(script_file.fileno())
 
     os.chmod(shell_script_path, 0o755)
+
     set_ui_text("시스템", "업데이트 중", pos=(20, 10), font_size=15)
 
     try:
@@ -779,44 +686,34 @@ def git_pull():
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
 
-def unlock_memory(retries=3):
-    global need_update
-    for _ in range(retries):
-        kill_openocd()
-        time.sleep(0.15)
 
-        set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
+def unlock_memory():
+    set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
 
-        openocd_command = [
-            "sudo", "openocd",
-            "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-            "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-            "-c", "gdb_port disabled",
-            "-c", "tcl_port disabled",
-            "-c", "telnet_port disabled",
-            "-c", "transport select swd",
-            "-c", "adapter speed 10",
-            "-c", "init",
-            "-c", "reset halt",
-            "-c", "stm32f1x unlock 0",
-            "-c", "reset run",
-            "-c", "shutdown"
-        ]
-        try:
-            r = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=6.0)
-            if r.returncode == 0:
-                set_ui_progress(30, "메모리 잠금\n 해제 성공!", pos=(20, 0), font_size=15)
-                time.sleep(0.5)
-                return True
-        except Exception:
-            pass
+    openocd_command = [
+        "sudo", "openocd",
+        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "init",
+        "-c", "reset halt",
+        "-c", "stm32f1x unlock 0",
+        "-c", "reset run",
+        "-c", "shutdown"
+    ]
+    result = subprocess.run(openocd_command)
 
-        time.sleep(0.25)
+    if result.returncode == 0:
+        set_ui_progress(30, "메모리 잠금\n 해제 성공!", pos=(20, 0), font_size=15)
+        time.sleep(1)
+        return True
 
     set_ui_progress(0, "메모리 잠금\n 해제 실패!", pos=(20, 0), font_size=15)
-    time.sleep(0.8)
+    time.sleep(1)
+
+    global need_update
     need_update = True
     return False
+
 
 def restart_script():
     set_ui_progress(25, "재시작 중", pos=(20, 10), font_size=15)
@@ -827,6 +724,7 @@ def restart_script():
 
     threading.Thread(target=restart, daemon=True).start()
 
+
 def lock_memory_procedure():
     global need_update
     set_ui_progress(80, "메모리 잠금 중", pos=(3, 10), font_size=15)
@@ -836,11 +734,6 @@ def lock_memory_procedure():
         "openocd",
         "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
         "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", "gdb_port disabled",
-        "-c", "tcl_port disabled",
-        "-c", "telnet_port disabled",
-        "-c", "transport select swd",
-        "-c", "adapter speed 10",
         "-c", "init",
         "-c", "reset halt",
         "-c", "stm32f1x lock 0",
@@ -870,10 +763,12 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR1, False)
         need_update = True
 
+
 def request_wifi_setup():
     global wifi_action_requested
     with wifi_action_lock:
         wifi_action_requested = True
+
 
 def prepare_for_ap_mode():
     global last_good_wifi_profile
@@ -888,6 +783,7 @@ def prepare_for_ap_mode():
         nm_disconnect_wlan0()
         nm_set_managed(False)
         time.sleep(0.3)
+
 
 def restore_after_ap_mode(timeout=25):
     global last_good_wifi_profile
@@ -927,6 +823,7 @@ def restore_after_ap_mode(timeout=25):
     wifi_stage_clear()
     return ok
 
+
 def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     wifi_stage_set(10, "연결 준비", "AP 종료")
     try:
@@ -961,6 +858,7 @@ def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     time.sleep(0.6)
     wifi_stage_clear()
     return ok2
+
 
 def _portal_loop_until_connected_or_cancel():
     global wifi_cancel_requested
@@ -1004,6 +902,7 @@ def _portal_loop_until_connected_or_cancel():
             return False
 
         time.sleep(0.2)
+
 
 def wifi_worker_thread():
     global wifi_action_requested, wifi_action_running
@@ -1072,37 +971,12 @@ def wifi_worker_thread():
 
         time.sleep(0.05)
 
-def pick_bin_path(paths: dict):
-    with STM32_INFO_LOCK:
-        variant = STM32_INFO.get("variant")
-        flash_kb = STM32_INFO.get("flash_kb")
-
-    if variant in ("TFTP", "NORMAL"):
-        if variant in paths:
-            return paths[variant], flash_kb, variant
-        other = "NORMAL" if variant == "TFTP" else "TFTP"
-        if other in paths:
-            return paths[other], flash_kb, other
-
-    with LAST_PROGRAM_VARIANT_LOCK:
-        last = (LAST_PROGRAM_VARIANT or "").strip()
-
-    if last:
-        prefer = "TFTP" if last == "TFTP" else "NORMAL"
-        if prefer in paths:
-            return paths[prefer], flash_kb, prefer
-        other = "NORMAL" if prefer == "TFTP" else "TFTP"
-        if other in paths:
-            return paths[other], flash_kb, other
-
-    return None, flash_kb, variant
 
 def execute_command(command_index):
     global is_executing, is_command_executing
     global current_menu, commands, command_names, command_types, menu_extras
     global current_command_index, menu_stack, need_update
     global connection_success, connection_failed_since_last_success
-    global LAST_PROGRAM_VARIANT, LAST_PROGRAM_KEY
 
     item_type = command_types[command_index]
     if item_type == "wifi":
@@ -1114,6 +988,35 @@ def execute_command(command_index):
     is_command_executing = True
 
     if not commands:
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "dir":
+        subdir = menu_extras[command_index]
+        if subdir and os.path.isdir(subdir):
+            menu_stack.append((current_menu, current_command_index))
+            current_menu = build_menu_for_dir(subdir, is_root=False)
+            commands = current_menu["commands"]
+            command_names = current_menu["names"]
+            command_types = current_menu["types"]
+            menu_extras = current_menu["extras"]
+            current_command_index = 0
+            need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "back":
+        if menu_stack:
+            prev_menu, prev_index = menu_stack.pop()
+            current_menu = prev_menu
+            commands = current_menu["commands"]
+            command_names = current_menu["names"]
+            command_types = current_menu["types"]
+            menu_extras = current_menu["extras"]
+            current_command_index = prev_index if (0 <= prev_index < len(commands)) else 0
+            need_update = True
         is_executing = False
         is_command_executing = False
         return
@@ -1192,61 +1095,11 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    if item_type != "bin_auto":
-        is_executing = False
-        is_command_executing = False
-        return
-
-    paths = menu_extras[command_index] or {}
-    pick, fk, used_variant = pick_bin_path(paths)
-
-    if not pick:
-        GPIO.output(LED_ERROR, True)
-        GPIO.output(LED_ERROR1, True)
-        set_ui_text("STM32 감지 실패", "RET/RC 확인 필요", pos=(6, 18), font_size=14)
-        time.sleep(1.6)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
-        clear_ui_override()
-        is_executing = False
-        is_command_executing = False
-        need_update = True
-        return
-
-    if not os.path.isfile(pick):
-        GPIO.output(LED_ERROR, True)
-        GPIO.output(LED_ERROR1, True)
-        set_ui_text("BIN 없음", "", pos=(20, 18), font_size=15)
-        time.sleep(1.2)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
-        clear_ui_override()
-        is_executing = False
-        is_command_executing = False
-        need_update = True
-        return
-
-    with LAST_PROGRAM_VARIANT_LOCK:
-        LAST_PROGRAM_VARIANT = "TFTP" if used_variant == "TFTP" else "일반"
-        LAST_PROGRAM_KEY = command_names[command_index]
-
-    openocd_cmd = (
-        "sudo openocd "
-        "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-        "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
-        "-c \"gdb_port disabled\" "
-        "-c \"tcl_port disabled\" "
-        "-c \"telnet_port disabled\" "
-        "-c \"transport select swd\" "
-        "-c \"adapter speed 10\" "
-        f"-c \"program {pick} verify reset exit 0x08000000\""
-    )
-
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-    if not unlock_memory(retries=3):
+    if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         set_ui_text("메모리 잠금", "해제 실패", pos=(20, 12), font_size=15)
@@ -1259,12 +1112,8 @@ def execute_command(command_index):
         need_update = True
         return
 
-    with LAST_PROGRAM_VARIANT_LOCK:
-        pv = LAST_PROGRAM_VARIANT
-        pk = LAST_PROGRAM_KEY
-
-    set_ui_progress(30, f"{pk}\n{pv} 업데이트", pos=(12, 10), font_size=15)
-    process = subprocess.Popen(openocd_cmd, shell=True)
+    set_ui_progress(30, "업데이트 중...", pos=(12, 10), font_size=15)
+    process = subprocess.Popen(commands[command_index], shell=True)
 
     start_time = time.time()
     max_duration = 6
@@ -1274,23 +1123,19 @@ def execute_command(command_index):
         elapsed = time.time() - start_time
         current_progress = 30 + (elapsed * progress_increment)
         current_progress = min(current_progress, 80)
-        set_ui_progress(current_progress, f"{pk}\n{pv} 업데이트", pos=(12, 10), font_size=15)
+        set_ui_progress(current_progress, "업데이트 중...", pos=(12, 10), font_size=15)
         time.sleep(0.2)
 
     result = process.returncode
     if result == 0:
-        GPIO.output(LED_SUCCESS, True)
         set_ui_progress(80, "업데이트 성공!", pos=(7, 10), font_size=15)
-        time.sleep(0.9)
-        GPIO.output(LED_SUCCESS, False)
+        time.sleep(1.0)
         lock_memory_procedure()
     else:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         set_ui_progress(0, "업데이트 실패", pos=(7, 10), font_size=15)
         time.sleep(1)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
 
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
@@ -1300,6 +1145,7 @@ def execute_command(command_index):
     need_update = True
     is_executing = False
     is_command_executing = False
+
 
 def get_ip_address():
     try:
@@ -1311,6 +1157,7 @@ def get_ip_address():
         return ip
     except Exception:
         return "0.0.0.0"
+
 
 def get_wifi_level():
     try:
@@ -1335,6 +1182,7 @@ def get_wifi_level():
     except Exception:
         return 0
 
+
 def net_poll_thread():
     global cached_ip, cached_wifi_level, cached_online, last_menu_online, need_update
     while not stop_threads:
@@ -1350,6 +1198,7 @@ def net_poll_thread():
             need_update = True
 
         time.sleep(1.5)
+
 
 def _draw_override(draw):
     with ui_override_lock:
@@ -1384,6 +1233,7 @@ def _draw_override(draw):
 
     return False
 
+
 def get_ap_station_count():
     try:
         r = subprocess.run(["iw", "dev", "wlan0", "station", "dump"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.7)
@@ -1392,6 +1242,7 @@ def get_ap_station_count():
         return sum(1 for line in (r.stdout or "").splitlines() if line.strip().startswith("Station "))
     except Exception:
         return 0
+
 
 def ap_client_tick(wifi_running: bool):
     now = time.time()
@@ -1414,7 +1265,9 @@ def ap_client_tick(wifi_running: bool):
         if cnt > 0 and prev == 0:
             ap_state["flash_until"] = now + 1.3
 
+
 last_oled_update_time = 0.0
+
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
@@ -1450,35 +1303,6 @@ def update_oled_display():
                     draw.text((99, 1), perc_text, font=font_st, fill=255)
                     draw.text((2, 1), current_time, font=font_time, fill=255)
                     draw_wifi_bars(draw, 70, 3, wifi_level)
-
-                    with STM32_INFO_LOCK:
-                        fk = STM32_INFO.get("flash_kb")
-                        v = STM32_INFO.get("variant")
-                        did = STM32_INFO.get("dev_id")
-
-                    with LAST_PROGRAM_VARIANT_LOCK:
-                        pv = LAST_PROGRAM_VARIANT
-
-                    tag = "??"
-                    if v == "TFTP":
-                        tag = "RET"
-                    elif v == "NORMAL":
-                        tag = "RC"
-
-                    s = ""
-                    if fk is not None and tag != "??":
-                        s = f"{tag} {int(fk)}K"
-                    elif did is not None:
-                        s = f"{tag} ID{did:03X}"
-                    else:
-                        s = f"{tag} ???"
-
-                    if pv:
-                        s = (s + " " + pv).strip()
-
-                    if s:
-                        draw.text((2, 13), s[:16], font=get_font(11), fill=255)
-
                 else:
                     ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
                     draw.text((0, 51), ip_display, font=font_big, fill=255)
@@ -1555,6 +1379,7 @@ def update_oled_display():
     finally:
         display_lock.release()
 
+
 def realtime_update_display():
     global need_update, last_oled_update_time
     while not stop_threads:
@@ -1571,6 +1396,7 @@ def realtime_update_display():
             need_update = False
         time.sleep(0.03)
 
+
 def shutdown_system():
     set_ui_text("배터리 부족", "시스템 종료 중...", pos=(10, 18), font_size=15)
     time.sleep(2)
@@ -1579,13 +1405,13 @@ def shutdown_system():
     except Exception:
         pass
 
+
 def execute_button_logic():
     global current_command_index, need_update
     global execute_is_down, execute_long_handled, execute_press_time
     global next_pressed_event
     global auto_flash_done_connection
     global next_long_handled, wifi_cancel_requested
-    global next_is_down, next_press_time
 
     while True:
         now = time.time()
@@ -1608,7 +1434,7 @@ def execute_button_logic():
                 execute_long_handled = True
                 if commands and (not is_executing):
                     item_type = command_types[current_command_index]
-                    if item_type in ("system", "script", "wifi", "bin_auto"):
+                    if item_type in ("system", "dir", "back", "script", "wifi", "bin"):
                         execute_command(current_command_index)
                         need_update = True
 
@@ -1638,7 +1464,7 @@ def execute_button_logic():
 
         if commands:
             if (
-                command_types[current_command_index] == "bin_auto"
+                command_types[current_command_index] == "bin"
                 and (not is_executing)
                 and cs
                 and (not auto_flash_done_connection)
@@ -1647,6 +1473,7 @@ def execute_button_logic():
                 auto_flash_done_connection = True
 
         time.sleep(0.03)
+
 
 init_ina219()
 
@@ -1666,6 +1493,7 @@ net_thread = threading.Thread(target=net_poll_thread, daemon=True)
 net_thread.start()
 
 need_update = True
+
 
 try:
     execute_button_logic()
