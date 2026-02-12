@@ -1129,7 +1129,7 @@ def execute_command(command_index):
     result = process.returncode
     if result == 0:
         set_ui_progress(80, "업데이트 성공!", pos=(7, 10), font_size=15)
-        time.sleep(10.0)
+        time.sleep(0.5)
         lock_memory_procedure()
     else:
         GPIO.output(LED_ERROR, True)
