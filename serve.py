@@ -9,10 +9,10 @@ from luma.core.interface.serial import i2c
 from luma.oled.device import sh1107
 from luma.core.render import canvas
 import subprocess
-from ina219 import INA219ㅁㄴㄹㅇ
+from ina219 import INA219
 import threading
 import re
-import wifi_portalㅁㄴㅇㄹ
+import wifi_portal
 
 VISUAL_X_OFFSET = 0
 display_lock = threading.Lock()
