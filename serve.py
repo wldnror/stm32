@@ -13,6 +13,7 @@ from ina219 import INA219
 import threading
 import re
 import wifi_portal
+from typing import Optional, Tuple
 
 VISUAL_X_OFFSET = 0
 display_lock = threading.Lock()
@@ -526,6 +527,87 @@ def draw_wifi_bars(draw, x, y, level):
 FIRMWARE_DIR = "/home/user/stm32/Program"
 OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
 
+GENERAL_DIRNAME = "1.일반"
+TFTP_DIRNAME = "TFTP"
+GENERAL_ROOT = os.path.join(FIRMWARE_DIR, GENERAL_DIRNAME)
+TFTP_ROOT = os.path.join(FIRMWARE_DIR, TFTP_DIRNAME)
+FLASH_KB_THRESHOLD = 300
+
+_detect_cache_lock = threading.Lock()
+_detect_cache = {"ts": 0.0, "flash_kb": None, "dev_id": None}
+
+def make_openocd_program_cmd(bin_path: str) -> str:
+    return (
+        "sudo openocd "
+        "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
+        "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+        f"-c \"program {bin_path} verify reset exit 0x08000000\""
+    )
+
+def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optional[int]]:
+    now = time.time()
+    with _detect_cache_lock:
+        if (_detect_cache["flash_kb"] is not None) and (now - _detect_cache["ts"] < 1.5):
+            return _detect_cache["dev_id"], _detect_cache["flash_kb"]
+
+    cmd = [
+        "sudo", "openocd",
+        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "init",
+        "-c", "reset halt",
+        "-c", "stm32f1x unlock 0",
+        "-c", "reset halt",
+        "-c", "mdw 0xE0042000 1",
+        "-c", "mdh 0x1FFFF7E0 1",
+        "-c", "shutdown",
+    ]
+
+    rc, out, err = run_capture(cmd, timeout=timeout)
+    text = (out or "") + "\n" + (err or "")
+
+    m_id = re.search(r"0xe0042000:\s+(0x[0-9a-fA-F]+)", text)
+    m_fs = re.search(r"0x1ffff7e0:\s+(0x[0-9a-fA-F]+)", text)
+    if (rc != 0) or (not m_id) or (not m_fs):
+        return None, None
+
+    try:
+        id_val = int(m_id.group(1), 16)
+        fs_val = int(m_fs.group(1), 16)
+        dev_id = id_val % 4096
+        flash_kb = fs_val
+
+        with _detect_cache_lock:
+            _detect_cache["ts"] = time.time()
+            _detect_cache["flash_kb"] = flash_kb
+            _detect_cache["dev_id"] = dev_id
+
+        return dev_id, flash_kb
+    except Exception:
+        return None, None
+
+def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]) -> Tuple[str, str]:
+    if flash_kb is None:
+        return selected_bin_path, "원본"
+
+    want_tftp = flash_kb > FLASH_KB_THRESHOLD
+    base_root = TFTP_ROOT if want_tftp else GENERAL_ROOT
+    chosen_kind = "TFTP" if want_tftp else "일반"
+
+    sp = os.path.abspath(selected_bin_path)
+    gas_dir = os.path.basename(os.path.dirname(sp))
+    fname = os.path.basename(sp)
+
+    target = os.path.join(base_root, gas_dir, fname)
+    if os.path.isfile(target):
+        return target, chosen_kind
+
+    alt = os.path.join(base_root, fname)
+    if os.path.isfile(alt):
+        return alt, chosen_kind
+
+    return selected_bin_path, "원본"
+
 
 def parse_order_and_name(name: str, is_dir: bool):
     raw = name if is_dir else os.path.splitext(name)[0]
@@ -552,13 +634,7 @@ def build_menu_for_dir(dir_path, is_root=False):
 
             elif fname.lower().endswith(".bin"):
                 order, display_name = parse_order_and_name(fname, is_dir=False)
-                openocd_cmd = (
-                    "sudo openocd "
-                    "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-                    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
-                    f"-c \"program {full_path} verify reset exit 0x08000000\""
-                )
-                entries.append((order, 1, display_name, "bin", openocd_cmd))
+                entries.append((order, 1, display_name, "bin", full_path))
 
     except FileNotFoundError:
         entries = []
@@ -577,10 +653,10 @@ def build_menu_for_dir(dir_path, is_root=False):
             types_local.append("dir")
             extras_local.append(extra)
         elif item_type == "bin":
-            commands_local.append(extra)
+            commands_local.append(None)
             names_local.append(display_name)
             types_local.append("bin")
-            extras_local.append(None)
+            extras_local.append(extra)
 
     if is_root:
         online = has_real_internet()
@@ -1099,6 +1175,29 @@ def execute_command(command_index):
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
+    selected_path = None
+    try:
+        selected_path = menu_extras[command_index]
+    except Exception:
+        selected_path = None
+
+    dev_id, flash_kb = detect_stm32_flash_kb_with_unlock(timeout=4.0)
+
+    if not selected_path:
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_text("BIN 경로", "없음", pos=(20, 12), font_size=15)
+        time.sleep(1.5)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        is_executing = False
+        is_command_executing = False
+        need_update = True
+        return
+
+    resolved_path, chosen_kind = resolve_target_bin_by_gas(selected_path, flash_kb)
+
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -1112,8 +1211,15 @@ def execute_command(command_index):
         need_update = True
         return
 
+    info_line = chosen_kind
+    if flash_kb is not None:
+        info_line = f"{chosen_kind} ({flash_kb}KB)"
+    set_ui_text("자동 선택", info_line, pos=(10, 0), font_size=13)
+    time.sleep(0.25)
+
     set_ui_progress(30, "업데이트 중...", pos=(12, 10), font_size=15)
-    process = subprocess.Popen(commands[command_index], shell=True)
+    openocd_cmd = make_openocd_program_cmd(resolved_path)
+    process = subprocess.Popen(openocd_cmd, shell=True)
 
     start_time = time.time()
     max_duration = 6
