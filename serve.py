@@ -13,7 +13,7 @@ from ina219 import INA219
 import threading
 import re
 import wifi_portal
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, List
 
 VISUAL_X_OFFSET = 0
 display_lock = threading.Lock()
@@ -533,15 +533,30 @@ GENERAL_ROOT = os.path.join(FIRMWARE_DIR, GENERAL_DIRNAME)
 TFTP_ROOT = os.path.join(FIRMWARE_DIR, TFTP_DIRNAME)
 FLASH_KB_THRESHOLD = 300
 
+GAS_OVERRIDES: Dict[str, Dict[str, List[str]]] = {
+    "HMDS": {
+        "general": ["2.HMDS/1.HMDS.bin", "2.HMDS/IR_HMDS.bin"],
+        "tftp": ["HMDS.bin"],
+    },
+    "ORG": {
+        "general": ["ORG.bin"],
+        "tftp": ["ORG.bin"],
+    },
+}
+
 _detect_cache_lock = threading.Lock()
 _detect_cache = {"ts": 0.0, "flash_kb": None, "dev_id": None}
 
+GAS_CATALOG_LOCK = threading.Lock()
+GAS_CATALOG: Dict[str, Dict[str, object]] = {}
+
 def make_openocd_program_cmd(bin_path: str) -> str:
+    p = bin_path.replace('"', '\\"')
     return (
         "sudo openocd "
         "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
         "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
-        f"-c \"program {bin_path} verify reset exit 0x08000000\""
+        f"-c \"program \\\"{p}\\\" verify reset exit 0x08000000\""
     )
 
 def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optional[int]]:
@@ -586,29 +601,6 @@ def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optio
     except Exception:
         return None, None
 
-def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]) -> Tuple[str, str]:
-    if flash_kb is None:
-        return selected_bin_path, "원본"
-
-    want_tftp = flash_kb > FLASH_KB_THRESHOLD
-    base_root = TFTP_ROOT if want_tftp else GENERAL_ROOT
-    chosen_kind = "TFTP" if want_tftp else "일반"
-
-    sp = os.path.abspath(selected_bin_path)
-    gas_dir = os.path.basename(os.path.dirname(sp))
-    fname = os.path.basename(sp)
-
-    target = os.path.join(base_root, gas_dir, fname)
-    if os.path.isfile(target):
-        return target, chosen_kind
-
-    alt = os.path.join(base_root, fname)
-    if os.path.isfile(alt):
-        return alt, chosen_kind
-
-    return selected_bin_path, "원본"
-
-
 def parse_order_and_name(name: str, is_dir: bool):
     raw = name if is_dir else os.path.splitext(name)[0]
     m = re.match(r"^(\d+)\.(.*)$", raw)
@@ -620,115 +612,187 @@ def parse_order_and_name(name: str, is_dir: bool):
         display = raw
     return order, display
 
+def _gas_key_from_dirname(dirname: str) -> Tuple[int, str]:
+    order, disp = parse_order_and_name(dirname, is_dir=True)
+    return order, disp
 
-def build_menu_for_dir(dir_path, is_root=False):
-    entries = []
+def _gas_key_from_filename(filename: str) -> Tuple[int, str]:
+    order, disp = parse_order_and_name(filename, is_dir=False)
+    return order, disp
+
+def _scan_bins_under(base_root: str) -> List[Tuple[str, str, int, str, str]]:
+    items = []
+    if not os.path.isdir(base_root):
+        return items
 
     try:
-        if is_root:
-            gas_dirs = {}
-            root_bins = {}
+        for name in os.listdir(base_root):
+            full = os.path.join(base_root, name)
+            if os.path.isfile(full) and name.lower().endswith(".bin"):
+                order, disp = _gas_key_from_filename(name)
+                gas_key = disp
+                items.append((gas_key, disp, order, full, "root"))
+            elif os.path.isdir(full):
+                d_order, d_disp = _gas_key_from_dirname(name)
+                gas_key = d_disp
+                try:
+                    for fn in os.listdir(full):
+                        fp = os.path.join(full, fn)
+                        if os.path.isfile(fp) and fn.lower().endswith(".bin"):
+                            items.append((gas_key, d_disp, d_order, fp, "dir"))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return items
 
-            for base_root in (GENERAL_ROOT, TFTP_ROOT):
-                if not os.path.isdir(base_root):
-                    continue
+def rebuild_gas_catalog():
+    cat: Dict[str, Dict[str, object]] = {}
 
-                for name in os.listdir(base_root):
-                    full = os.path.join(base_root, name)
+    general_items = _scan_bins_under(GENERAL_ROOT)
+    tftp_items = _scan_bins_under(TFTP_ROOT)
 
-                    if os.path.isdir(full):
-                        gas_dirs[name] = full
-                        continue
+    for gas_key, disp, order, path, _ in general_items:
+        d = cat.get(gas_key)
+        if d is None:
+            d = {"order": order, "disp": disp, "general": [], "tftp": []}
+            cat[gas_key] = d
+        if order < int(d["order"]):
+            d["order"] = order
+            d["disp"] = disp
+        d["general"].append(path)
 
-                    if name.lower().endswith(".bin"):
-                        root_bins[name] = full
+    for gas_key, disp, order, path, _ in tftp_items:
+        d = cat.get(gas_key)
+        if d is None:
+            d = {"order": order, "disp": disp, "general": [], "tftp": []}
+            cat[gas_key] = d
+        if order < int(d["order"]):
+            d["order"] = order
+            d["disp"] = disp
+        d["tftp"].append(path)
 
-            for dname in sorted(gas_dirs.keys()):
-                order, display_name = parse_order_and_name(dname, is_dir=True)
-                entries.append((order, 0, "▶ " + display_name, "dir", gas_dirs[dname]))
+    for k, v in GAS_OVERRIDES.items():
+        if k not in cat:
+            cat[k] = {"order": 9999, "disp": k, "general": [], "tftp": []}
+        if "general" in v:
+            cat[k]["general"] = [os.path.join(GENERAL_ROOT, p) for p in v["general"]]
+        if "tftp" in v:
+            cat[k]["tftp"] = [os.path.join(TFTP_ROOT, p) for p in v["tftp"]]
 
-            for bname in sorted(root_bins.keys()):
-                order, display_name = parse_order_and_name(bname, is_dir=False)
-                entries.append((order, 1, display_name, "bin", root_bins[bname]))
+    for k, d in cat.items():
+        gg = []
+        tt = []
+        for p in d.get("general", []):
+            ap = os.path.abspath(str(p))
+            if ap not in gg:
+                gg.append(ap)
+        for p in d.get("tftp", []):
+            ap = os.path.abspath(str(p))
+            if ap not in tt:
+                tt.append(ap)
+        d["general"] = gg
+        d["tftp"] = tt
 
-        else:
-            for fname in os.listdir(dir_path):
-                full_path = os.path.join(dir_path, fname)
+    with GAS_CATALOG_LOCK:
+        GAS_CATALOG.clear()
+        GAS_CATALOG.update(cat)
 
-                if os.path.isdir(full_path):
-                    order, display_name = parse_order_and_name(fname, is_dir=True)
-                    entries.append((order, 0, "▶ " + display_name, "dir", full_path))
+def _first_existing(paths: List[str]) -> Optional[str]:
+    for p in paths:
+        try:
+            if p and os.path.isfile(p):
+                return p
+        except Exception:
+            continue
+    return None
 
-                elif fname.lower().endswith(".bin"):
-                    order, display_name = parse_order_and_name(fname, is_dir=False)
-                    entries.append((order, 1, display_name, "bin", full_path))
+def resolve_bin_for_gas(gas_key: str, flash_kb: Optional[int]) -> Tuple[Optional[str], str]:
+    want_tftp = (flash_kb is not None) and (flash_kb > FLASH_KB_THRESHOLD)
+    chosen_kind = "TFTP" if want_tftp else "일반"
 
-    except FileNotFoundError:
-        entries = []
+    with GAS_CATALOG_LOCK:
+        d = GAS_CATALOG.get(gas_key)
 
-    entries.sort(key=lambda x: (x[0], x[1], x[2]))
+    if not d:
+        return None, chosen_kind
+
+    paths = d.get("tftp", []) if want_tftp else d.get("general", [])
+    p = _first_existing(list(paths))
+    if p:
+        return p, chosen_kind
+
+    fallback = d.get("general", []) if want_tftp else d.get("tftp", [])
+    p2 = _first_existing(list(fallback))
+    if p2:
+        return p2, chosen_kind
+
+    return None, chosen_kind
+
+def build_root_menu():
+    rebuild_gas_catalog()
+
+    entries = []
+    with GAS_CATALOG_LOCK:
+        for gas_key, d in GAS_CATALOG.items():
+            order = int(d.get("order", 9999))
+            disp = str(d.get("disp", gas_key))
+            has_any = False
+            try:
+                has_any = (len(d.get("general", [])) > 0) or (len(d.get("tftp", [])) > 0)
+            except Exception:
+                has_any = False
+            if not has_any:
+                continue
+            entries.append((order, disp, gas_key))
+
+    entries.sort(key=lambda x: (x[0], x[1]))
 
     commands_local = []
     names_local = []
     types_local = []
     extras_local = []
 
-    for order, type_pri, display_name, item_type, extra in entries:
-        if item_type == "dir":
-            commands_local.append(None)
-            names_local.append(display_name)
-            types_local.append("dir")
-            extras_local.append(extra)
-        elif item_type == "bin":
-            commands_local.append(None)
-            names_local.append(display_name)
-            types_local.append("bin")
-            extras_local.append(extra)
-
-    if is_root:
-        online = has_real_internet()
-
-        if online:
-            commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
-            names_local.append("FW 추출(OUT)")
-            types_local.append("script")
-            extras_local.append(None)
-
-            commands_local.append("git_pull")
-            names_local.append("시스템 업데이트")
-            types_local.append("system")
-            extras_local.append(None)
-
-        commands_local.append("wifi_setup")
-        names_local.append("Wi-Fi 설정")
-        types_local.append("wifi")
-        extras_local.append(None)
-
-    else:
+    for order, disp, gas_key in entries:
         commands_local.append(None)
-        names_local.append("◀ 이전으로")
-        types_local.append("back")
+        names_local.append(disp)
+        types_local.append("gas")
+        extras_local.append(gas_key)
+
+    online = has_real_internet()
+    if online:
+        commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
+        names_local.append("FW 추출(OUT)")
+        types_local.append("script")
         extras_local.append(None)
+
+        commands_local.append("git_pull")
+        names_local.append("시스템 업데이트")
+        types_local.append("system")
+        extras_local.append(None)
+
+    commands_local.append("wifi_setup")
+    names_local.append("Wi-Fi 설정")
+    types_local.append("wifi")
+    extras_local.append(None)
 
     return {
-        "dir": dir_path,
+        "dir": FIRMWARE_DIR,
         "commands": commands_local,
         "names": names_local,
         "types": types_local,
         "extras": extras_local,
     }
 
-
 def refresh_root_menu(reset_index=False):
     global current_menu, commands, command_names, command_types, menu_extras, current_command_index
-    current_menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
+    current_menu = build_root_menu()
     commands = current_menu["commands"]
     command_names = current_menu["names"]
     command_types = current_menu["types"]
     menu_extras = current_menu["extras"]
     if reset_index or (current_command_index >= len(commands)):
         current_command_index = 0
-
 
 refresh_root_menu(reset_index=True)
 
@@ -1078,7 +1142,7 @@ def wifi_worker_thread():
 def execute_command(command_index):
     global is_executing, is_command_executing
     global current_menu, commands, command_names, command_types, menu_extras
-    global current_command_index, menu_stack, need_update
+    global current_command_index, need_update
     global connection_success, connection_failed_since_last_success
 
     item_type = command_types[command_index]
@@ -1091,35 +1155,6 @@ def execute_command(command_index):
     is_command_executing = True
 
     if not commands:
-        is_executing = False
-        is_command_executing = False
-        return
-
-    if item_type == "dir":
-        subdir = menu_extras[command_index]
-        if subdir and os.path.isdir(subdir):
-            menu_stack.append((current_menu, current_command_index))
-            current_menu = build_menu_for_dir(subdir, is_root=False)
-            commands = current_menu["commands"]
-            command_names = current_menu["names"]
-            command_types = current_menu["types"]
-            menu_extras = current_menu["extras"]
-            current_command_index = 0
-            need_update = True
-        is_executing = False
-        is_command_executing = False
-        return
-
-    if item_type == "back":
-        if menu_stack:
-            prev_menu, prev_index = menu_stack.pop()
-            current_menu = prev_menu
-            commands = current_menu["commands"]
-            command_names = current_menu["names"]
-            command_types = current_menu["types"]
-            menu_extras = current_menu["extras"]
-            current_command_index = prev_index if (0 <= prev_index < len(commands)) else 0
-            need_update = True
         is_executing = False
         is_command_executing = False
         return
@@ -1198,22 +1233,25 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
+    if item_type != "gas":
+        is_executing = False
+        is_command_executing = False
+        return
+
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
-    selected_path = None
+    gas_key = None
     try:
-        selected_path = menu_extras[command_index]
+        gas_key = menu_extras[command_index]
     except Exception:
-        selected_path = None
+        gas_key = None
 
-    dev_id, flash_kb = detect_stm32_flash_kb_with_unlock(timeout=4.0)
-
-    if not selected_path:
+    if not gas_key:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        set_ui_text("BIN 경로", "없음", pos=(20, 12), font_size=15)
+        set_ui_text("가스 선택", "없음", pos=(20, 12), font_size=15)
         time.sleep(1.5)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
@@ -1223,7 +1261,23 @@ def execute_command(command_index):
         need_update = True
         return
 
-    resolved_path, chosen_kind = resolve_target_bin_by_gas(selected_path, flash_kb)
+    kill_openocd()
+    dev_id, flash_kb = detect_stm32_flash_kb_with_unlock(timeout=4.0)
+
+    resolved_path, chosen_kind = resolve_bin_for_gas(str(gas_key), flash_kb)
+
+    if not resolved_path:
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_text("BIN 없음", str(gas_key)[:16], pos=(10, 18), font_size=15)
+        time.sleep(1.6)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        is_executing = False
+        is_command_executing = False
+        need_update = True
+        return
 
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
@@ -1245,6 +1299,7 @@ def execute_command(command_index):
     time.sleep(0.25)
 
     set_ui_progress(30, "업데이트 중...", pos=(12, 10), font_size=15)
+
     openocd_cmd = make_openocd_program_cmd(resolved_path)
     process = subprocess.Popen(openocd_cmd, shell=True)
 
@@ -1275,6 +1330,7 @@ def execute_command(command_index):
     GPIO.output(LED_ERROR1, False)
 
     clear_ui_override()
+    refresh_root_menu(reset_index=False)
     need_update = True
     is_executing = False
     is_command_executing = False
@@ -1567,7 +1623,7 @@ def execute_button_logic():
                 execute_long_handled = True
                 if commands and (not is_executing):
                     item_type = command_types[current_command_index]
-                    if item_type in ("system", "dir", "back", "script", "wifi", "bin"):
+                    if item_type in ("system", "script", "wifi", "gas"):
                         execute_command(current_command_index)
                         need_update = True
 
@@ -1597,7 +1653,7 @@ def execute_button_logic():
 
         if commands:
             if (
-                command_types[current_command_index] == "bin"
+                command_types[current_command_index] == "gas"
                 and (not is_executing)
                 and cs
                 and (not auto_flash_done_connection)
