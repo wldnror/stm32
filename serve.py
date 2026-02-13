@@ -824,7 +824,6 @@ def git_pull():
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
 
-
 def unlock_memory():
     set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
 
@@ -852,7 +851,6 @@ def unlock_memory():
     need_update = True
     return False
 
-
 def restart_script():
     set_ui_progress(25, "재시작 중", pos=(20, 10), font_size=15)
 
@@ -861,7 +859,6 @@ def restart_script():
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
     threading.Thread(target=restart, daemon=True).start()
-
 
 def lock_memory_procedure():
     global need_update
@@ -901,12 +898,10 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR1, False)
         need_update = True
 
-
 def request_wifi_setup():
     global wifi_action_requested
     with wifi_action_lock:
         wifi_action_requested = True
-
 
 def prepare_for_ap_mode():
     global last_good_wifi_profile
@@ -921,7 +916,6 @@ def prepare_for_ap_mode():
         nm_disconnect_wlan0()
         nm_set_managed(False)
         time.sleep(0.3)
-
 
 def restore_after_ap_mode(timeout=25):
     global last_good_wifi_profile
@@ -961,7 +955,6 @@ def restore_after_ap_mode(timeout=25):
     wifi_stage_clear()
     return ok
 
-
 def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     wifi_stage_set(10, "연결 준비", "AP 종료")
     try:
@@ -996,7 +989,6 @@ def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     time.sleep(0.6)
     wifi_stage_clear()
     return ok2
-
 
 def _portal_loop_until_connected_or_cancel():
     global wifi_cancel_requested
@@ -1040,7 +1032,6 @@ def _portal_loop_until_connected_or_cancel():
             return False
 
         time.sleep(0.2)
-
 
 def wifi_worker_thread():
     global wifi_action_requested, wifi_action_running
@@ -1108,7 +1099,6 @@ def wifi_worker_thread():
                     wifi_action_running = False
 
         time.sleep(0.05)
-
 
 def execute_command(command_index):
     global is_executing, is_command_executing
@@ -1314,7 +1304,6 @@ def execute_command(command_index):
     is_executing = False
     is_command_executing = False
 
-
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1325,7 +1314,6 @@ def get_ip_address():
         return ip
     except Exception:
         return "0.0.0.0"
-
 
 def get_wifi_level():
     try:
@@ -1350,7 +1338,6 @@ def get_wifi_level():
     except Exception:
         return 0
 
-
 def net_poll_thread():
     global cached_ip, cached_wifi_level, cached_online, last_menu_online, need_update
     while not stop_threads:
@@ -1366,7 +1353,6 @@ def net_poll_thread():
             need_update = True
 
         time.sleep(1.5)
-
 
 def _draw_override(draw):
     with ui_override_lock:
@@ -1401,7 +1387,6 @@ def _draw_override(draw):
 
     return False
 
-
 def get_ap_station_count():
     try:
         r = subprocess.run(["iw", "dev", "wlan0", "station", "dump"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.7)
@@ -1410,7 +1395,6 @@ def get_ap_station_count():
         return sum(1 for line in (r.stdout or "").splitlines() if line.strip().startswith("Station "))
     except Exception:
         return 0
-
 
 def ap_client_tick(wifi_running: bool):
     now = time.time()
@@ -1433,9 +1417,7 @@ def ap_client_tick(wifi_running: bool):
         if cnt > 0 and prev == 0:
             ap_state["flash_until"] = now + 1.3
 
-
 last_oled_update_time = 0.0
-
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
@@ -1547,7 +1529,6 @@ def update_oled_display():
     finally:
         display_lock.release()
 
-
 def realtime_update_display():
     global need_update, last_oled_update_time
     while not stop_threads:
@@ -1564,7 +1545,6 @@ def realtime_update_display():
             need_update = False
         time.sleep(0.03)
 
-
 def shutdown_system():
     set_ui_text("배터리 부족", "시스템 종료 중...", pos=(10, 18), font_size=15)
     time.sleep(2)
@@ -1572,7 +1552,6 @@ def shutdown_system():
         os.system("sudo shutdown -h now")
     except Exception:
         pass
-
 
 def execute_button_logic():
     global current_command_index, need_update
