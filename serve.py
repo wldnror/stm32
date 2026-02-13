@@ -577,19 +577,20 @@ def _is_ir_variant(selected_bin_path: str) -> bool:
     fn = os.path.basename(selected_bin_path).upper()
     return fn.startswith("IR_") or fn.startswith("IR")
 
+def _key_from_filename(path_or_name: str) -> str:
+    base = os.path.basename(path_or_name or "")
+    m = re.match(r"^\s*\d+\.\s*([^.]+)\.bin\s*$", base, re.IGNORECASE)
+    if m:
+        return (m.group(1) or "").strip()
+    stem = os.path.splitext(base)[0]
+    m2 = re.match(r"^\s*\d+\.\s*(.+)\s*$", stem)
+    if m2:
+        return (m2.group(1) or "").strip()
+    return _strip_order_prefix(stem).strip()
+
 def _gas_key_from_selected_path(selected_bin_path: str) -> str:
     sp = os.path.abspath(selected_bin_path)
-    parent = os.path.basename(os.path.dirname(sp))
-    stem = os.path.splitext(os.path.basename(sp))[0]
-
-    if _canon(parent) in (_canon(GENERAL_DIRNAME), _canon(TFTP_DIRNAME)):
-        return _strip_order_prefix(stem).strip()
-
-    gas = _strip_order_prefix(parent).strip()
-    if gas:
-        return gas
-
-    return _strip_order_prefix(stem).strip()
+    return _key_from_filename(sp)
 
 def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]) -> Tuple[str, str]:
     if flash_kb is None:
