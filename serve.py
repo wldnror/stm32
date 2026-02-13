@@ -1245,6 +1245,11 @@ def execute_command(command_index):
 
     dev_id, flash_kb = detect_stm32_flash_kb_with_unlock(timeout=4.0)
 
+    logi(f"selected_path={selected_path}")
+    logi(f"flash_kb={flash_kb}, dev_id={dev_id}")
+    logi(f"TFTP_ROOT={TFTP_ROOT}, exists={os.path.isdir(TFTP_ROOT)}")
+    logi(f"GENERAL_ROOT={GENERAL_ROOT}, exists={os.path.isdir(GENERAL_ROOT)}")
+
     if not selected_path:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -1259,6 +1264,7 @@ def execute_command(command_index):
         return
 
     resolved_path, chosen_kind = resolve_target_bin_by_gas(selected_path, flash_kb)
+    logi(f"chosen_kind={chosen_kind}, resolved_path={resolved_path}")
 
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
