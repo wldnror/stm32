@@ -627,18 +627,29 @@ def build_menu_for_dir(dir_path, is_root=False):
     try:
         if is_root:
             gas_dirs = {}
+            root_bins = {}
+
             for base_root in (GENERAL_ROOT, TFTP_ROOT):
                 if not os.path.isdir(base_root):
                     continue
-                for d in os.listdir(base_root):
-                    full_d = os.path.join(base_root, d)
-                    if os.path.isdir(full_d):
-                        gas_dirs[d] = full_d
+
+                for name in os.listdir(base_root):
+                    full = os.path.join(base_root, name)
+
+                    if os.path.isdir(full):
+                        gas_dirs[name] = full
+                        continue
+
+                    if name.lower().endswith(".bin"):
+                        root_bins[name] = full
 
             for dname in sorted(gas_dirs.keys()):
                 order, display_name = parse_order_and_name(dname, is_dir=True)
-                display_name = "▶ " + display_name
-                entries.append((order, 0, display_name, "dir", gas_dirs[dname]))
+                entries.append((order, 0, "▶ " + display_name, "dir", gas_dirs[dname]))
+
+            for bname in sorted(root_bins.keys()):
+                order, display_name = parse_order_and_name(bname, is_dir=False)
+                entries.append((order, 1, display_name, "bin", root_bins[bname]))
 
         else:
             for fname in os.listdir(dir_path):
@@ -646,8 +657,7 @@ def build_menu_for_dir(dir_path, is_root=False):
 
                 if os.path.isdir(full_path):
                     order, display_name = parse_order_and_name(fname, is_dir=True)
-                    display_name = "▶ " + display_name
-                    entries.append((order, 0, display_name, "dir", full_path))
+                    entries.append((order, 0, "▶ " + display_name, "dir", full_path))
 
                 elif fname.lower().endswith(".bin"):
                     order, display_name = parse_order_and_name(fname, is_dir=False)
