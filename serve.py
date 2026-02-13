@@ -155,8 +155,10 @@ last_good_wifi_profile = None
 cached_online = False
 last_menu_online = None
 
+
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
 def run_quiet(cmd, timeout=3.0, shell=False):
     try:
@@ -165,12 +167,14 @@ def run_quiet(cmd, timeout=3.0, shell=False):
     except Exception:
         return False
 
+
 def run_capture(cmd, timeout=4.0, shell=False):
     try:
         r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout, shell=shell)
         return r.returncode, (r.stdout or ""), (r.stderr or "")
     except Exception as e:
         return 999, "", str(e)
+
 
 def set_ui_progress(percent, message, pos=(0, 0), font_size=15):
     with ui_override_lock:
@@ -182,6 +186,7 @@ def set_ui_progress(percent, message, pos=(0, 0), font_size=15):
         ui_override["font_size"] = font_size
         ui_override["line2"] = ""
 
+
 def set_ui_text(line1, line2="", pos=(0, 0), font_size=15):
     with ui_override_lock:
         ui_override["active"] = True
@@ -192,6 +197,7 @@ def set_ui_text(line1, line2="", pos=(0, 0), font_size=15):
         ui_override["font_size"] = font_size
         ui_override["percent"] = 0
 
+
 def clear_ui_override():
     with ui_override_lock:
         ui_override["active"] = False
@@ -199,6 +205,7 @@ def clear_ui_override():
         ui_override["message"] = ""
         ui_override["line2"] = ""
         ui_override["percent"] = 0
+
 
 def has_real_internet(timeout=1.5):
     try:
@@ -212,20 +219,25 @@ def has_real_internet(timeout=1.5):
     except Exception:
         return False
 
+
 def nm_is_active():
     rc, out, _ = run_capture(["systemctl", "is-active", "NetworkManager"], timeout=2.0)
     return (rc == 0) and ("active" in out.strip())
+
 
 def nm_restart():
     run_quiet(["sudo", "systemctl", "enable", "--now", "NetworkManager"], timeout=6.0)
     run_quiet(["sudo", "systemctl", "restart", "NetworkManager"], timeout=6.0)
 
+
 def nm_set_managed(managed: bool):
     v = "yes" if managed else "no"
     run_quiet(["sudo", "nmcli", "dev", "set", "wlan0", "managed", v], timeout=4.0)
 
+
 def nm_disconnect_wlan0():
     run_quiet(["sudo", "nmcli", "dev", "disconnect", "wlan0"], timeout=4.0)
+
 
 def nm_get_active_wifi_profile():
     rc, out, _ = run_capture(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"], timeout=3.0)
@@ -239,6 +251,7 @@ def nm_get_active_wifi_profile():
                 return name
     return None
 
+
 def nm_autoconnect(timeout=25):
     t0 = time.time()
     while time.time() - t0 < timeout:
@@ -246,6 +259,7 @@ def nm_autoconnect(timeout=25):
             return True
         time.sleep(0.7)
     return has_real_internet()
+
 
 def nm_connect(ssid: str, psk: str, timeout=30):
     run_quiet(["sudo", "nmcli", "dev", "wifi", "rescan", "ifname", "wlan0"], timeout=6.0)
@@ -262,6 +276,7 @@ def nm_connect(ssid: str, psk: str, timeout=30):
     )
     return rc2 == 0
 
+
 def kill_portal_tmp_procs():
     cmd = r"""sudo bash -lc '
 pids=$(pgrep -a hostapd | awk "/\/tmp\/hostapd\.conf/{print \$1}" | xargs)
@@ -271,12 +286,14 @@ pids=$(pgrep -a dnsmasq | awk "/\/tmp\/dnsmasq\.conf/{print \$1}" | xargs)
 '"""
     run_quiet(cmd, timeout=6.0, shell=True)
 
+
 def wlan0_soft_reset():
     run_quiet(["sudo", "ip", "addr", "flush", "dev", "wlan0"], timeout=3.0)
     run_quiet(["sudo", "ip", "link", "set", "wlan0", "down"], timeout=3.0)
     time.sleep(1)
     run_quiet(["sudo", "ip", "link", "set", "wlan0", "up"], timeout=3.0)
     time.sleep(1)
+
 
 def init_ina219():
     global ina
@@ -285,6 +302,7 @@ def init_ina219():
         ina.configure()
     except Exception:
         ina = None
+
 
 def read_ina219_percentage():
     global ina
@@ -300,11 +318,13 @@ def read_ina219_percentage():
     except Exception:
         return -1
 
+
 def battery_monitor_thread():
     global battery_percentage
     while not stop_threads:
         battery_percentage = read_ina219_percentage()
         time.sleep(2)
+
 
 def button_next_edge(channel):
     global last_time_button_next_pressed
@@ -327,6 +347,7 @@ def button_next_edge(channel):
         next_is_down = False
         next_press_time = None
 
+
 def button_execute_callback(channel):
     global last_time_button_execute_pressed, execute_press_time, execute_is_down, execute_long_handled
     now = time.time()
@@ -337,6 +358,7 @@ def button_execute_callback(channel):
     execute_is_down = True
     execute_long_handled = False
 
+
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
@@ -346,6 +368,7 @@ GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
+
 
 def check_stm32_connection():
     global connection_success, connection_failed_since_last_success, is_command_executing
@@ -392,6 +415,7 @@ def check_stm32_connection():
             connection_success = False
         return False
 
+
 def stm32_poll_thread():
     global last_stm32_check_time, auto_flash_done_connection
     while not stop_threads:
@@ -423,6 +447,7 @@ def stm32_poll_thread():
         if cur_state and (not prev_state):
             auto_flash_done_connection = False
 
+
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
 
@@ -439,10 +464,12 @@ def get_font(size: int):
         font_cache[size] = f
     return f
 
+
 low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+
 
 def select_battery_icon(percentage):
     if percentage < 20:
@@ -452,6 +479,7 @@ def select_battery_icon(percentage):
     if percentage < 100:
         return high_battery_icon
     return full_battery_icon
+
 
 def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_size, min_size=10):
     size = start_size
@@ -479,6 +507,7 @@ def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_si
     except TypeError:
         draw.text((center_x, center_y), text, font=f, fill=255)
 
+
 def draw_wifi_bars(draw, x, y, level):
     bar_w = 3
     gap = 2
@@ -494,17 +523,21 @@ def draw_wifi_bars(draw, x, y, level):
         else:
             draw.rectangle([xx, y + max_h - 1, xx + bar_w, y + max_h], fill=255)
 
+
 FIRMWARE_DIR = "/home/user/stm32/Program"
 OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
 
 GENERAL_DIRNAME = "1.일반"
-TFTP_DIRNAME = "2.TFTP"
+TFTP_DIRNAME = "2.TFTP"   # ✅ 네 실제 폴더명에 맞춤
 GENERAL_ROOT = os.path.join(FIRMWARE_DIR, GENERAL_DIRNAME)
 TFTP_ROOT = os.path.join(FIRMWARE_DIR, TFTP_DIRNAME)
+
+# 512KB면 무조건 TFTP로 보내고 싶으면 300 유지 OK
 FLASH_KB_THRESHOLD = 300
 
 _detect_cache_lock = threading.Lock()
 _detect_cache = {"ts": 0.0, "flash_kb": None, "dev_id": None}
+
 
 def make_openocd_program_cmd(bin_path: str) -> str:
     return (
@@ -514,34 +547,6 @@ def make_openocd_program_cmd(bin_path: str) -> str:
         f"-c \"program {bin_path} verify reset exit 0x08000000\""
     )
 
-def _strip_order_prefix(name: str) -> str:
-    s = name.strip()
-    m = re.match(r"^\d+\.(.*)$", s)
-    if m:
-        s = (m.group(1) or "").strip()
-    return s
-
-def _gas_key_from_selected_path(selected_bin_path: str) -> str:
-    sp = os.path.abspath(selected_bin_path)
-    parent = os.path.basename(os.path.dirname(sp))
-    parent2 = os.path.basename(os.path.dirname(os.path.dirname(sp)))
-    p = _strip_order_prefix(parent)
-    if p in (GENERAL_DIRNAME, TFTP_DIRNAME) or (p == "" and parent2):
-        p = _strip_order_prefix(parent2)
-    p = p.strip()
-    if not p:
-        fn = os.path.splitext(os.path.basename(sp))[0]
-        p = _strip_order_prefix(fn)
-    return p
-
-def _is_ir_variant(selected_bin_path: str) -> bool:
-    fn = os.path.basename(selected_bin_path).upper()
-    if fn.startswith("IR_"):
-        return True
-    if "IR" in fn and fn.endswith(".BIN"):
-        if fn.startswith("IR") or "_IR" in fn:
-            return True
-    return False
 
 def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optional[int]]:
     now = time.time()
@@ -569,8 +574,6 @@ def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optio
     m_fs = re.search(r"0x1FFFF7E0:\s+(0x[0-9a-fA-F]+)", text, re.IGNORECASE)
 
     if (rc != 0) or (not m_id) or (not m_fs):
-        # 디버그가 필요하면 아래 한 줄만 잠깐 켜서 출력 확인 가능
-        # open("/tmp/flash_detect.log","w").write(text)
         return None, None
 
     try:
@@ -588,7 +591,41 @@ def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optio
     except Exception:
         return None, None
 
+
+def _strip_order_prefix(name: str) -> str:
+    s = (name or "").strip()
+    m = re.match(r"^\d+\.(.*)$", s)
+    if m:
+        s = (m.group(1) or "").strip()
+    return s
+
+
+def _is_ir_variant(selected_bin_path: str) -> bool:
+    fn = os.path.basename(selected_bin_path).upper()
+    if fn.startswith("IR_"):
+        return True
+    if fn.endswith(".BIN"):
+        if fn.startswith("IR") or "_IR" in fn:
+            return True
+    return False
+
+
+# ✅ 핵심 수정: 루트 BIN이면 gas_key를 "폴더명(일반/TFTP)"가 아니라 "파일명(ORG)"에서 뽑는다
+def _gas_key_from_selected_path(selected_bin_path: str) -> str:
+    sp = os.path.abspath(selected_bin_path)
+    parent = os.path.basename(os.path.dirname(sp))          # 예: "1.일반" or "2.HMDS"
+    fname_stem = os.path.splitext(os.path.basename(sp))[0]  # 예: "ORG" or "1.HMDS"
+
+    # 루트 BIN(Program/1.일반/ORG.bin, Program/2.TFTP/ORG.bin)
+    if parent in (GENERAL_DIRNAME, TFTP_DIRNAME):
+        return _strip_order_prefix(fname_stem)
+
+    # 서브폴더 BIN(Program/1.일반/2.HMDS/1.HMDS.bin)
+    return _strip_order_prefix(parent)
+
+
 def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]) -> Tuple[str, str]:
+    # flash_kb 못 읽으면 원래 선택된 파일 그대로
     if flash_kb is None:
         return selected_bin_path, "원본"
 
@@ -606,45 +643,48 @@ def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]) -
     if m:
         fname_no_order = m.group(1)
 
+    parent = os.path.basename(os.path.dirname(sp))
+    parent_stripped = _strip_order_prefix(parent)
+
     candidates = []
 
-    if want_tftp:
-        if is_ir:
-            candidates += [
-                os.path.join(base_root, f"IR_{gas_key}.bin"),
-                os.path.join(base_root, f"IR{gas_key}.bin"),
-                os.path.join(base_root, f"{gas_key}_IR.bin"),
-                os.path.join(base_root, f"{gas_key}.bin"),
-            ]
-        else:
-            candidates += [
-                os.path.join(base_root, f"{gas_key}.bin"),
-                os.path.join(base_root, fname_no_order),
-                os.path.join(base_root, fname),
-            ]
+    # 1) 루트에 있는 BIN은 먼저 루트에서 정확히 매칭 (ORG.bin -> Program/2.TFTP/ORG.bin)
+    candidates += [
+        os.path.join(base_root, f"{gas_key}.bin"),
+        os.path.join(base_root, fname_no_order),
+        os.path.join(base_root, fname),
+    ]
 
-        parent = os.path.basename(os.path.dirname(sp))
-        parent_stripped = _strip_order_prefix(parent)
-        if parent and parent_stripped:
+    # 2) IR 변형이면 IR 파일명 우선
+    if is_ir:
+        candidates = [
+            os.path.join(base_root, f"IR_{gas_key}.bin"),
+            os.path.join(base_root, f"IR{gas_key}.bin"),
+            os.path.join(base_root, f"{gas_key}_IR.bin"),
+            os.path.join(base_root, f"{gas_key}.bin"),
+        ] + candidates
+
+    # 3) 서브폴더 구조가 있다면 (예: 2.HMDS/1.HMDS.bin) 그 폴더도 시도
+    if parent not in (GENERAL_DIRNAME, TFTP_DIRNAME):
+        # 같은 폴더명을 그대로 쓰는 구조
+        candidates += [
+            os.path.join(base_root, parent, fname),
+            os.path.join(base_root, parent, fname_no_order),
+        ]
+        # 번호 제거한 폴더명 구조도 시도
+        if parent_stripped and parent_stripped != parent:
             candidates += [
-                os.path.join(base_root, parent, fname),
-                os.path.join(base_root, parent, fname_no_order),
                 os.path.join(base_root, parent_stripped, fname),
                 os.path.join(base_root, parent_stripped, fname_no_order),
             ]
-
-    else:
-        candidates += [
-            os.path.join(base_root, os.path.basename(os.path.dirname(sp)), fname),
-            os.path.join(base_root, fname),
-            sp,
-        ]
 
     for c in candidates:
         if c and os.path.isfile(c):
             return c, chosen_kind
 
+    # 못 찾으면 원본
     return selected_bin_path, "원본"
+
 
 def parse_order_and_name(name: str, is_dir: bool):
     raw = name if is_dir else os.path.splitext(name)[0]
@@ -656,6 +696,7 @@ def parse_order_and_name(name: str, is_dir: bool):
         order = 9999
         display = raw
     return order, display
+
 
 def build_menu_for_dir(dir_path, is_root=False):
     entries = []
@@ -677,7 +718,11 @@ def build_menu_for_dir(dir_path, is_root=False):
                         continue
 
                     if name.lower().endswith(".bin"):
-                        root_bins[name] = full
+                        # 둘 다 존재하면 "일반 우선" 또는 "TFTP 우선"을 정해야 함.
+                        # 여기선 화면에 하나만 보이게 하되, 실제 플래시는 자동선택이 하므로 어느 쪽이든 OK.
+                        # 단, 중복이면 일반을 먼저 넣고 TFTP가 덮어쓰지 않게 함.
+                        if name not in root_bins:
+                            root_bins[name] = full
 
             for dname in sorted(gas_dirs.keys()):
                 order, display_name = parse_order_and_name(dname, is_dir=True)
@@ -754,6 +799,7 @@ def build_menu_for_dir(dir_path, is_root=False):
         "extras": extras_local,
     }
 
+
 def refresh_root_menu(reset_index=False):
     global current_menu, commands, command_names, command_types, menu_extras, current_command_index
     current_menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
@@ -764,7 +810,9 @@ def refresh_root_menu(reset_index=False):
     if reset_index or (current_command_index >= len(commands)):
         current_command_index = 0
 
+
 refresh_root_menu(reset_index=True)
+
 
 def git_pull():
     shell_script_path = "/home/user/stm32/git-pull.sh"
@@ -822,6 +870,7 @@ def git_pull():
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
 
+
 def unlock_memory():
     set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
 
@@ -849,6 +898,7 @@ def unlock_memory():
     need_update = True
     return False
 
+
 def restart_script():
     set_ui_progress(25, "재시작 중", pos=(20, 10), font_size=15)
 
@@ -857,6 +907,7 @@ def restart_script():
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
     threading.Thread(target=restart, daemon=True).start()
+
 
 def lock_memory_procedure():
     global need_update
@@ -896,10 +947,12 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR1, False)
         need_update = True
 
+
 def request_wifi_setup():
     global wifi_action_requested
     with wifi_action_lock:
         wifi_action_requested = True
+
 
 def prepare_for_ap_mode():
     global last_good_wifi_profile
@@ -914,6 +967,7 @@ def prepare_for_ap_mode():
         nm_disconnect_wlan0()
         nm_set_managed(False)
         time.sleep(0.3)
+
 
 def restore_after_ap_mode(timeout=25):
     global last_good_wifi_profile
@@ -953,6 +1007,7 @@ def restore_after_ap_mode(timeout=25):
     wifi_stage_clear()
     return ok
 
+
 def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     wifi_stage_set(10, "연결 준비", "AP 종료")
     try:
@@ -987,6 +1042,7 @@ def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     time.sleep(0.6)
     wifi_stage_clear()
     return ok2
+
 
 def _portal_loop_until_connected_or_cancel():
     global wifi_cancel_requested
@@ -1030,6 +1086,7 @@ def _portal_loop_until_connected_or_cancel():
             return False
 
         time.sleep(0.2)
+
 
 def wifi_worker_thread():
     global wifi_action_requested, wifi_action_running
@@ -1097,6 +1154,7 @@ def wifi_worker_thread():
                     wifi_action_running = False
 
         time.sleep(0.05)
+
 
 def execute_command(command_index):
     global is_executing, is_command_executing
@@ -1302,6 +1360,7 @@ def execute_command(command_index):
     is_executing = False
     is_command_executing = False
 
+
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1312,6 +1371,7 @@ def get_ip_address():
         return ip
     except Exception:
         return "0.0.0.0"
+
 
 def get_wifi_level():
     try:
@@ -1336,6 +1396,7 @@ def get_wifi_level():
     except Exception:
         return 0
 
+
 def net_poll_thread():
     global cached_ip, cached_wifi_level, cached_online, last_menu_online, need_update
     while not stop_threads:
@@ -1351,6 +1412,7 @@ def net_poll_thread():
             need_update = True
 
         time.sleep(1.5)
+
 
 def _draw_override(draw):
     with ui_override_lock:
@@ -1385,6 +1447,7 @@ def _draw_override(draw):
 
     return False
 
+
 def get_ap_station_count():
     try:
         r = subprocess.run(["iw", "dev", "wlan0", "station", "dump"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.7)
@@ -1393,6 +1456,7 @@ def get_ap_station_count():
         return sum(1 for line in (r.stdout or "").splitlines() if line.strip().startswith("Station "))
     except Exception:
         return 0
+
 
 def ap_client_tick(wifi_running: bool):
     now = time.time()
@@ -1415,7 +1479,9 @@ def ap_client_tick(wifi_running: bool):
         if cnt > 0 and prev == 0:
             ap_state["flash_until"] = now + 1.3
 
+
 last_oled_update_time = 0.0
+
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
@@ -1527,6 +1593,7 @@ def update_oled_display():
     finally:
         display_lock.release()
 
+
 def realtime_update_display():
     global need_update, last_oled_update_time
     while not stop_threads:
@@ -1543,6 +1610,7 @@ def realtime_update_display():
             need_update = False
         time.sleep(0.03)
 
+
 def shutdown_system():
     set_ui_text("배터리 부족", "시스템 종료 중...", pos=(10, 18), font_size=15)
     time.sleep(2)
@@ -1550,6 +1618,7 @@ def shutdown_system():
         os.system("sudo shutdown -h now")
     except Exception:
         pass
+
 
 def execute_button_logic():
     global current_command_index, need_update
@@ -1619,6 +1688,7 @@ def execute_button_logic():
 
         time.sleep(0.03)
 
+
 init_ina219()
 
 battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
@@ -1637,6 +1707,7 @@ net_thread = threading.Thread(target=net_poll_thread, daemon=True)
 net_thread.start()
 
 need_update = True
+
 
 try:
     execute_button_logic()
