@@ -52,6 +52,12 @@ ap_state = {
     "spinner": 0,
 }
 
+def logi(msg: str):
+    try:
+        print("[AUTOSEL] " + str(msg), flush=True)
+    except Exception:
+        pass
+
 def wifi_stage_set(percent, line1, line2=""):
     with wifi_stage_lock:
         wifi_stage["active"] = True
