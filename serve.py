@@ -1621,7 +1621,6 @@ def execute_button_logic():
 
         time.sleep(0.03)
 
-
 init_ina219()
 
 battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
@@ -1640,7 +1639,6 @@ net_thread = threading.Thread(target=net_poll_thread, daemon=True)
 net_thread.start()
 
 need_update = True
-
 
 try:
     execute_button_logic()
