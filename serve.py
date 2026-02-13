@@ -614,13 +614,13 @@ def _is_ir_variant(selected_bin_path: str) -> bool:
 def _gas_key_from_selected_path(selected_bin_path: str) -> str:
     sp = os.path.abspath(selected_bin_path)
     parent = os.path.basename(os.path.dirname(sp))          # 예: "1.일반" or "2.HMDS"
-    fname_stem = os.path.splitext(os.path.basename(sp))[0]  # 예: "ORG" or "1.HMDS"
+    fname_stem = os.path.splitext(os.path.basename(sp))[0]  # 예: "1.ORG" or "IR_HMDS"
 
-    # 루트 BIN(Program/1.일반/ORG.bin, Program/2.TFTP/ORG.bin)
+    # 루트 BIN(Program/1.일반/1.ORG.bin, Program/2.TFTP/ORG.bin)
     if parent in (GENERAL_DIRNAME, TFTP_DIRNAME):
         return _strip_order_prefix(fname_stem)
 
-    # 서브폴더 BIN(Program/1.일반/2.HMDS/1.HMDS.bin)
+    # 서브폴더 BIN(Program/1.일반/2.HMDS/IR_HMDS.bin)
     return _strip_order_prefix(parent)
 
 
@@ -664,7 +664,7 @@ def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]) -
             os.path.join(base_root, f"{gas_key}.bin"),
         ] + candidates
 
-    # 3) 서브폴더 구조가 있다면 (예: 2.HMDS/1.HMDS.bin) 그 폴더도 시도
+    # 3) 서브폴더 구조가 있다면 (예: 2.HMDS/IR_HMDS.bin) 그 폴더도 시도
     if parent not in (GENERAL_DIRNAME, TFTP_DIRNAME):
         # 같은 폴더명을 그대로 쓰는 구조
         candidates += [
@@ -718,9 +718,7 @@ def build_menu_for_dir(dir_path, is_root=False):
                         continue
 
                     if name.lower().endswith(".bin"):
-                        # 둘 다 존재하면 "일반 우선" 또는 "TFTP 우선"을 정해야 함.
-                        # 여기선 화면에 하나만 보이게 하되, 실제 플래시는 자동선택이 하므로 어느 쪽이든 OK.
-                        # 단, 중복이면 일반을 먼저 넣고 TFTP가 덮어쓰지 않게 함.
+                        # 둘 다 존재하면 "일반 우선" (중복 표시 방지)
                         if name not in root_bins:
                             root_bins[name] = full
 
