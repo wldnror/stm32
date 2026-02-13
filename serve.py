@@ -520,6 +520,36 @@ def make_openocd_program_cmd(bin_path: str) -> str:
         f"-c \"program {bin_path} verify reset exit 0x08000000\""
     )
 
+def _parse_openocd_flash_kb(text: str) -> Optional[int]:
+    m = re.search(r"flash size\s*=\s*(\d+)\s*KiB", text, re.IGNORECASE)
+    if m:
+        try:
+            return int(m.group(1))
+        except Exception:
+            return None
+    m2 = re.search(r"flash size\s*=\s*(\d+)\s*kB", text, re.IGNORECASE)
+    if m2:
+        try:
+            return int(m2.group(1))
+        except Exception:
+            return None
+    return None
+
+def _detect_flash_kb_by_probe(timeout=3.5) -> Optional[int]:
+    cmd = [
+        "sudo", "openocd",
+        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
+        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
+        "-c", "init",
+        "-c", "reset halt",
+        "-c", "flash probe 0",
+        "-c", "shutdown",
+    ]
+    rc, out, err = run_capture(cmd, timeout=timeout)
+    txt = (out or "") + "\n" + (err or "")
+    kb = _parse_openocd_flash_kb(txt)
+    return kb
+
 def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optional[int]]:
     now = time.time()
     with _detect_cache_lock:
@@ -546,6 +576,13 @@ def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optio
     m_fs = re.search(r"0x1FFFF7E0:\s+(0x[0-9a-fA-F]+)", text, re.IGNORECASE)
 
     if (rc != 0) or (not m_id) or (not m_fs):
+        kb = _detect_flash_kb_by_probe(timeout=3.5)
+        if kb is not None:
+            with _detect_cache_lock:
+                _detect_cache["ts"] = time.time()
+                _detect_cache["flash_kb"] = kb
+                _detect_cache["dev_id"] = None
+            return None, kb
         return None, None
 
     try:
@@ -561,6 +598,13 @@ def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optio
 
         return dev_id, flash_kb
     except Exception:
+        kb = _detect_flash_kb_by_probe(timeout=3.5)
+        if kb is not None:
+            with _detect_cache_lock:
+                _detect_cache["ts"] = time.time()
+                _detect_cache["flash_kb"] = kb
+                _detect_cache["dev_id"] = None
+            return None, kb
         return None, None
 
 def _strip_order_prefix(name: str) -> str:
