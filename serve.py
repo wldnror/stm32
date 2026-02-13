@@ -607,12 +607,16 @@ def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]) -
     m = re.match(r"^\d+\.(.*)$", fname)
     fname_no_order = (m.group(1) if m else fname)
 
+    stem_base = _strip_order_prefix(os.path.splitext(fname)[0]).strip()
     parent = os.path.basename(os.path.dirname(sp))
     parent_stripped = _strip_order_prefix(parent).strip()
 
     candidates = []
 
     if want_tftp:
+        if stem_base:
+            candidates.append(os.path.join(base_root, f"{stem_base}.bin"))
+
         if is_ir:
             candidates += [
                 os.path.join(base_root, f"IR_{gas_key}.bin"),
@@ -620,6 +624,7 @@ def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]) -
                 os.path.join(base_root, f"{gas_key}_IR.bin"),
                 os.path.join(base_root, f"{gas_key}.bin"),
             ]
+
         candidates += [
             os.path.join(base_root, f"{gas_key}.bin"),
             os.path.join(base_root, fname_no_order),
@@ -672,7 +677,7 @@ def build_menu_for_dir(dir_path, is_root=False):
             gas_dirs = {}
             root_bins = {}
 
-            for base_root in (GENERAL_ROOT, TFTP_ROOT):
+            for base_root in (TFTP_ROOT, GENERAL_ROOT):
                 if not os.path.isdir(base_root):
                     continue
 
@@ -684,8 +689,7 @@ def build_menu_for_dir(dir_path, is_root=False):
                         continue
 
                     if name.lower().endswith(".bin"):
-                        if name not in root_bins:
-                            root_bins[name] = full
+                        root_bins[name] = full
 
             for dname in sorted(gas_dirs.keys()):
                 order, display_name = parse_order_and_name(dname, is_dir=True)
