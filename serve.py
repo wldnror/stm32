@@ -1327,10 +1327,9 @@ def execute_command(command_index):
     info_line = chosen_kind
     if flash_kb is not None:
         info_line = f"{chosen_kind} ({flash_kb}KB)"
-    set_ui_text("자동 선택", info_line, pos=(10, 0), font_size=13)
-    time.sleep(0.25)
+    progress_msg = f"업데이트 중...\n{info_line}"
 
-    set_ui_progress(30, "업데이트 중...", pos=(12, 10), font_size=15)
+    set_ui_progress(30, progress_msg, pos=(6, 0), font_size=13)
     openocd_cmd = make_openocd_program_cmd(resolved_path)
     process = subprocess.Popen(openocd_cmd, shell=True)
 
@@ -1342,18 +1341,18 @@ def execute_command(command_index):
         elapsed = time.time() - start_time
         current_progress = 30 + (elapsed * progress_increment)
         current_progress = min(current_progress, 80)
-        set_ui_progress(current_progress, "업데이트 중...", pos=(12, 10), font_size=15)
+        set_ui_progress(current_progress, progress_msg, pos=(6, 0), font_size=13)
         time.sleep(0.2)
 
     result = process.returncode
     if result == 0:
-        set_ui_progress(80, "업데이트 성공!", pos=(7, 10), font_size=15)
+        set_ui_progress(80, f"업데이트 성공!\n{info_line}", pos=(6, 0), font_size=13)
         time.sleep(0.5)
         lock_memory_procedure()
     else:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        set_ui_progress(0, "업데이트 실패", pos=(7, 10), font_size=15)
+        set_ui_progress(0, f"업데이트 실패\n{info_line}", pos=(6, 0), font_size=13)
         time.sleep(1)
 
     GPIO.output(LED_SUCCESS, False)
