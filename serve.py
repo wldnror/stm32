@@ -565,9 +565,12 @@ def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optio
     rc, out, err = run_capture(cmd, timeout=timeout)
     text = (out or "") + "\n" + (err or "")
 
-    m_id = re.search(r"0xe0042000:\s+(0x[0-9a-fA-F]+)", text)
-    m_fs = re.search(r"0x1ffff7e0:\s+(0x[0-9a-fA-F]+)", text)
+    m_id = re.search(r"0xE0042000:\s+(0x[0-9a-fA-F]+)", text, re.IGNORECASE)
+    m_fs = re.search(r"0x1FFFF7E0:\s+(0x[0-9a-fA-F]+)", text, re.IGNORECASE)
+
     if (rc != 0) or (not m_id) or (not m_fs):
+        # 디버그가 필요하면 아래 한 줄만 잠깐 켜서 출력 확인 가능
+        # open("/tmp/flash_detect.log","w").write(text)
         return None, None
 
     try:
