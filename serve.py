@@ -224,43 +224,64 @@ def has_real_internet(timeout=1.5):
     except Exception:
         return False
 
-def git_has_remote_updates(timeout=6.0) -> bool:
-    cmd1 = f"cd {GIT_REPO_DIR} && git remote update"
-    rc1, _, _ = run_capture(["bash", "-lc", cmd1], timeout=timeout)
-    if rc1 != 0:
-        return False
+def _git_head_hash():
+    rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "rev-parse", "HEAD"], timeout=1.2)
+    if rc != 0:
+        return None
+    v = (out or "").strip()
+    return v if v else None
 
-    cmd2 = f"cd {GIT_REPO_DIR} && git rev-parse --abbrev-ref --symbolic-full-name @{{u}}"
-    rc2, up, _ = run_capture(["bash", "-lc", cmd2], timeout=timeout)
-    if rc2 != 0 or not (up or "").strip():
-        return False
+def _git_branch_name():
+    rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "rev-parse", "--abbrev-ref", "HEAD"], timeout=1.2)
+    if rc != 0:
+        return None
+    v = (out or "").strip()
+    if not v or v == "HEAD":
+        return None
+    return v
 
-    cmd3 = f"cd {GIT_REPO_DIR} && git rev-list --count HEAD..@{{u}}"
-    rc3, out, _ = run_capture(["bash", "-lc", cmd3], timeout=timeout)
-    if rc3 != 0:
+def git_has_remote_updates_light(timeout=2.2) -> bool:
+    b = _git_branch_name()
+    lh = _git_head_hash()
+    if not b or not lh:
         return False
-    try:
-        return int((out or "").strip() or "0") > 0
-    except Exception:
+    rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "ls-remote", "origin", f"refs/heads/{b}"], timeout=timeout)
+    if rc != 0:
         return False
+    line = (out or "").strip().splitlines()
+    if not line:
+        return False
+    rh = (line[0].split() or [""])[0].strip()
+    if not rh:
+        return False
+    return rh != lh
 
 def git_poll_thread():
     global git_has_update_cached, git_last_check, need_update
     prev = None
     while not stop_threads:
         if not cached_online:
-            time.sleep(1.0)
+            with git_state_lock:
+                git_has_update_cached = False
+            time.sleep(0.6)
             continue
 
         now = time.time()
         if now - git_last_check < git_check_interval:
-            time.sleep(0.2)
+            time.sleep(0.15)
             continue
 
         git_last_check = now
+
+        with wifi_action_lock:
+            wifi_running = wifi_action_running
+        if wifi_running or is_executing or is_command_executing:
+            time.sleep(0.2)
+            continue
+
         ok = False
         try:
-            ok = git_has_remote_updates(timeout=6.0)
+            ok = git_has_remote_updates_light(timeout=2.2)
         except Exception:
             ok = False
 
@@ -272,7 +293,7 @@ def git_poll_thread():
             refresh_root_menu(reset_index=False)
             need_update = True
 
-        time.sleep(0.2)
+        time.sleep(0.15)
 
 def nm_is_active():
     rc, out, _ = run_capture(["systemctl", "is-active", "NetworkManager"], timeout=2.0)
@@ -835,7 +856,7 @@ def build_menu_for_dir(dir_path, is_root=False):
             extras_local.append(extra)
 
     if is_root:
-        online = has_real_internet()
+        online = cached_online
 
         if online:
             commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
