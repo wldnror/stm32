@@ -1575,7 +1575,7 @@ def update_oled_display():
                     ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
                     draw.text((0, 51), ip_display, font=font_big, fill=255)
                     draw.text((80, -3), "GDSENG", font=font_big, fill=255)
-                    draw.text((83, 50), "ver 3.71", font=font_big, fill=255)
+                    draw.text((83, 50), "ver 3.72", font=font_big, fill=255)
                     draw.text((0, -3), current_time, font=font_time, fill=255)
                     if not has_real_internet():
                         draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
