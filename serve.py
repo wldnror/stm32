@@ -161,6 +161,12 @@ last_good_wifi_profile = None
 cached_online = False
 last_menu_online = None
 
+git_state_lock = threading.Lock()
+git_has_update_cached = False
+git_last_check = 0.0
+git_check_interval = 5.0
+GIT_REPO_DIR = "/home/user/stm32"
+
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -217,6 +223,56 @@ def has_real_internet(timeout=1.5):
         return r.returncode == 0
     except Exception:
         return False
+
+def git_has_remote_updates(timeout=6.0) -> bool:
+    cmd1 = f"cd {GIT_REPO_DIR} && git remote update"
+    rc1, _, _ = run_capture(["bash", "-lc", cmd1], timeout=timeout)
+    if rc1 != 0:
+        return False
+
+    cmd2 = f"cd {GIT_REPO_DIR} && git rev-parse --abbrev-ref --symbolic-full-name @{{u}}"
+    rc2, up, _ = run_capture(["bash", "-lc", cmd2], timeout=timeout)
+    if rc2 != 0 or not (up or "").strip():
+        return False
+
+    cmd3 = f"cd {GIT_REPO_DIR} && git rev-list --count HEAD..@{{u}}"
+    rc3, out, _ = run_capture(["bash", "-lc", cmd3], timeout=timeout)
+    if rc3 != 0:
+        return False
+    try:
+        return int((out or "").strip() or "0") > 0
+    except Exception:
+        return False
+
+def git_poll_thread():
+    global git_has_update_cached, git_last_check, need_update
+    prev = None
+    while not stop_threads:
+        if not cached_online:
+            time.sleep(1.0)
+            continue
+
+        now = time.time()
+        if now - git_last_check < git_check_interval:
+            time.sleep(0.2)
+            continue
+
+        git_last_check = now
+        ok = False
+        try:
+            ok = git_has_remote_updates(timeout=6.0)
+        except Exception:
+            ok = False
+
+        with git_state_lock:
+            git_has_update_cached = bool(ok)
+
+        if prev is None or prev != ok:
+            prev = ok
+            refresh_root_menu(reset_index=False)
+            need_update = True
+
+        time.sleep(0.2)
 
 def nm_is_active():
     rc, out, _ = run_capture(["systemctl", "is-active", "NetworkManager"], timeout=2.0)
@@ -787,10 +843,14 @@ def build_menu_for_dir(dir_path, is_root=False):
             types_local.append("script")
             extras_local.append(None)
 
-            commands_local.append("git_pull")
-            names_local.append("시스템 업데이트")
-            types_local.append("system")
-            extras_local.append(None)
+            with git_state_lock:
+                has_update = git_has_update_cached
+
+            if has_update:
+                commands_local.append("git_pull")
+                names_local.append("시스템 업데이트")
+                types_local.append("system")
+                extras_local.append(None)
 
         commands_local.append("wifi_setup")
         names_local.append("Wi-Fi 설정")
@@ -824,6 +884,7 @@ def refresh_root_menu(reset_index=False):
 refresh_root_menu(reset_index=True)
 
 def git_pull():
+    global git_last_check
     shell_script_path = "/home/user/stm32/git-pull.sh"
     if not os.path.isfile(shell_script_path):
         with open(shell_script_path, "w") as script_file:
@@ -874,6 +935,10 @@ def git_pull():
         time.sleep(1.2)
 
     finally:
+        with git_state_lock:
+            global git_has_update_cached
+            git_has_update_cached = False
+        git_last_check = 0.0
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
@@ -1506,14 +1571,7 @@ def update_oled_display():
                 item_type = command_types[current_command_index]
                 title = command_names[current_command_index]
 
-                if item_type != "system":
-                    battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
-                    draw.bitmap((90, -11), battery_icon, fill=255)
-                    perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
-                    draw.text((99, 1), perc_text, font=font_st, fill=255)
-                    draw.text((2, 1), current_time, font=font_time, fill=255)
-                    draw_wifi_bars(draw, 70, 3, wifi_level)
-                else:
+                if item_type in ("system", "wifi"):
                     ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
                     draw.text((0, 51), ip_display, font=font_big, fill=255)
                     draw.text((80, -3), "GDSENG", font=font_big, fill=255)
@@ -1521,6 +1579,13 @@ def update_oled_display():
                     draw.text((0, -3), current_time, font=font_time, fill=255)
                     if not has_real_internet():
                         draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
+                else:
+                    battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
+                    draw.bitmap((90, -11), battery_icon, fill=255)
+                    perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
+                    draw.text((99, 1), perc_text, font=font_st, fill=255)
+                    draw.text((2, 1), current_time, font=font_time, fill=255)
+                    draw_wifi_bars(draw, 70, 3, wifi_level)
 
                 if status_message:
                     draw.rectangle(device.bounding_box, fill="black")
@@ -1573,7 +1638,7 @@ def update_oled_display():
                     return
 
                 center_x = device.width // 2 + VISUAL_X_OFFSET
-                if item_type == "system":
+                if item_type in ("system", "wifi"):
                     center_y = 33
                     start_size = 17
                 else:
@@ -1697,6 +1762,9 @@ wifi_thread.start()
 
 net_thread = threading.Thread(target=net_poll_thread, daemon=True)
 net_thread.start()
+
+git_thread = threading.Thread(target=git_poll_thread, daemon=True)
+git_thread.start()
 
 need_update = True
 
