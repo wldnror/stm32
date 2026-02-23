@@ -1598,7 +1598,7 @@ def update_oled_display():
                     draw.text((80, -3), "GDSENG", font=font_big, fill=255)
                     draw.text((83, 50), "ver 3.72", font=font_big, fill=255)
                     draw.text((0, -3), current_time, font=font_time, fill=255)
-                    if not has_real_internet():
+                    if not cached_online:
                         draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
                 else:
                     battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
