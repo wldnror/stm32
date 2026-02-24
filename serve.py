@@ -4,6 +4,7 @@ import time
 import os
 import sys
 import socket
+import shutil
 from PIL import Image, ImageFont
 from luma.core.interface.serial import i2c
 from luma.oled.device import sh1107
@@ -14,6 +15,8 @@ import threading
 import re
 import wifi_portal
 from typing import Optional, Tuple
+from pymodbus.client import ModbusTcpClient
+from pymodbus.pdu import ExceptionResponse
 
 VISUAL_X_OFFSET = 0
 display_lock = threading.Lock()
@@ -586,6 +589,12 @@ GENERAL_ROOT = os.path.join(FIRMWARE_DIR, GENERAL_DIRNAME)
 TFTP_ROOT = os.path.join(FIRMWARE_DIR, TFTP_DIRNAME)
 FLASH_KB_THRESHOLD = 300
 
+TFTP_REMOTE_DIR = "/home/user/stm32/Program/2.TFTP_REMOTE"
+TFTP_SERVER_ROOT = "/srv/tftp"
+TFTP_DEVICE_SUBDIR = os.path.join("GDS", "ASGD-3200")
+TFTP_DEVICE_FILENAME = "asgd3200.bin"
+MODBUS_PORT = 502
+
 _detect_cache_lock = threading.Lock()
 _detect_cache = {"ts": 0.0, "flash_kb": None, "dev_id": None}
 
@@ -791,6 +800,175 @@ def parse_order_and_name(name: str, is_dir: bool):
         display = raw
     return order, display
 
+def get_ip_address():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.5)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "0.0.0.0"
+
+def encode_ip_to_words(ip: str):
+    a, b, c, d = map(int, ip.split("."))
+    for x in (a, b, c, d):
+        if x < 0 or x > 255:
+            raise ValueError("bad ip")
+    return ((a << 8) | b, (c << 8) | d)
+
+def _quick_modbus_probe(ip: str, timeout=0.25) -> bool:
+    try:
+        s = socket.create_connection((ip, MODBUS_PORT), timeout=timeout)
+        s.close()
+        return True
+    except Exception:
+        return False
+
+def scan_modbus_devices_same_subnet(limit=48):
+    my_ip = get_ip_address()
+    if my_ip == "0.0.0.0":
+        return []
+    parts = my_ip.split(".")
+    if len(parts) != 4:
+        return []
+    base = ".".join(parts[:3]) + "."
+    candidates = []
+    start = 2
+    end = min(254, start + max(8, int(limit)))
+    for host in range(start, end + 1):
+        ip = base + str(host)
+        if ip == my_ip:
+            continue
+        if _quick_modbus_probe(ip):
+            candidates.append(ip)
+    return candidates
+
+def build_tftp_device_menu(ip_list):
+    commands_local = []
+    names_local = []
+    types_local = []
+    extras_local = []
+    for ip in ip_list:
+        commands_local.append("tftp_dev")
+        names_local.append(f"▶ {ip}")
+        types_local.append("tftp_dev")
+        extras_local.append(ip)
+    commands_local.append(None)
+    names_local.append("◀ 이전으로")
+    types_local.append("back")
+    extras_local.append(None)
+    return {
+        "dir": "__tftp_devices__",
+        "commands": commands_local,
+        "names": names_local,
+        "types": types_local,
+        "extras": extras_local,
+    }
+
+def pick_remote_fw_file_for_device(ip: str) -> str:
+    p = os.path.join(TFTP_REMOTE_DIR, "default.bin")
+    if os.path.isfile(p):
+        return p
+    p2 = os.path.join(TFTP_REMOTE_DIR, "asgd3200.bin")
+    if os.path.isfile(p2):
+        return p2
+    bins = []
+    try:
+        for fn in os.listdir(TFTP_REMOTE_DIR):
+            if fn.lower().endswith(".bin"):
+                bins.append(os.path.join(TFTP_REMOTE_DIR, fn))
+    except Exception:
+        pass
+    return bins[0] if bins else ""
+
+def tftp_upgrade_device(ip: str):
+    set_ui_progress(5, "TFTP 업뎃\n준비...", pos=(18, 0), font_size=15)
+
+    fw_src = pick_remote_fw_file_for_device(ip)
+    if not fw_src:
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_text("FW 없음", "2.TFTP_REMOTE", pos=(4, 18), font_size=13)
+        time.sleep(1.6)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        return
+
+    set_ui_progress(20, "FW 복사중", "", pos=(18, 10), font_size=15)
+    device_dir = os.path.join(TFTP_SERVER_ROOT, TFTP_DEVICE_SUBDIR)
+    os.makedirs(device_dir, exist_ok=True)
+    dst_path = os.path.join(device_dir, TFTP_DEVICE_FILENAME)
+
+    try:
+        try:
+            if os.path.exists(dst_path):
+                os.remove(dst_path)
+        except Exception:
+            pass
+        shutil.copyfile(fw_src, dst_path)
+    except Exception as e:
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_text("복사 실패", str(e)[:16], pos=(2, 18), font_size=12)
+        time.sleep(2.0)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        return
+
+    tftp_ip = get_ip_address()
+    set_ui_progress(45, "명령 전송", ip, pos=(6, 0), font_size=13)
+
+    client = ModbusTcpClient(ip, port=502, timeout=2)
+    if not client.connect():
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_text("연결 실패", ip, pos=(2, 18), font_size=12)
+        time.sleep(1.6)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        return
+
+    try:
+        addr_ip1 = 40088 - 40001
+        addr_ctrl = 40091 - 40001
+        try:
+            w1, w2 = encode_ip_to_words(tftp_ip)
+            try:
+                client.write_registers(addr_ip1, [w1, w2])
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        r = client.write_register(addr_ctrl, 1)
+        if isinstance(r, ExceptionResponse) or getattr(r, "isError", lambda: False)():
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            set_ui_text("명령 실패", "40091=1", pos=(10, 18), font_size=13)
+            time.sleep(1.8)
+            GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
+            clear_ui_override()
+            return
+
+        GPIO.output(LED_SUCCESS, True)
+        set_ui_progress(100, "전송 완료", "업뎃 진행", pos=(10, 5), font_size=15)
+        time.sleep(1.2)
+        GPIO.output(LED_SUCCESS, False)
+
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+    clear_ui_override()
+
 def build_menu_for_dir(dir_path, is_root=False):
     entries = []
 
@@ -876,6 +1054,11 @@ def build_menu_for_dir(dir_path, is_root=False):
         commands_local.append("wifi_setup")
         names_local.append("Wi-Fi 설정")
         types_local.append("wifi")
+        extras_local.append(None)
+
+        commands_local.append("tftp_scan")
+        names_local.append("원격(TFTP) 업데이트")
+        types_local.append("tftp_scan")
         extras_local.append(None)
 
     else:
@@ -1261,6 +1444,45 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
+    if item_type == "tftp_scan":
+        GPIO.output(LED_SUCCESS, False)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+
+        set_ui_progress(5, "주변 장치\n스캔 중...", pos=(10, 10), font_size=15)
+        ips = scan_modbus_devices_same_subnet(limit=64)
+        if not ips:
+            GPIO.output(LED_ERROR, True)
+            set_ui_text("장치 없음", "같은 대역", pos=(12, 18), font_size=15)
+            time.sleep(1.3)
+            GPIO.output(LED_ERROR, False)
+            clear_ui_override()
+            need_update = True
+            is_executing = False
+            is_command_executing = False
+            return
+
+        menu_stack.append((current_menu, current_command_index))
+        current_menu = build_tftp_device_menu(ips)
+        commands = current_menu["commands"]
+        command_names = current_menu["names"]
+        command_types = current_menu["types"]
+        menu_extras = current_menu["extras"]
+        current_command_index = 0
+        clear_ui_override()
+        need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "tftp_dev":
+        target_ip = menu_extras[command_index]
+        tftp_upgrade_device(target_ip if target_ip else "")
+        need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
     if item_type == "dir":
         subdir = menu_extras[command_index]
         if subdir and os.path.isdir(subdir):
@@ -1449,17 +1671,6 @@ def execute_command(command_index):
     need_update = True
     is_executing = False
     is_command_executing = False
-
-def get_ip_address():
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(0.5)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "0.0.0.0"
 
 def get_wifi_level():
     try:
@@ -1727,7 +1938,7 @@ def execute_button_logic():
                 execute_long_handled = True
                 if commands and (not is_executing):
                     item_type = command_types[current_command_index]
-                    if item_type in ("system", "dir", "back", "script", "wifi", "bin"):
+                    if item_type in ("system", "dir", "back", "script", "wifi", "bin", "tftp_scan", "tftp_dev"):
                         execute_command(current_command_index)
                         need_update = True
 
