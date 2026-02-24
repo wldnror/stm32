@@ -215,15 +215,25 @@ def clear_ui_override():
         ui_override["line2"] = ""
         ui_override["percent"] = 0
 
+def _iface_exists(name: str) -> bool:
+    try:
+        return os.path.isdir(f"/sys/class/net/{name}")
+    except Exception:
+        return False
+
 def has_real_internet(timeout=1.5):
     try:
-        r = subprocess.run(
-            ["ping", "-I", "wlan0", "-c", "1", "-W", "1", "8.8.8.8"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=timeout
-        )
-        return r.returncode == 0
+        targets = ["8.8.8.8", "1.1.1.1"]
+        iface = "wlan0" if _iface_exists("wlan0") else ("eth0" if _iface_exists("eth0") else None)
+        for t in targets:
+            if iface:
+                cmd = ["ping", "-I", iface, "-c", "1", "-W", "1", t]
+            else:
+                cmd = ["ping", "-c", "1", "-W", "1", t]
+            r = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+            if r.returncode == 0:
+                return True
+        return False
     except Exception:
         return False
 
@@ -243,60 +253,86 @@ def _git_branch_name():
         return None
     return v
 
+def _git_has_origin():
+    rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "remote"], timeout=1.2)
+    if rc != 0:
+        return False
+    remotes = [x.strip() for x in (out or "").splitlines() if x.strip()]
+    return "origin" in remotes
+
+def _git_upstream_hash():
+    rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "rev-parse", "@{u}"], timeout=1.2)
+    if rc != 0:
+        return None
+    v = (out or "").strip()
+    return v if v else None
+
 def git_has_remote_updates_light(timeout=2.2) -> bool:
+    if not os.path.isdir(GIT_REPO_DIR):
+        return False
+    if not _git_has_origin():
+        return False
+
     b = _git_branch_name()
     lh = _git_head_hash()
     if not b or not lh:
         return False
+
     rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "ls-remote", "origin", f"refs/heads/{b}"], timeout=timeout)
-    if rc != 0:
+    if rc == 0:
+        line = (out or "").strip().splitlines()
+        if line:
+            rh = (line[0].split() or [""])[0].strip()
+            if rh:
+                return rh != lh
+
+    run_quiet(["git", "-C", GIT_REPO_DIR, "remote", "update"], timeout=3.8)
+    uh = _git_upstream_hash()
+    if not uh:
         return False
-    line = (out or "").strip().splitlines()
-    if not line:
-        return False
-    rh = (line[0].split() or [""])[0].strip()
-    if not rh:
-        return False
-    return rh != lh
+    return uh != lh
 
 def git_poll_thread():
     global git_has_update_cached, git_last_check, need_update
     prev = None
     while not stop_threads:
-        if not cached_online:
-            with git_state_lock:
-                git_has_update_cached = False
-            time.sleep(0.6)
-            continue
-
-        now = time.time()
-        if now - git_last_check < git_check_interval:
-            time.sleep(0.15)
-            continue
-
-        git_last_check = now
-
-        with wifi_action_lock:
-            wifi_running = wifi_action_running
-        if wifi_running or is_executing or is_command_executing:
-            time.sleep(0.2)
-            continue
-
-        ok = False
         try:
-            ok = git_has_remote_updates_light(timeout=2.2)
-        except Exception:
+            if not cached_online:
+                with git_state_lock:
+                    git_has_update_cached = False
+                time.sleep(0.6)
+                continue
+
+            now = time.time()
+            if now - git_last_check < git_check_interval:
+                time.sleep(0.15)
+                continue
+
+            git_last_check = now
+
+            with wifi_action_lock:
+                wifi_running = wifi_action_running
+            if wifi_running or is_executing or is_command_executing:
+                time.sleep(0.2)
+                continue
+
             ok = False
+            try:
+                ok = git_has_remote_updates_light(timeout=2.2)
+            except Exception:
+                ok = False
 
-        with git_state_lock:
-            git_has_update_cached = bool(ok)
+            with git_state_lock:
+                git_has_update_cached = bool(ok)
 
-        if prev is None or prev != ok:
-            prev = ok
-            refresh_root_menu(reset_index=False)
-            need_update = True
+            if prev is None or prev != ok:
+                prev = ok
+                refresh_root_menu(reset_index=False)
+                need_update = True
 
-        time.sleep(0.15)
+            time.sleep(0.15)
+        except Exception:
+            time.sleep(0.5)
 
 def nm_is_active():
     rc, out, _ = run_capture(["systemctl", "is-active", "NetworkManager"], timeout=2.0)
@@ -800,6 +836,16 @@ def parse_order_and_name(name: str, is_dir: bool):
         display = raw
     return order, display
 
+def _ip_from_ip_cmd(ifname: str) -> str:
+    rc, out, _ = run_capture(["bash", "-lc", f"ip -4 addr show {ifname} | awk '/inet /{{print $2}}' | head -n1"], timeout=0.9)
+    if rc != 0:
+        return "0.0.0.0"
+    v = (out or "").strip()
+    if not v:
+        return "0.0.0.0"
+    ip = v.split("/")[0].strip()
+    return ip if ip else "0.0.0.0"
+
 def get_ip_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -807,9 +853,28 @@ def get_ip_address():
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
-        return ip
+        if ip and ip != "0.0.0.0" and not ip.startswith("127."):
+            return ip
     except Exception:
-        return "0.0.0.0"
+        pass
+
+    try:
+        for ifn in ["wlan0", "eth0"]:
+            if _iface_exists(ifn):
+                ip2 = _ip_from_ip_cmd(ifn)
+                if ip2 != "0.0.0.0" and not ip2.startswith("127."):
+                    return ip2
+        rc, out, _ = run_capture(["bash", "-lc", "ip -4 addr show | awk '/inet /{print $2}' | head -n1"], timeout=0.9)
+        if rc == 0:
+            v = (out or "").strip()
+            if v:
+                ip3 = v.split("/")[0].strip()
+                if ip3 and ip3 != "0.0.0.0" and not ip3.startswith("127."):
+                    return ip3
+    except Exception:
+        pass
+
+    return "0.0.0.0"
 
 def encode_ip_to_words(ip: str):
     a, b, c, d = map(int, ip.split("."))
@@ -1671,17 +1736,6 @@ def execute_command(command_index):
     need_update = True
     is_executing = False
     is_command_executing = False
-
-def get_ip_address():
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(0.5)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "0.0.0.0"
 
 def get_wifi_level():
     try:
