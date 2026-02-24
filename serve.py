@@ -249,7 +249,7 @@ scan_detail = {
     "err": "",
 }
 
-SCAN_DETAIL_POLL_SEC = 0.5
+SCAN_DETAIL_POLL_SEC = 0.2
 
 MODBUS_PORT = 502
 
@@ -1363,38 +1363,41 @@ def _fmt_gas(v):
     except Exception:
         return "--"
 
+def _read_gas_and_alarm_flags_with_client(c: ModbusTcpClient):
+    lo = 40001
+    hi = 40008
+    start = reg_addr(lo)
+    count = (hi - lo) + 1
+    r = c.read_holding_registers(start, count)
+    if _is_modbus_error(r):
+        return None, None, "read"
+    regs = getattr(r, "registers", None) or []
+    if len(regs) < count:
+        return None, None, "short"
+
+    def R(addr_4xxxx: int) -> int:
+        return _u16(regs[addr_4xxxx - lo])
+
+    status_40001 = R(REG_STATUS_4XXXX)
+    gas_int = R(REG_GAS_INT_4XXXX)
+    fault_40008 = R(REG_FAULT_4XXXX)
+
+    gas = float(gas_int)
+
+    a1 = bool(status_40001 & (1 << 6))
+    a2 = bool(status_40001 & (1 << 7))
+    pwr_fault = bool(fault_40008 & (1 << 2))
+    fut = (fault_40008 != 0)
+
+    flags = {"PWR": pwr_fault, "A1": a1, "A2": a2, "FUT": fut}
+    return gas, flags, ""
+
 def read_gas_and_alarm_flags(ip: str):
-    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=1.0, retries=2, delay=0.12)
+    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.35, retries=1, delay=0.0)
     if c is None:
         return None, None, "connect"
     try:
-        lo = 40001
-        hi = 40008
-        start = reg_addr(lo)
-        count = (hi - lo) + 1
-        r = c.read_holding_registers(start, count)
-        if _is_modbus_error(r):
-            return None, None, "read"
-        regs = getattr(r, "registers", None) or []
-        if len(regs) < count:
-            return None, None, "short"
-
-        def R(addr_4xxxx: int) -> int:
-            return _u16(regs[addr_4xxxx - lo])
-
-        status_40001 = R(REG_STATUS_4XXXX)
-        gas_int = R(REG_GAS_INT_4XXXX)
-        fault_40008 = R(REG_FAULT_4XXXX)
-
-        gas = float(gas_int)
-
-        a1 = bool(status_40001 & (1 << 6))
-        a2 = bool(status_40001 & (1 << 7))
-        pwr_fault = bool(fault_40008 & (1 << 2))
-        fut = (fault_40008 != 0)
-
-        flags = {"PWR": pwr_fault, "A1": a1, "A2": a2, "FUT": fut}
-        return gas, flags, ""
+        return _read_gas_and_alarm_flags_with_client(c)
     except Exception as e:
         return None, None, str(e)[:18]
     finally:
@@ -1438,20 +1441,93 @@ def draw_scan_detail_screen(draw):
 
 def modbus_detail_poll_thread():
     global need_update
+    client = None
+    client_ip = None
+    backoff_until = 0.0
     while not stop_threads:
         time.sleep(SCAN_DETAIL_POLL_SEC)
+
         with scan_detail_lock:
             active = scan_detail_active
-            ip = scan_detail_ip
+            ip = (scan_detail_ip or "").strip()
+
         if (not active) or (not ip):
+            if client:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+            client = None
+            client_ip = None
             continue
-        gas, flags, err = read_gas_and_alarm_flags(ip)
-        scan_detail["gas"] = gas
-        if flags:
-            scan_detail["flags"] = flags
-        scan_detail["err"] = err or ""
-        scan_detail["ts"] = time.time()
-        need_update = True
+
+        now = time.time()
+        if now < backoff_until:
+            continue
+
+        if client and client_ip != ip:
+            try:
+                client.close()
+            except Exception:
+                pass
+            client = None
+            client_ip = None
+
+        if client is None:
+            c = ModbusTcpClient(ip, port=MODBUS_PORT, timeout=0.15)
+            try:
+                if not c.connect():
+                    try:
+                        c.close()
+                    except Exception:
+                        pass
+                    scan_detail["err"] = "connect"
+                    scan_detail["ts"] = time.time()
+                    need_update = True
+                    backoff_until = time.time() + 0.2
+                    continue
+            except Exception:
+                try:
+                    c.close()
+                except Exception:
+                    pass
+                scan_detail["err"] = "connect"
+                scan_detail["ts"] = time.time()
+                need_update = True
+                backoff_until = time.time() + 0.2
+                continue
+            client = c
+            client_ip = ip
+
+        try:
+            gas, flags, err = _read_gas_and_alarm_flags_with_client(client)
+            scan_detail["gas"] = gas
+            if flags:
+                scan_detail["flags"] = flags
+            scan_detail["err"] = err or ""
+            scan_detail["ts"] = time.time()
+            need_update = True
+
+            if err in ("connect", "read", "short"):
+                try:
+                    client.close()
+                except Exception:
+                    pass
+                client = None
+                client_ip = None
+                backoff_until = time.time() + 0.2
+
+        except Exception as e:
+            scan_detail["err"] = str(e)[:18]
+            scan_detail["ts"] = time.time()
+            need_update = True
+            try:
+                client.close()
+            except Exception:
+                pass
+            client = None
+            client_ip = None
+            backoff_until = time.time() + 0.2
 
 def _scan_reset_from_myip(ip: str):
     global scan_base_prefix, scan_cursor
