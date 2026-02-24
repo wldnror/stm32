@@ -1505,35 +1505,45 @@ def read_gas_and_alarm_flags(ip: str):
 def draw_scan_detail_screen(draw):
     draw.rectangle(device.bounding_box, fill="black")
 
+    W, H = device.width, device.height
+    TOP_H = 16
+    BOT_H = 12
+    MID_Y0 = TOP_H
+    MID_Y1 = H - BOT_H
+    MID_CY = (MID_Y0 + MID_Y1) // 2
+
     f = scan_detail.get("flags", {}) or {}
-    _draw_box_label(draw, 2, 0, 24, 14, "PWR", bool(f.get("PWR")))
-    _draw_box_label(draw, 28, 0, 20, 14, "A1", bool(f.get("A1")))
-    _draw_box_label(draw, 50, 0, 20, 14, "A2", bool(f.get("A2")))
-    _draw_box_label(draw, 72, 0, 26, 14, "FUT", bool(f.get("FUT")))
+    _draw_box_label(draw, 2, 1, 24, 14, "PWR", bool(f.get("PWR")))
+    _draw_box_label(draw, 28, 1, 20, 14, "A1", bool(f.get("A1")))
+    _draw_box_label(draw, 50, 1, 20, 14, "A2", bool(f.get("A2")))
+    _draw_box_label(draw, 72, 1, 26, 14, "FUT", bool(f.get("FUT")))
 
     ip_txt = (scan_detail_ip or "").strip()
     if ip_txt:
-        _right_text(draw, device.width - 2, 2, ip_txt, get_font(10), fill=255)
+        _right_text(draw, W - 2, 3, ip_txt, get_font(10), fill=255)
 
     gas_txt = _fmt_gas(scan_detail.get("gas", None))
-    fbig = get_font(30)
-    w, h = _text_size(draw, gas_txt, fbig)
-    cx = device.width // 2 + VISUAL_X_OFFSET
-    cy = 38
-    x = int(cx - w // 2)
-    y = int(cy - h // 2)
-    draw.text((x, y), gas_txt, font=fbig, fill=255)
+    draw_center_text_autofit(
+        draw,
+        gas_txt,
+        (W // 2 + VISUAL_X_OFFSET),
+        MID_CY,
+        max_width=W - 6,
+        start_size=30,
+        min_size=18
+    )
 
     err = (scan_detail.get("err") or "").strip()
     fbot = get_font(10)
-    max_w = device.width - 4
-    y0 = 48
+    max_w = W - 4
+    y0 = H - BOT_H
+
     if err:
-        lines = _wrap_lines(draw, "ERR " + err, fbot, max_w, max_lines=2)
-        for i, ln in enumerate(lines[:2]):
-            draw.text((2, y0 + i * 10), ln, font=fbot, fill=255)
+        msg = _ellipsis_to_width(draw, "ERR " + err, fbot, max_w)
+        draw.text((2, y0 + 1), msg, font=fbot, fill=255)
     else:
-        draw.text((2, y0), _ellipsis_to_width(draw, "NEXT:뒤로  EXEC길게:TFTP", fbot, max_w), font=fbot, fill=255)
+        msg = _ellipsis_to_width(draw, "NEXT:뒤로  EXEC길게:TFTP", fbot, max_w)
+        draw.text((2, y0 + 1), msg, font=fbot, fill=255)
 
 
 def modbus_detail_poll_thread():
