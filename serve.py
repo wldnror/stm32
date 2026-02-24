@@ -1402,9 +1402,6 @@ def read_gas_and_alarm_flags(ip: str):
         except Exception:
             pass
 
-# =========================
-# UPDATED: scan detail UI (IP 우측정렬 + ERR 2줄 줄바꿈)
-# =========================
 def draw_scan_detail_screen(draw):
     draw.rectangle(device.bounding_box, fill="black")
 
@@ -2097,6 +2094,8 @@ def execute_command(command_index):
             is_command_executing = False
             return
         clear_ui_override()
+        with scan_lock:
+            scan_active = False
         with scan_detail_lock:
             scan_detail_active = True
             scan_detail_ip = target_ip
@@ -2128,6 +2127,8 @@ def execute_command(command_index):
             return
         clear_ui_override()
         tftp_upgrade_device(ip)
+        with scan_lock:
+            scan_active = False
         with scan_detail_lock:
             scan_detail_active = True
             scan_detail_ip = ip
@@ -2604,6 +2605,7 @@ def execute_button_logic():
     global scan_detail_active, scan_detail_ip
     global current_menu, commands, command_names, command_types, menu_extras, menu_stack
     global is_executing
+    global scan_active
 
     while True:
         now = time.time()
@@ -2660,6 +2662,9 @@ def execute_button_logic():
                     menu_extras = current_menu["extras"]
                     current_command_index = prev_index if (0 <= prev_index < len(commands)) else 0
                 clear_ui_override()
+                if current_menu and current_menu.get("dir") == "__scan__":
+                    with scan_lock:
+                        scan_active = True
                 need_update = True
                 next_pressed_event = False
                 time.sleep(0.02)
