@@ -228,13 +228,33 @@ scan_cursor = 2
 scan_seen = {}
 SCAN_PRUNE_SEC = 3.0
 SCAN_HOSTS_PER_TICK = 8
+scan_menu_dirty = False
 
 scan_detail_lock = threading.Lock()
 scan_detail_active = False
 scan_detail_ip = None
-scan_detail_data = {"ts": 0.0, "line1": "", "line2": "", "line3": "", "line4": ""}
+
+scan_detail = {
+    "gas": None,
+    "flags": {"PWR": False, "A1": False, "A2": False, "FUT": False},
+    "ts": 0.0,
+    "err": "",
+}
+
 SCAN_DETAIL_POLL_SEC = 0.5
-MODBUS_DETAIL_READS = [(40001, 4, "INFO"), (40100, 2, "GAS")]
+
+MODBUS_PORT = 502
+
+REG_GAS_VALUE_4XXXX = 40100
+REG_ALARM_BITS_4XXXX = 40101
+GAS_SCALE = 1.0
+
+ALARM_BIT = {
+    "PWR": 0,
+    "A1":  1,
+    "A2":  2,
+    "FUT": 3,
+}
 
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -726,8 +746,6 @@ TFTP_SERVER_ROOT = "/srv/tftp"
 TFTP_DEVICE_SUBDIR = os.path.join("GDS", "ASGD-3200")
 TFTP_DEVICE_FILENAME = "asgd3200.bin"
 
-MODBUS_PORT = 502
-
 _detect_cache_lock = threading.Lock()
 _detect_cache = {"ts": 0.0, "flash_kb": None, "dev_id": None}
 
@@ -825,6 +843,12 @@ def _read_device_info_fast(ip: str) -> Optional[str]:
             c.close()
         except Exception:
             pass
+
+def _u16(v):
+    try:
+        return int(v) & 0xFFFF
+    except Exception:
+        return 0
 
 def make_openocd_program_cmd(bin_path: str) -> str:
     return (
@@ -1245,50 +1269,101 @@ def build_scan_menu():
 def build_scan_detail_menu(ip: str):
     return {"dir": "__scan_detail__", "commands": [None], "names": [f"{ip}"], "types": ["scan_detail"], "extras": [ip]}
 
-def _scan_detail_set_lines(l1="", l2="", l3="", l4=""):
-    with scan_detail_lock:
-        scan_detail_data["ts"] = time.time()
-        scan_detail_data["line1"] = (l1 or "")
-        scan_detail_data["line2"] = (l2 or "")
-        scan_detail_data["line3"] = (l3 or "")
-        scan_detail_data["line4"] = (l4 or "")
+def _draw_text_bold(draw, xy, text, font, fill=255):
+    x, y = xy
+    draw.text((x, y), text, font=font, fill=fill)
+    draw.text((x + 1, y), text, font=font, fill=fill)
 
-def _read_detail_lines_for_ip(ip: str) -> Tuple[str, str, str, str]:
-    l1 = f"MODBUS {ip}"
-    l2 = ""
-    l3 = ""
-    l4 = "NEXT:뒤로 EXEC길게:TFTP"
-    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.7, retries=2, delay=0.1)
-    if c is None:
-        return (l1, "연결 실패", "", l4)
+def _draw_box_label(draw, x, y, w, h, label, active):
+    if active:
+        draw.rectangle([x, y, x + w, y + h], fill=255)
+        draw.text((x + 3, y + 1), label, font=get_font(12), fill=0)
+        draw.text((x + 2, y + 1), label, font=get_font(12), fill=0)
+    else:
+        draw.rectangle([x, y, x + w, y + h], outline=255, fill=0)
+        _draw_text_bold(draw, (x + 3, y + 1), label, get_font(12), fill=255)
+
+def _fmt_gas(v):
+    if v is None:
+        return "--"
     try:
-        parts = []
-        for start_4x, count, label in MODBUS_DETAIL_READS:
-            try:
-                r = c.read_holding_registers(reg_addr(start_4x), count)
-                if _is_modbus_error(r):
-                    parts.append(f"{label}:ERR")
-                    continue
-                regs = getattr(r, "registers", []) or []
-                if not regs:
-                    parts.append(f"{label}:--")
-                    continue
-                short = ",".join(str(x) for x in regs[:min(len(regs), 4)])
-                parts.append(f"{label}:{short}")
-            except Exception:
-                parts.append(f"{label}:EXC")
-        if parts:
-            l2 = (parts[0])[:18]
-        if len(parts) >= 2:
-            l3 = (parts[1])[:18]
-        if len(parts) >= 3:
-            l3 = (l3 + " " + parts[2])[:18]
-        return (l1, l2, l3, l4)
+        v = float(v)
+        if abs(v - int(v)) < 1e-6:
+            return str(int(v))
+        if abs(v) < 100:
+            return f"{v:.1f}"
+        return f"{v:.0f}"
+    except Exception:
+        return "--"
+
+def read_gas_and_alarm_flags(ip: str):
+    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.8, retries=2, delay=0.12)
+    if c is None:
+        return None, None, "connect"
+    try:
+        lo = min(REG_GAS_VALUE_4XXXX, REG_ALARM_BITS_4XXXX)
+        hi = max(REG_GAS_VALUE_4XXXX, REG_ALARM_BITS_4XXXX)
+        start = reg_addr(lo)
+        count = (hi - lo) + 1
+        r = c.read_holding_registers(start, count)
+        if _is_modbus_error(r):
+            return None, None, "read"
+        regs = getattr(r, "registers", None) or []
+        if len(regs) < count:
+            return None, None, "short"
+        idx_g = REG_GAS_VALUE_4XXXX - lo
+        idx_a = REG_ALARM_BITS_4XXXX - lo
+        gas_raw = _u16(regs[idx_g])
+        alarm_bits = _u16(regs[idx_a])
+        gas = float(gas_raw) * float(GAS_SCALE)
+        flags = {
+            "PWR": bool(alarm_bits & (1 << ALARM_BIT["PWR"])),
+            "A1":  bool(alarm_bits & (1 << ALARM_BIT["A1"])),
+            "A2":  bool(alarm_bits & (1 << ALARM_BIT["A2"])),
+            "FUT": bool(alarm_bits & (1 << ALARM_BIT["FUT"])),
+        }
+        return gas, flags, ""
+    except Exception as e:
+        return None, None, str(e)[:10]
     finally:
         try:
             c.close()
         except Exception:
             pass
+
+def draw_scan_detail_screen(draw):
+    draw.rectangle(device.bounding_box, fill="black")
+
+    f = scan_detail.get("flags", {}) or {}
+    _draw_box_label(draw,  2,  0, 24, 14, "PWR", bool(f.get("PWR")))
+    _draw_box_label(draw, 28,  0, 20, 14, "A1",  bool(f.get("A1")))
+    _draw_box_label(draw, 50,  0, 20, 14, "A2",  bool(f.get("A2")))
+    _draw_box_label(draw, 72,  0, 26, 14, "FUT", bool(f.get("FUT")))
+
+    ip_txt = (scan_detail_ip or "")[-12:]
+    draw.text((100, 2), ip_txt, font=get_font(10), fill=255)
+
+    gas_txt = _fmt_gas(scan_detail.get("gas", None))
+    fbig = get_font(30)
+    try:
+        bbox = draw.textbbox((0, 0), gas_txt, font=fbig)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+    except Exception:
+        w = len(gas_txt) * 16
+        h = 30
+
+    cx = device.width // 2 + VISUAL_X_OFFSET
+    cy = 40
+    x = int(cx - w // 2)
+    y = int(cy - h // 2)
+    _draw_text_bold(draw, (x, y), gas_txt, fbig, fill=255)
+
+    err = (scan_detail.get("err") or "").strip()
+    if err:
+        draw.text((2, 50), ("ERR " + err)[:18], font=get_font(11), fill=255)
+    else:
+        draw.text((2, 50), "NEXT:뒤로  EXEC길게:TFTP", font=get_font(10), fill=255)
 
 def modbus_detail_poll_thread():
     global need_update
@@ -1299,13 +1374,13 @@ def modbus_detail_poll_thread():
             ip = scan_detail_ip
         if (not active) or (not ip):
             continue
-        try:
-            l1, l2, l3, l4 = _read_detail_lines_for_ip(ip)
-            _scan_detail_set_lines(l1, l2, l3, l4)
-            need_update = True
-        except Exception:
-            _scan_detail_set_lines(f"MODBUS {ip}", "읽기 오류", "", "NEXT:뒤로 EXEC길게:TFTP")
-            need_update = True
+        gas, flags, err = read_gas_and_alarm_flags(ip)
+        scan_detail["gas"] = gas
+        if flags:
+            scan_detail["flags"] = flags
+        scan_detail["err"] = err or ""
+        scan_detail["ts"] = time.time()
+        need_update = True
 
 def _scan_reset_from_myip(ip: str):
     global scan_base_prefix, scan_cursor
@@ -1313,7 +1388,8 @@ def _scan_reset_from_myip(ip: str):
     scan_cursor = 2
 
 def modbus_scan_loop():
-    global scan_ips, scan_infos, scan_selected_idx, need_update, scan_last_tick, scan_cursor, scan_base_prefix, scan_seen
+    global scan_ips, scan_infos, scan_selected_idx, need_update, scan_last_tick
+    global scan_cursor, scan_base_prefix, scan_seen, scan_menu_dirty
     last_prefix_check = 0.0
     while not stop_threads:
         time.sleep(0.2)
@@ -1331,15 +1407,21 @@ def modbus_scan_loop():
                     _scan_reset_from_myip(ip_now)
                     scan_seen.clear()
                     scan_infos.clear()
+                    scan_ips = []
+                    scan_selected_idx = 0
+                    scan_menu_dirty = True
         with scan_lock:
             pref = scan_base_prefix
             cur = scan_cursor
         if not pref:
             with scan_lock:
-                scan_ips = []
+                if scan_ips:
+                    scan_ips = []
+                    scan_menu_dirty = True
                 scan_last_tick = now
             need_update = True
             continue
+
         found_this_tick = []
         for _ in range(SCAN_HOSTS_PER_TICK):
             host = cur
@@ -1349,25 +1431,43 @@ def modbus_scan_loop():
             ip = pref + str(host)
             if _quick_modbus_probe(ip, timeout=0.18):
                 found_this_tick.append(ip)
+
         infos_local = {}
         for ip in found_this_tick:
             info = _read_device_info_fast(ip)
             if info:
                 infos_local[ip] = info
+
+        changed = False
         with scan_lock:
             scan_cursor = cur
             for ip in found_this_tick:
+                if ip not in scan_seen:
+                    changed = True
                 scan_seen[ip] = now
             for ip, ts in list(scan_seen.items()):
                 if (now - ts) > SCAN_PRUNE_SEC:
                     scan_seen.pop(ip, None)
                     scan_infos.pop(ip, None)
+                    changed = True
             for k, v in infos_local.items():
-                scan_infos[k] = v
-            scan_ips = sorted(scan_seen.keys(), key=lambda x: tuple(int(p) for p in x.split(".")))
+                if scan_infos.get(k) != v:
+                    scan_infos[k] = v
+                    changed = True
+
+            new_ips = sorted(scan_seen.keys(), key=lambda x: tuple(int(p) for p in x.split(".")))
+            if new_ips != scan_ips:
+                scan_ips = new_ips
+                changed = True
+
             if scan_selected_idx >= len(scan_ips):
                 scan_selected_idx = 0
+                changed = True
+
             scan_last_tick = now
+            if changed:
+                scan_menu_dirty = True
+
         need_update = True
 
 def build_menu_for_dir(dir_path, is_root=False):
@@ -1817,6 +1917,10 @@ def execute_command(command_index):
     global connection_success, connection_failed_since_last_success
     global scan_active, scan_selected_idx, scan_infos, scan_seen, scan_base_prefix
     global scan_detail_active, scan_detail_ip
+    global scan_menu_dirty
+
+    if not command_types or command_index < 0 or command_index >= len(command_types):
+        return
 
     item_type = command_types[command_index]
     if item_type == "wifi":
@@ -1841,6 +1945,7 @@ def execute_command(command_index):
             scan_base_prefix = _scan_compute_prefix(get_ip_address())
             if scan_base_prefix:
                 _scan_reset_from_myip(get_ip_address())
+            scan_menu_dirty = True
         with scan_detail_lock:
             scan_detail_active = False
             scan_detail_ip = None
@@ -1887,7 +1992,10 @@ def execute_command(command_index):
         with scan_detail_lock:
             scan_detail_active = True
             scan_detail_ip = target_ip
-        _scan_detail_set_lines(f"MODBUS {target_ip}", "읽는중...", "", "NEXT:뒤로 EXEC길게:TFTP")
+        scan_detail["gas"] = None
+        scan_detail["flags"] = {"PWR": False, "A1": False, "A2": False, "FUT": False}
+        scan_detail["err"] = ""
+        scan_detail["ts"] = time.time()
         menu_stack.append((current_menu, current_command_index))
         current_menu = build_scan_detail_menu(target_ip)
         commands = current_menu["commands"]
@@ -2199,26 +2307,22 @@ def update_oled_display():
         if not commands:
             return
 
-        if current_menu and current_menu.get("dir") == "__scan__":
-            nm = build_scan_menu()
-            current_menu = nm
-            commands = nm["commands"]
-            command_names = nm["names"]
-            command_types = nm["types"]
-            menu_extras = nm["extras"]
-            if current_command_index >= len(commands):
-                current_command_index = 0
-
         with wifi_action_lock:
             wifi_running = wifi_action_running
+
         now_dt = datetime.now()
         current_time = now_dt.strftime("%H시 %M분")
         voltage_percentage = battery_percentage
         ip_address = cached_ip
         wifi_level = cached_wifi_level
+
         try:
             with canvas(device) as draw:
                 if _draw_override(draw):
+                    return
+
+                if current_menu and current_menu.get("dir") == "__scan_detail__":
+                    draw_scan_detail_screen(draw)
                     return
 
                 item_type = command_types[current_command_index]
@@ -2295,19 +2399,6 @@ def update_oled_display():
                     else:
                         draw.text((2, 46), "장치 검색중...", font=get_font(11), fill=255)
 
-                if current_menu and current_menu.get("dir") == "__scan_detail__":
-                    with scan_detail_lock:
-                        l1 = scan_detail_data.get("line1", "")
-                        l2 = scan_detail_data.get("line2", "")
-                        l3 = scan_detail_data.get("line3", "")
-                        l4 = scan_detail_data.get("line4", "")
-                    draw.rectangle(device.bounding_box, fill="black")
-                    draw.text((2, 0), (l1 or "")[:18], font=get_font(12), fill=255)
-                    draw.text((2, 16), (l2 or "")[:18], font=get_font(11), fill=255)
-                    draw.text((2, 30), (l3 or "")[:18], font=get_font(11), fill=255)
-                    draw.text((2, 46), (l4 or "")[:18], font=get_font(11), fill=255)
-                    return
-
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 if item_type in ("system", "wifi"):
                     center_y = 33
@@ -2324,11 +2415,26 @@ def update_oled_display():
 
 def realtime_update_display():
     global need_update, last_oled_update_time
+    global scan_menu_dirty, current_menu, commands, command_names, command_types, menu_extras, current_command_index
     while not stop_threads:
         with wifi_action_lock:
             wifi_running = wifi_action_running
         wifi_stage_tick()
         ap_client_tick(wifi_running)
+
+        if scan_menu_dirty and current_menu and current_menu.get("dir") == "__scan__":
+            with scan_lock:
+                scan_menu_dirty = False
+            nm = build_scan_menu()
+            current_menu = nm
+            commands = nm["commands"]
+            command_names = nm["names"]
+            command_types = nm["types"]
+            menu_extras = nm["extras"]
+            if current_command_index >= len(commands):
+                current_command_index = 0
+            need_update = True
+
         now = time.time()
         if need_update or (now - last_oled_update_time >= 0.2):
             update_oled_display()
@@ -2354,12 +2460,15 @@ def execute_button_logic():
     global scan_detail_active, scan_detail_ip
     global current_menu, commands, command_names, command_types, menu_extras, menu_stack
     global is_executing
+
     while True:
         now = time.time()
         if battery_percentage == 0:
             shutdown_system()
+
         with wifi_action_lock:
             wifi_running = wifi_action_running
+
         if wifi_running and next_is_down and (not next_long_handled) and (next_press_time is not None):
             if now - next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
                 next_long_handled = True
