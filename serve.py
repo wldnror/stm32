@@ -14,7 +14,7 @@ from ina219 import INA219
 import threading
 import re
 import wifi_portal
-from typing import Optional, Tuple, List, Dict, Any
+from typing import Optional, Tuple
 
 from pymodbus.client import ModbusTcpClient
 from pymodbus.pdu import ExceptionResponse
@@ -778,59 +778,17 @@ def _treat_as_ok_modbus_write_exception(e: Exception) -> bool:
     ]
     return any(k in msg for k in ok_like)
 
-def _regs_to_ascii(regs: List[int]) -> str:
+def _try_read_some_modbus_info(client: ModbusTcpClient) -> Optional[str]:
     try:
-        b = bytearray()
-        for w in regs:
-            b.append((w >> 8) & 0xFF)
-            b.append(w & 0xFF)
-        s = b.decode("ascii", errors="ignore")
-        return s.replace("\x00", "").strip()
-    except Exception:
-        return ""
-
-def _format_version(v: Optional[int]) -> str:
-    try:
-        if v is None:
-            return ""
-        vv = int(v)
-        major = vv // 100
-        minor = vv % 100
-        return f"v{major}.{minor:02d}"
-    except Exception:
-        return ""
-
-def _scan_device_info(ip: str) -> Dict[str, Any]:
-    info = {"ip": ip, "ver": None, "ver_s": "", "model": "", "tftp": None, "fw_status": None}
-    c = _modbus_connect_with_retries(ip, port=502, timeout=0.9, retries=2, delay=0.15)
-    if c is None:
-        return info
-    try:
-        base_addr = reg_addr(40001)
-        rr = c.read_holding_registers(base_addr, 24)
-        if not _is_modbus_error(rr):
-            regs = getattr(rr, "registers", []) or []
-            if len(regs) >= 22:
-                v = regs[21]
-                info["ver"] = v
-                info["ver_s"] = _format_version(v)
-                info["fw_status"] = True if len(regs) >= 24 else False
-                info["tftp"] = info["fw_status"]
-        rr2 = c.read_holding_registers(reg_addr(40030), 4)
-        if not _is_modbus_error(rr2):
-            regs2 = getattr(rr2, "registers", []) or []
-            if len(regs2) == 4:
-                s = _regs_to_ascii(regs2)
-                if s:
-                    info["model"] = s[:16]
-    except Exception:
-        pass
-    finally:
-        try:
-            c.close()
-        except Exception:
-            pass
-    return info
+        r = client.read_holding_registers(reg_addr(40001), 4)
+        if _is_modbus_error(r):
+            return None
+        vals = getattr(r, "registers", None)
+        if not vals:
+            return None
+        return "R40001:" + ",".join(str(x) for x in vals[:4])
+    except Exception as e:
+        return ("READ ERR:" + str(e))[:18]
 
 def make_openocd_program_cmd(bin_path: str) -> str:
     return (
@@ -1064,7 +1022,7 @@ def scan_modbus_devices_same_subnet(limit=48):
     if len(parts) != 4:
         return []
     base = ".".join(parts[:3]) + "."
-    found = []
+    candidates = []
     start = 2
     end = min(254, start + max(8, int(limit)))
     for host in range(start, end + 1):
@@ -1072,42 +1030,19 @@ def scan_modbus_devices_same_subnet(limit=48):
         if ip == my_ip:
             continue
         if _quick_modbus_probe(ip):
-            found.append(ip)
-    infos = []
-    for ip in found:
-        infos.append(_scan_device_info(ip))
-    infos.sort(key=lambda x: x.get("ip", ""))
-    return infos
+            candidates.append(ip)
+    return candidates
 
 def build_remote_ip_menu(ip_list):
     commands_local = []
     names_local = []
     types_local = []
     extras_local = []
-    for item in ip_list:
-        if isinstance(item, dict):
-            ip = item.get("ip", "")
-            ver_s = (item.get("ver_s", "") or "").strip()
-            model = (item.get("model", "") or "").strip()
-            tail = ""
-            if ver_s and model:
-                tail = f" ({ver_s}/{model})"
-            elif ver_s:
-                tail = f" ({ver_s})"
-            elif model:
-                tail = f" ({model})"
-            label = (f"▶ {ip}{tail}")[:22]
-            commands_local.append("remote_update_ip")
-            names_local.append(label)
-            types_local.append("remote_update_ip")
-            extras_local.append(ip)
-        else:
-            ip = str(item)
-            commands_local.append("remote_update_ip")
-            names_local.append(f"▶ {ip}")
-            types_local.append("remote_update_ip")
-            extras_local.append(ip)
-
+    for ip in ip_list:
+        commands_local.append("remote_update_ip")
+        names_local.append(f"▶ {ip}")
+        types_local.append("remote_update_ip")
+        extras_local.append(ip)
     commands_local.append(None)
     names_local.append("◀ 이전으로")
     types_local.append("back")
@@ -1256,6 +1191,15 @@ def tftp_upgrade_device(ip: str):
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
         return
+
+    try:
+        info = _try_read_some_modbus_info(client)
+        if info:
+            set_ui_text("MODBUS", info[:18], pos=(2, 18), font_size=12)
+            time.sleep(1.0)
+            clear_ui_override()
+    except Exception:
+        pass
 
     ok_final = False
     try:
@@ -1791,9 +1735,9 @@ def execute_command(command_index):
         GPIO.output(LED_ERROR1, False)
 
         set_ui_progress(5, "주변 장치\n스캔 중...", pos=(10, 10), font_size=15)
-        infos = scan_modbus_devices_same_subnet(limit=64)
+        ips = scan_modbus_devices_same_subnet(limit=64)
 
-        if not infos:
+        if not ips:
             GPIO.output(LED_ERROR, True)
             set_ui_text("장치 없음", "같은 대역", pos=(12, 18), font_size=15)
             time.sleep(1.3)
@@ -1804,16 +1748,16 @@ def execute_command(command_index):
             is_command_executing = False
             return
 
-        if len(infos) == 1:
+        if len(ips) == 1:
             clear_ui_override()
-            tftp_upgrade_device(infos[0].get("ip", ""))
+            tftp_upgrade_device(ips[0])
             need_update = True
             is_executing = False
             is_command_executing = False
             return
 
         menu_stack.append((current_menu, current_command_index))
-        current_menu = build_remote_ip_menu(infos)
+        current_menu = build_remote_ip_menu(ips)
         commands = current_menu["commands"]
         command_names = current_menu["names"]
         command_types = current_menu["types"]
