@@ -1,4 +1,4 @@
-from datetime import datetime
+ㅍfrom datetime import datetime
 import RPi.GPIO as GPIO
 import time
 import os
@@ -250,18 +250,16 @@ scan_detail = {
 
 SCAN_DETAIL_POLL_SEC = 0.5
 
+# ---------------------------
+# MODBUS (문서 기준으로 수정)
+# ---------------------------
 MODBUS_PORT = 502
 
-REG_GAS_VALUE_4XXXX = 40100
-REG_ALARM_BITS_4XXXX = 40101
-GAS_SCALE = 1.0
-
-ALARM_BIT = {
-    "PWR": 0,
-    "A1":  1,
-    "A2":  2,
-    "FUT": 3,
-}
+REG_STATUS_4XXXX    = 40001  # 상태/알람 비트 레지스터
+REG_GAS_FLOAT_HI    = 40003  # float 상위 16bit (옵션)
+REG_GAS_FLOAT_LO    = 40004  # float 하위 16bit (옵션)
+REG_GAS_INT_4XXXX   = 40005  # 가스값 (16-bit int)
+REG_FAULT_4XXXX     = 40008  # Fault Status (24V low power fault 등)
 
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
