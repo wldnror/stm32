@@ -250,16 +250,13 @@ scan_detail = {
 
 SCAN_DETAIL_POLL_SEC = 0.5
 
-# ---------------------------
-# MODBUS (문서 기준으로 수정)
-# ---------------------------
 MODBUS_PORT = 502
 
-REG_STATUS_4XXXX    = 40001  # 상태/알람 비트 레지스터
-REG_GAS_FLOAT_HI    = 40003  # float 상위 16bit (옵션)
-REG_GAS_FLOAT_LO    = 40004  # float 하위 16bit (옵션)
-REG_GAS_INT_4XXXX   = 40005  # 가스값 (16-bit int)
-REG_FAULT_4XXXX     = 40008  # Fault Status (24V low power fault 등)
+REG_STATUS_4XXXX    = 40001
+REG_GAS_FLOAT_HI    = 40003
+REG_GAS_FLOAT_LO    = 40004
+REG_GAS_INT_4XXXX   = 40005
+REG_FAULT_4XXXX     = 40008
 
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -698,18 +695,75 @@ def select_battery_icon(percentage):
         return high_battery_icon
     return full_battery_icon
 
+def _text_size(draw, text, font):
+    try:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        return (bbox[2] - bbox[0], bbox[3] - bbox[1])
+    except Exception:
+        try:
+            return draw.textsize(text, font=font)
+        except Exception:
+            return (len(text) * 6, 10)
+
+def _ellipsis_to_width(draw, text, font, max_w):
+    s = text or ""
+    if max_w <= 0:
+        return ""
+    w, _ = _text_size(draw, s, font)
+    if w <= max_w:
+        return s
+    ell = "…"
+    w_ell, _ = _text_size(draw, ell, font)
+    if w_ell > max_w:
+        return ""
+    lo, hi = 0, len(s)
+    best = ""
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        cand = s[:mid] + ell
+        w_c, _ = _text_size(draw, cand, font)
+        if w_c <= max_w:
+            best = cand
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return best if best else ell
+
+def _wrap_lines(draw, text, font, max_w, max_lines=2):
+    s = (text or "").strip()
+    if not s:
+        return []
+    words = s.split()
+    if not words:
+        return [s[:max(1, min(len(s), 18))]]
+    lines = []
+    cur = ""
+    for w in words:
+        cand = (cur + " " + w).strip() if cur else w
+        ww, _ = _text_size(draw, cand, font)
+        if ww <= max_w:
+            cur = cand
+        else:
+            if cur:
+                lines.append(cur)
+            cur = w
+            if len(lines) >= max_lines - 1:
+                break
+    if len(lines) < max_lines and cur:
+        lines.append(cur)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+    if lines:
+        last = lines[-1]
+        if _text_size(draw, last, font)[0] > max_w:
+            lines[-1] = _ellipsis_to_width(draw, last, font, max_w)
+    return lines
+
 def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_size, min_size=10):
     size = start_size
     while size >= min_size:
         f = get_font(size)
-        try:
-            bbox = draw.textbbox((0, 0), text, font=f)
-            w = bbox[2] - bbox[0]
-        except Exception:
-            try:
-                w, _ = draw.textsize(text, font=f)
-            except Exception:
-                w = len(text) * (size // 2)
+        w, _ = _text_size(draw, text, f)
         if w <= max_width:
             try:
                 draw.text((center_x, center_y), text, font=f, fill=255, anchor="mm")
@@ -1274,19 +1328,14 @@ def build_scan_menu():
 def build_scan_detail_menu(ip: str):
     return {"dir": "__scan_detail__", "commands": [None], "names": [f"{ip}"], "types": ["scan_detail"], "extras": [ip]}
 
-def _draw_text_bold(draw, xy, text, font, fill=255):
-    x, y = xy
-    draw.text((x, y), text, font=font, fill=fill)
-    draw.text((x + 1, y), text, font=font, fill=fill)
-
 def _draw_box_label(draw, x, y, w, h, label, active):
+    f = get_font(11)
     if active:
         draw.rectangle([x, y, x + w, y + h], fill=255)
-        draw.text((x + 3, y + 1), label, font=get_font(12), fill=0)
-        draw.text((x + 2, y + 1), label, font=get_font(12), fill=0)
+        draw.text((x + 3, y + 1), label, font=f, fill=0)
     else:
         draw.rectangle([x, y, x + w, y + h], outline=255, fill=0)
-        _draw_text_bold(draw, (x + 3, y + 1), label, get_font(12), fill=255)
+        draw.text((x + 3, y + 1), label, font=f, fill=255)
 
 def _fmt_gas(v):
     if v is None:
@@ -1301,14 +1350,6 @@ def _fmt_gas(v):
     except Exception:
         return "--"
 
-# ---------------------------
-# MODBUS READ (문서 기준으로 수정)
-# - 40001~40008 범위 한번에 읽어서 처리
-# - gas: 40005 (int)
-# - A1: 40001 bit6, A2: 40001 bit7
-# - PWR: 40008 bit2 (24V low power fault)
-# - FUT: fault != 0
-# ---------------------------
 def read_gas_and_alarm_flags(ip: str):
     c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=1.0, retries=2, delay=0.12)
     if c is None:
@@ -1317,7 +1358,7 @@ def read_gas_and_alarm_flags(ip: str):
         lo = 40001
         hi = 40008
         start = reg_addr(lo)
-        count = (hi - lo) + 1  # 8개
+        count = (hi - lo) + 1
         r = c.read_holding_registers(start, count)
         if _is_modbus_error(r):
             return None, None, "read"
@@ -1342,7 +1383,7 @@ def read_gas_and_alarm_flags(ip: str):
         flags = {"PWR": pwr_fault, "A1": a1, "A2": a2, "FUT": fut}
         return gas, flags, ""
     except Exception as e:
-        return None, None, str(e)[:10]
+        return None, None, str(e)[:18]
     finally:
         try:
             c.close()
@@ -1358,30 +1399,37 @@ def draw_scan_detail_screen(draw):
     _draw_box_label(draw, 50,  0, 20, 14, "A2",  bool(f.get("A2")))
     _draw_box_label(draw, 72,  0, 26, 14, "FUT", bool(f.get("FUT")))
 
-    ip_txt = (scan_detail_ip or "")[-12:]
-    draw.text((100, 2), ip_txt, font=get_font(10), fill=255)
+    ip_txt = (scan_detail_ip or "")
+    fip = get_font(10)
+    ip_disp = _ellipsis_to_width(draw, ip_txt, fip, max(0, device.width - 2 - 100))
+    if not ip_disp:
+        ip_disp = _ellipsis_to_width(draw, ip_txt, fip, max(0, device.width - 2))
+        wip, _ = _text_size(draw, ip_disp, fip)
+        xip = max(0, device.width - wip - 2)
+    else:
+        wip, _ = _text_size(draw, ip_disp, fip)
+        xip = max(100, device.width - wip - 2)
+    draw.text((xip, 2), ip_disp, font=fip, fill=255)
 
     gas_txt = _fmt_gas(scan_detail.get("gas", None))
     fbig = get_font(30)
-    try:
-        bbox = draw.textbbox((0, 0), gas_txt, font=fbig)
-        w = bbox[2] - bbox[0]
-        h = bbox[3] - bbox[1]
-    except Exception:
-        w = len(gas_txt) * 16
-        h = 30
-
+    w, h = _text_size(draw, gas_txt, fbig)
     cx = device.width // 2 + VISUAL_X_OFFSET
-    cy = 40
+    cy = 38
     x = int(cx - w // 2)
     y = int(cy - h // 2)
-    _draw_text_bold(draw, (x, y), gas_txt, fbig, fill=255)
+    draw.text((x, y), gas_txt, font=fbig, fill=255)
 
     err = (scan_detail.get("err") or "").strip()
+    fbot = get_font(10)
+    max_w = device.width - 4
+    y0 = 48
     if err:
-        draw.text((2, 50), ("ERR " + err)[:18], font=get_font(11), fill=255)
+        lines = _wrap_lines(draw, "ERR " + err, fbot, max_w, max_lines=2)
+        for i, ln in enumerate(lines[:2]):
+            draw.text((2, y0 + i * 10), ln, font=fbot, fill=255)
     else:
-        draw.text((2, 50), "NEXT:뒤로  EXEC길게:TFTP", font=get_font(10), fill=255)
+        draw.text((2, y0), _ellipsis_to_width(draw, "NEXT:뒤로  EXEC길게:TFTP", fbot, max_w), font=fbot, fill=255)
 
 def modbus_detail_poll_thread():
     global need_update
