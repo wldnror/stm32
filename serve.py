@@ -1953,9 +1953,9 @@ def execute_command(command_index):
     global current_menu, commands, command_names, command_types, menu_extras
     global current_command_index, menu_stack, need_update
     global connection_success, connection_failed_since_last_success
-    global scan_active, scan_selected_idx, scan_infos, scan_seen, scan_base_prefix
+    global scan_active, scan_selected_idx, scan_selected_ip, scan_infos, scan_seen, scan_base_prefix
     global scan_detail_active, scan_detail_ip
-    global scan_menu_dirty
+    global scan_menu_dirty, scan_menu_dirty_ts
 
     if not command_types or command_index < 0 or command_index >= len(command_types):
         return
@@ -1975,15 +1975,18 @@ def execute_command(command_index):
         return
 
     if item_type == "device_scan":
+        myip = get_ip_address()
         with scan_lock:
             scan_active = True
             scan_selected_idx = 0
+            scan_selected_ip = None
             scan_infos.clear()
             scan_seen.clear()
-            scan_base_prefix = _scan_compute_prefix(get_ip_address())
+            scan_base_prefix = _scan_compute_prefix(myip)
             if scan_base_prefix:
-                _scan_reset_from_myip(get_ip_address())
+                _scan_reset_from_myip(myip)
             scan_menu_dirty = True
+            scan_menu_dirty_ts = time.time()
         with scan_detail_lock:
             scan_detail_active = False
             scan_detail_ip = None
@@ -2003,6 +2006,7 @@ def execute_command(command_index):
     if item_type == "back_from_scan":
         with scan_lock:
             scan_active = False
+            scan_selected_ip = None
         with scan_detail_lock:
             scan_detail_active = False
             scan_detail_ip = None
