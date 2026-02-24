@@ -962,7 +962,7 @@ def tftp_upgrade_device(ip: str):
         clear_ui_override()
         return
 
-    set_ui_progress(20, "FW 복사중", "", pos=(18, 10), font_size=15)
+    set_ui_progress(20, "FW 복사중", pos=(18, 10), font_size=15)
     device_dir = os.path.join(TFTP_SERVER_ROOT, TFTP_DEVICE_SUBDIR)
     os.makedirs(device_dir, exist_ok=True)
     dst_path = os.path.join(device_dir, TFTP_DEVICE_FILENAME)
@@ -985,7 +985,7 @@ def tftp_upgrade_device(ip: str):
         return
 
     tftp_ip = get_ip_address()
-    set_ui_progress(45, "명령 전송", ip, pos=(6, 0), font_size=13)
+    set_ui_progress(45, f"명령 전송\n{ip}", pos=(6, 0), font_size=13)
 
     client = ModbusTcpClient(ip, port=502, timeout=2)
     if not client.connect():
@@ -1022,7 +1022,7 @@ def tftp_upgrade_device(ip: str):
             return
 
         GPIO.output(LED_SUCCESS, True)
-        set_ui_progress(100, "전송 완료", "업뎃 진행", pos=(10, 5), font_size=15)
+        set_ui_progress(100, "전송 완료\n업뎃 진행", pos=(10, 5), font_size=15)
         time.sleep(1.2)
         GPIO.output(LED_SUCCESS, False)
 
