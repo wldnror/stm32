@@ -1021,9 +1021,6 @@ def scan_modbus_devices_same_subnet(limit=48):
             candidates.append(ip)
     return candidates
 
-# -----------------------------
-# (변경) 원격 업데이트 메뉴(스캔/선택/실행) 통합
-# -----------------------------
 def build_remote_ip_menu(ip_list):
     commands_local = []
     names_local = []
@@ -1295,12 +1292,10 @@ def build_menu_for_dir(dir_path, is_root=False):
         types_local.append("wifi")
         extras_local.append(None)
 
-        # (변경) 원격(TFTP+Modbus) 통합 메뉴
         commands_local.append("remote_update")
         names_local.append("원격 업데이트")
         types_local.append("remote_update")
         extras_local.append(None)
-
     else:
         commands_local.append(None)
         names_local.append("◀ 이전으로")
@@ -1328,7 +1323,7 @@ def refresh_root_menu(reset_index=False):
 refresh_root_menu(reset_index=True)
 
 def git_pull():
-    global git_last_check
+    global git_last_check, git_has_update_cached
     shell_script_path = "/home/user/stm32/git-pull.sh"
     if not os.path.isfile(shell_script_path):
         with open(shell_script_path, "w") as script_file:
@@ -1352,7 +1347,7 @@ def git_pull():
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
         if result.returncode == 0:
-            if "이미 최신 상태" in result.stdout:
+            if "이미 최신 상태" in (result.stdout or ""):
                 set_ui_text("이미 최신 상태", "", pos=(10, 18), font_size=15)
                 time.sleep(1.0)
             else:
@@ -1372,7 +1367,6 @@ def git_pull():
         set_ui_text("오류 발생", "", pos=(20, 18), font_size=15)
         time.sleep(1.2)
     finally:
-        global git_has_update_cached
         with git_state_lock:
             git_has_update_cached = False
         git_last_check = 0.0
@@ -1382,6 +1376,7 @@ def git_pull():
         clear_ui_override()
 
 def unlock_memory():
+    global need_update
     set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
     openocd_command = [
         "sudo", "openocd",
@@ -1400,7 +1395,6 @@ def unlock_memory():
         return True
     set_ui_progress(0, "메모리 잠금\n 해제 실패!", pos=(20, 0), font_size=15)
     time.sleep(1)
-    global need_update
     need_update = True
     return False
 
@@ -1714,9 +1708,6 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    # -----------------------------
-    # (변경) 원격 업데이트 통합 실행
-    # -----------------------------
     if item_type == "remote_update":
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
@@ -1736,7 +1727,6 @@ def execute_command(command_index):
             is_command_executing = False
             return
 
-        # 1개면 바로 실행 (단순화)
         if len(ips) == 1:
             clear_ui_override()
             tftp_upgrade_device(ips[0])
@@ -1745,7 +1735,6 @@ def execute_command(command_index):
             is_command_executing = False
             return
 
-        # 여러 개면 목록 메뉴로
         menu_stack.append((current_menu, current_command_index))
         current_menu = build_remote_ip_menu(ips)
         commands = current_menu["commands"]
@@ -1864,7 +1853,6 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    # 기본: 로컬(OpenOCD) BIN 플래시
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
