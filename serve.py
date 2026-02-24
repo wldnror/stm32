@@ -2148,11 +2148,23 @@ last_oled_update_time = 0.0
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
+    global current_menu, commands, command_names, command_types, menu_extras
     if not display_lock.acquire(timeout=0.2):
         return
     try:
         if not commands:
             return
+
+        if current_menu and current_menu.get("dir") == "__scan__":
+            nm = build_scan_menu()
+            current_menu = nm
+            commands = nm["commands"]
+            command_names = nm["names"]
+            command_types = nm["types"]
+            menu_extras = nm["extras"]
+            if current_command_index >= len(commands):
+                current_command_index = 0
+
         with wifi_action_lock:
             wifi_running = wifi_action_running
         now_dt = datetime.now()
@@ -2229,6 +2241,18 @@ def update_oled_display():
                         draw.text((x, 50), f"IP: {AP_IP}:{PORTAL_PORT}"[:18], font=get_font(12), fill=255)
                     return
 
+                if current_menu and current_menu.get("dir") == "__scan__":
+                    with scan_lock:
+                        ips = list(scan_ips)
+                        idx = scan_selected_idx
+                        infos = dict(scan_infos)
+                    if ips:
+                        sel_ip = ips[min(idx, len(ips) - 1)]
+                        info = infos.get(sel_ip, "읽는중...")
+                        draw.text((2, 46), (info or "")[:18], font=get_font(11), fill=255)
+                    else:
+                        draw.text((2, 46), "장치 검색중...", font=get_font(11), fill=255)
+
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 if item_type in ("system", "wifi"):
                     center_y = 33
@@ -2271,6 +2295,7 @@ def execute_button_logic():
     global next_pressed_event
     global auto_flash_done_connection
     global next_long_handled, wifi_cancel_requested
+    global scan_selected_idx
     while True:
         now = time.time()
         if battery_percentage == 0:
@@ -2289,7 +2314,7 @@ def execute_button_logic():
                 execute_long_handled = True
                 if commands and (not is_executing):
                     item_type = command_types[current_command_index]
-                    if item_type in ("system", "dir", "back", "script", "wifi", "bin", "remote_update", "remote_update_ip"):
+                    if item_type in ("system", "dir", "back", "script", "wifi", "bin", "device_scan", "scan_item", "back_from_scan"):
                         execute_command(current_command_index)
                         need_update = True
 
@@ -2301,6 +2326,10 @@ def execute_button_logic():
                 if not execute_long_handled:
                     if commands and (not is_executing):
                         current_command_index = (current_command_index - 1) % len(commands)
+                        if current_menu and current_menu.get("dir") == "__scan__":
+                            with scan_lock:
+                                if scan_ips:
+                                    scan_selected_idx = min(current_command_index, max(0, len(scan_ips) - 1))
                         need_update = True
             execute_press_time = None
             execute_long_handled = False
@@ -2309,6 +2338,10 @@ def execute_button_logic():
             if (not execute_is_down) and (not is_executing):
                 if commands:
                     current_command_index = (current_command_index + 1) % len(commands)
+                    if current_menu and current_menu.get("dir") == "__scan__":
+                        with scan_lock:
+                            if scan_ips and command_types[current_command_index] == "scan_item":
+                                scan_selected_idx = min(current_command_index, max(0, len(scan_ips) - 1))
                     need_update = True
             next_pressed_event = False
 
@@ -2346,6 +2379,9 @@ net_thread.start()
 
 git_thread = threading.Thread(target=git_poll_thread, daemon=True)
 git_thread.start()
+
+scan_thread = threading.Thread(target=modbus_scan_loop, daemon=True)
+scan_thread.start()
 
 need_update = True
 
