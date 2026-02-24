@@ -19,7 +19,6 @@ from typing import Optional, Tuple
 from pymodbus.client import ModbusTcpClient
 from pymodbus.pdu import ExceptionResponse
 
-
 VISUAL_X_OFFSET = 0
 display_lock = threading.Lock()
 stm32_state_lock = threading.Lock()
@@ -62,13 +61,11 @@ AP_PASS = getattr(wifi_portal, "AP_PASS", "12345678")
 AP_IP = getattr(wifi_portal, "AP_IP", "192.168.4.1")
 PORTAL_PORT = 8080
 
-
 def logi(msg: str):
     try:
         print("[AUTOSEL] " + str(msg), flush=True)
     except Exception:
         pass
-
 
 def _portal_set_state_safe(**kwargs):
     try:
@@ -89,7 +86,6 @@ def _portal_set_state_safe(**kwargs):
     except Exception:
         pass
 
-
 def _portal_pop_req_safe():
     try:
         if hasattr(wifi_portal, "_pop_req_file"):
@@ -97,7 +93,6 @@ def _portal_pop_req_safe():
     except Exception:
         pass
     return None
-
 
 def _portal_clear_req_safe():
     try:
@@ -107,7 +102,6 @@ def _portal_clear_req_safe():
     except Exception:
         pass
     _portal_set_state_safe(requested=None)
-
 
 def wifi_stage_set(percent, line1, line2=""):
     with wifi_stage_lock:
@@ -119,7 +113,6 @@ def wifi_stage_set(percent, line1, line2=""):
         wifi_stage["line2"] = line2 or ""
     _portal_set_state_safe(connect_stage=(line1 or ""))
 
-
 def wifi_stage_clear():
     with wifi_stage_lock:
         wifi_stage["active"] = False
@@ -128,7 +121,6 @@ def wifi_stage_clear():
         wifi_stage["line1"] = ""
         wifi_stage["line2"] = ""
         wifi_stage["spinner"] = 0
-
 
 def wifi_stage_tick():
     with wifi_stage_lock:
@@ -145,7 +137,6 @@ def wifi_stage_tick():
                 step = 2
             wifi_stage["display_percent"] = min(t, d + step)
         wifi_stage["spinner"] = (wifi_stage["spinner"] + 1) % 4
-
 
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
@@ -226,10 +217,8 @@ git_last_check = 0.0
 git_check_interval = 5.0
 GIT_REPO_DIR = "/home/user/stm32"
 
-
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
 
 def run_quiet(cmd, timeout=3.0, shell=False):
     try:
@@ -238,14 +227,12 @@ def run_quiet(cmd, timeout=3.0, shell=False):
     except Exception:
         return False
 
-
 def run_capture(cmd, timeout=4.0, shell=False):
     try:
         r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout, shell=shell)
         return r.returncode, (r.stdout or ""), (r.stderr or "")
     except Exception as e:
         return 999, "", str(e)
-
 
 def set_ui_progress(percent, message, pos=(0, 0), font_size=15):
     with ui_override_lock:
@@ -257,7 +244,6 @@ def set_ui_progress(percent, message, pos=(0, 0), font_size=15):
         ui_override["font_size"] = font_size
         ui_override["line2"] = ""
 
-
 def set_ui_text(line1, line2="", pos=(0, 0), font_size=15):
     with ui_override_lock:
         ui_override["active"] = True
@@ -268,7 +254,6 @@ def set_ui_text(line1, line2="", pos=(0, 0), font_size=15):
         ui_override["font_size"] = font_size
         ui_override["percent"] = 0
 
-
 def clear_ui_override():
     with ui_override_lock:
         ui_override["active"] = False
@@ -277,13 +262,11 @@ def clear_ui_override():
         ui_override["line2"] = ""
         ui_override["percent"] = 0
 
-
 def _iface_exists(name: str) -> bool:
     try:
         return os.path.isdir(f"/sys/class/net/{name}")
     except Exception:
         return False
-
 
 def has_real_internet(timeout=1.5):
     try:
@@ -301,14 +284,12 @@ def has_real_internet(timeout=1.5):
     except Exception:
         return False
 
-
 def _git_head_hash():
     rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "rev-parse", "HEAD"], timeout=1.2)
     if rc != 0:
         return None
     v = (out or "").strip()
     return v if v else None
-
 
 def _git_branch_name():
     rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "rev-parse", "--abbrev-ref", "HEAD"], timeout=1.2)
@@ -319,7 +300,6 @@ def _git_branch_name():
         return None
     return v
 
-
 def _git_has_origin():
     rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "remote"], timeout=1.2)
     if rc != 0:
@@ -327,14 +307,12 @@ def _git_has_origin():
     remotes = [x.strip() for x in (out or "").splitlines() if x.strip()]
     return "origin" in remotes
 
-
 def _git_upstream_hash():
     rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "rev-parse", "@{u}"], timeout=1.2)
     if rc != 0:
         return None
     v = (out or "").strip()
     return v if v else None
-
 
 def git_has_remote_updates_light(timeout=2.2) -> bool:
     if not os.path.isdir(GIT_REPO_DIR):
@@ -357,7 +335,6 @@ def git_has_remote_updates_light(timeout=2.2) -> bool:
     if not uh:
         return False
     return uh != lh
-
 
 def git_poll_thread():
     global git_has_update_cached, git_last_check, need_update
@@ -394,25 +371,20 @@ def git_poll_thread():
         except Exception:
             time.sleep(0.5)
 
-
 def nm_is_active():
     rc, out, _ = run_capture(["systemctl", "is-active", "NetworkManager"], timeout=2.0)
     return (rc == 0) and ("active" in out.strip())
-
 
 def nm_restart():
     run_quiet(["sudo", "systemctl", "enable", "--now", "NetworkManager"], timeout=6.0)
     run_quiet(["sudo", "systemctl", "restart", "NetworkManager"], timeout=6.0)
 
-
 def nm_set_managed(managed: bool):
     v = "yes" if managed else "no"
     run_quiet(["sudo", "nmcli", "dev", "set", "wlan0", "managed", v], timeout=4.0)
 
-
 def nm_disconnect_wlan0():
     run_quiet(["sudo", "nmcli", "dev", "disconnect", "wlan0"], timeout=4.0)
-
 
 def nm_get_active_wifi_profile():
     rc, out, _ = run_capture(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"], timeout=3.0)
@@ -426,7 +398,6 @@ def nm_get_active_wifi_profile():
                 return name
     return None
 
-
 def nm_autoconnect(timeout=25):
     t0 = time.time()
     while time.time() - t0 < timeout:
@@ -434,7 +405,6 @@ def nm_autoconnect(timeout=25):
             return True
         time.sleep(0.7)
     return has_real_internet()
-
 
 def nm_connect(ssid: str, psk: str, timeout=30):
     run_quiet(["sudo", "nmcli", "dev", "wifi", "rescan", "ifname", "wlan0"], timeout=6.0)
@@ -449,13 +419,11 @@ def nm_connect(ssid: str, psk: str, timeout=30):
     rc2, _, _ = run_capture(cmd, timeout=timeout + 5)
     return rc2 == 0
 
-
 def nm_up_profile(nm_id: str, timeout=20) -> bool:
     if not nm_id:
         return False
     rc, _, _ = run_capture(["sudo", "nmcli", "--wait", str(int(timeout)), "connection", "up", "id", nm_id], timeout=timeout + 2)
     return rc == 0
-
 
 def wpa_select_saved_ssid(ssid: str) -> bool:
     if not ssid:
@@ -481,7 +449,6 @@ def wpa_select_saved_ssid(ssid: str) -> bool:
     run_quiet(["sudo", "dhclient", "wlan0"], timeout=10.0)
     return True
 
-
 def kill_portal_tmp_procs():
     cmd = r"""sudo bash -lc '
 pids=$(pgrep -a hostapd | awk "/\/tmp\/hostapd\.conf/{print \$1}" | xargs)
@@ -491,14 +458,12 @@ pids=$(pgrep -a dnsmasq | awk "/\/tmp\/dnsmasq\.conf/{print \$1}" | xargs)
 '"""
     run_quiet(cmd, timeout=6.0, shell=True)
 
-
 def wlan0_soft_reset():
     run_quiet(["sudo", "ip", "addr", "flush", "dev", "wlan0"], timeout=3.0)
     run_quiet(["sudo", "ip", "link", "set", "wlan0", "down"], timeout=3.0)
     time.sleep(1)
     run_quiet(["sudo", "ip", "link", "set", "wlan0", "up"], timeout=3.0)
     time.sleep(1)
-
 
 def ina_poll_loop(interval=0.35):
     global ina_last
@@ -525,7 +490,6 @@ def ina_poll_loop(interval=0.35):
             pass
         time.sleep(interval)
 
-
 def init_ina219():
     global ina, ina_poll_started
     try:
@@ -533,10 +497,9 @@ def init_ina219():
         ina.configure()
     except Exception:
         ina = None
-    if (not ina_poll_started):
+    if not ina_poll_started:
         ina_poll_started = True
         threading.Thread(target=ina_poll_loop, daemon=True).start()
-
 
 def _ina_get_voltage(max_age=2.0):
     d = ina_last
@@ -544,7 +507,6 @@ def _ina_get_voltage(max_age=2.0):
     if ts and (time.time() - ts) <= max_age:
         return d.get("v", None)
     return None
-
 
 def read_ina219_percentage():
     try:
@@ -560,13 +522,11 @@ def read_ina219_percentage():
     except Exception:
         return -1
 
-
 def battery_monitor_thread():
     global battery_percentage
     while not stop_threads:
         battery_percentage = read_ina219_percentage()
         time.sleep(2)
-
 
 def button_next_edge(channel):
     global last_time_button_next_pressed
@@ -587,7 +547,6 @@ def button_next_edge(channel):
         next_is_down = False
         next_press_time = None
 
-
 def button_execute_callback(channel):
     global last_time_button_execute_pressed, execute_press_time, execute_is_down, execute_long_handled
     now = time.time()
@@ -598,7 +557,6 @@ def button_execute_callback(channel):
     execute_is_down = True
     execute_long_handled = False
 
-
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
@@ -608,7 +566,6 @@ GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
-
 
 def check_stm32_connection():
     global connection_success, connection_failed_since_last_success, is_command_executing
@@ -643,7 +600,6 @@ def check_stm32_connection():
             connection_success = False
         return False
 
-
 def stm32_poll_thread():
     global last_stm32_check_time, auto_flash_done_connection
     while not stop_threads:
@@ -668,7 +624,6 @@ def stm32_poll_thread():
         if cur_state and (not prev_state):
             auto_flash_done_connection = False
 
-
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
 
@@ -685,7 +640,6 @@ def get_font(size: int):
         font_cache[size] = f
     return f
 
-
 low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
@@ -699,7 +653,6 @@ def select_battery_icon(percentage):
     if percentage < 100:
         return high_battery_icon
     return full_battery_icon
-
 
 def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_size, min_size=10):
     size = start_size
@@ -726,7 +679,6 @@ def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_si
     except TypeError:
         draw.text((center_x, center_y), text, font=f, fill=255)
 
-
 def draw_wifi_bars(draw, x, y, level):
     bar_w = 3
     gap = 2
@@ -740,7 +692,6 @@ def draw_wifi_bars(draw, x, y, level):
             draw.rectangle([xx, yy, xx + bar_w, y + max_h], fill=255)
         else:
             draw.rectangle([xx, y + max_h - 1, xx + bar_w, y + max_h], fill=255)
-
 
 FIRMWARE_DIR = "/home/user/stm32/Program"
 OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
@@ -761,15 +712,8 @@ MODBUS_PORT = 502
 _detect_cache_lock = threading.Lock()
 _detect_cache = {"ts": 0.0, "flash_kb": None, "dev_id": None}
 
-
-# =========================
-# Modbus/TFTP helpers (반영)
-# =========================
-
 def reg_addr(addr_4xxxx: int) -> int:
-    """4xxxx 레지스터를 pymodbus 0-based holding register 주소로 변환"""
     return int(addr_4xxxx) - 40001
-
 
 def encode_ip_to_words(ip: str):
     try:
@@ -781,7 +725,6 @@ def encode_ip_to_words(ip: str):
             raise ValueError("bad ip")
     return ((a << 8) | b, (c << 8) | d)
 
-
 def _quick_modbus_probe(ip: str, timeout=0.25) -> bool:
     try:
         s = socket.create_connection((ip, MODBUS_PORT), timeout=timeout)
@@ -790,11 +733,7 @@ def _quick_modbus_probe(ip: str, timeout=0.25) -> bool:
     except Exception:
         return False
 
-
 def _modbus_connect_with_retries(ip: str, port=502, timeout=2.0, retries=4, delay=0.35) -> Optional[ModbusTcpClient]:
-    """
-    GUI쪽(connect_to_server) 방식처럼, connect() 재시도.
-    """
     c = ModbusTcpClient(ip, port=port, timeout=timeout)
     try:
         for _ in range(max(1, int(retries))):
@@ -816,7 +755,6 @@ def _modbus_connect_with_retries(ip: str, port=502, timeout=2.0, retries=4, dela
             pass
         return None
 
-
 def _is_modbus_error(resp) -> bool:
     try:
         if resp is None:
@@ -829,13 +767,7 @@ def _is_modbus_error(resp) -> bool:
         return True
     return False
 
-
 def _treat_as_ok_modbus_write_exception(e: Exception) -> bool:
-    """
-    GUI 코드처럼:
-    - No response / Invalid Message / decode 류는
-      장치가 명령 받고 리부팅/업그레이드 진입하며 응답이 깨진 것으로 간주 -> OK 처리
-    """
     msg = str(e or "")
     ok_like = [
         "unpack requires a buffer of 4 bytes",
@@ -846,11 +778,6 @@ def _treat_as_ok_modbus_write_exception(e: Exception) -> bool:
     ]
     return any(k in msg for k in ok_like)
 
-
-# =========================
-# OpenOCD flash detect helpers (원본)
-# =========================
-
 def make_openocd_program_cmd(bin_path: str) -> str:
     return (
         "sudo openocd "
@@ -858,7 +785,6 @@ def make_openocd_program_cmd(bin_path: str) -> str:
         "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
         f"-c \"program {bin_path} verify reset exit 0x08000000\""
     )
-
 
 def _parse_openocd_flash_kb(text: str) -> Optional[int]:
     m = re.search(r"flash size\s*=\s*(\d+)\s*KiB", text, re.IGNORECASE)
@@ -875,7 +801,6 @@ def _parse_openocd_flash_kb(text: str) -> Optional[int]:
             return None
     return None
 
-
 def _detect_flash_kb_by_probe(timeout=3.5) -> Optional[int]:
     cmd = [
         "sudo", "openocd",
@@ -890,7 +815,6 @@ def _detect_flash_kb_by_probe(timeout=3.5) -> Optional[int]:
     txt = (out or "") + "\n" + (err or "")
     kb = _parse_openocd_flash_kb(txt)
     return kb
-
 
 def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optional[int]]:
     now = time.time()
@@ -942,7 +866,6 @@ def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optio
             return None, kb
         return None, None
 
-
 def _strip_order_prefix(name: str) -> str:
     s = (name or "").strip()
     m = re.match(r"^\d+\.(.*)$", s)
@@ -950,15 +873,12 @@ def _strip_order_prefix(name: str) -> str:
         s = (m.group(1) or "").strip()
     return s
 
-
 def _canon(name: str) -> str:
     return _strip_order_prefix(name).strip().lower()
-
 
 def _is_ir_variant(selected_bin_path: str) -> bool:
     fn = os.path.basename(selected_bin_path).upper()
     return fn.startswith("IR_") or fn.startswith("IR")
-
 
 def _key_from_filename(path_or_name: str) -> str:
     base = os.path.basename(path_or_name or "")
@@ -971,11 +891,9 @@ def _key_from_filename(path_or_name: str) -> str:
         return (m2.group(1) or "").strip()
     return _strip_order_prefix(stem).strip()
 
-
 def _gas_key_from_selected_path(selected_bin_path: str) -> str:
     sp = os.path.abspath(selected_bin_path)
     return _key_from_filename(sp)
-
 
 def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]) -> Tuple[str, str]:
     if flash_kb is None:
@@ -1035,7 +953,6 @@ def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]) -
             return c, chosen_kind
     return selected_bin_path, "원본"
 
-
 def parse_order_and_name(name: str, is_dir: bool):
     raw = name if is_dir else os.path.splitext(name)[0]
     m = re.match(r"^(\d+)\.(.*)$", raw)
@@ -1047,7 +964,6 @@ def parse_order_and_name(name: str, is_dir: bool):
         display = raw
     return order, display
 
-
 def _ip_from_ip_cmd(ifname: str) -> str:
     rc, out, _ = run_capture(["bash", "-lc", f"ip -4 addr show {ifname} | awk '/inet /{{print $2}}' | head -n1"], timeout=0.9)
     if rc != 0:
@@ -1057,7 +973,6 @@ def _ip_from_ip_cmd(ifname: str) -> str:
         return "0.0.0.0"
     ip = v.split("/")[0].strip()
     return ip if ip else "0.0.0.0"
-
 
 def get_ip_address():
     try:
@@ -1087,7 +1002,6 @@ def get_ip_address():
         pass
     return "0.0.0.0"
 
-
 def scan_modbus_devices_same_subnet(limit=48):
     my_ip = get_ip_address()
     if my_ip == "0.0.0.0":
@@ -1106,7 +1020,6 @@ def scan_modbus_devices_same_subnet(limit=48):
         if _quick_modbus_probe(ip):
             candidates.append(ip)
     return candidates
-
 
 def build_tftp_device_menu(ip_list):
     commands_local = []
@@ -1129,7 +1042,6 @@ def build_tftp_device_menu(ip_list):
         "types": types_local,
         "extras": extras_local,
     }
-
 
 def pick_remote_fw_file_for_device(ip: str) -> str:
     if not os.path.isdir(TFTP_REMOTE_DIR):
@@ -1172,7 +1084,6 @@ def pick_remote_fw_file_for_device(ip: str) -> str:
     bins.sort(key=_score, reverse=True)
     return bins[0]
 
-
 def _ensure_tftp_dir(path: str) -> bool:
     try:
         os.makedirs(path, exist_ok=True)
@@ -1185,11 +1096,6 @@ def _ensure_tftp_dir(path: str) -> bool:
     except Exception:
         return False
 
-
-# =========================
-# TFTP upgrade (여기 수정 반영)
-# =========================
-
 def tftp_upgrade_device(ip: str):
     ip = (ip or "").strip()
     if not ip:
@@ -1197,7 +1103,6 @@ def tftp_upgrade_device(ip: str):
 
     set_ui_progress(5, "TFTP 업뎃\n준비...", pos=(18, 0), font_size=15)
 
-    # (1) 포트 502 먼저 probe: 스캔은 했어도 업뎃 시점에 죽어있으면 시간 아낌
     if not _quick_modbus_probe(ip, timeout=0.35):
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -1264,7 +1169,6 @@ def tftp_upgrade_device(ip: str):
     tftp_ip = get_ip_address()
     set_ui_progress(45, f"명령 전송\n{ip}", pos=(6, 0), font_size=13)
 
-    # (2) GUI처럼 connect 재시도 + 조금 여유있는 timeout
     client = _modbus_connect_with_retries(ip, port=502, timeout=2.2, retries=4, delay=0.35)
     if client is None:
         GPIO.output(LED_ERROR, True)
@@ -1281,7 +1185,6 @@ def tftp_upgrade_device(ip: str):
         addr_ip1 = reg_addr(40088)
         addr_ctrl = reg_addr(40091)
 
-        # (3) TFTP IP 쓰기는 실패해도 치명적 실패로 보지 않음(= GUI 방식)
         try:
             w1, w2 = encode_ip_to_words(tftp_ip)
             try:
@@ -1291,16 +1194,13 @@ def tftp_upgrade_device(ip: str):
         except Exception:
             pass
 
-        # (4) 핵심: 40091=1 쓰기
         try:
             r = client.write_register(addr_ctrl, 1)
             if _is_modbus_error(r):
-                # 응답이 에러 객체면 실패로 처리
                 ok_final = False
             else:
                 ok_final = True
         except Exception as e:
-            # (5) No response/Invalid Message/decode 등은 업그레이드 시작으로 간주 -> OK 처리
             ok_final = _treat_as_ok_modbus_write_exception(e)
 
         if not ok_final:
@@ -1325,11 +1225,6 @@ def tftp_upgrade_device(ip: str):
             pass
 
     clear_ui_override()
-
-
-# =========================
-# Menu building (원본)
-# =========================
 
 def build_menu_for_dir(dir_path, is_root=False):
     entries = []
@@ -1415,7 +1310,6 @@ def build_menu_for_dir(dir_path, is_root=False):
         "extras": extras_local,
     }
 
-
 def refresh_root_menu(reset_index=False):
     global current_menu, commands, command_names, command_types, menu_extras, current_command_index
     current_menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
@@ -1426,9 +1320,7 @@ def refresh_root_menu(reset_index=False):
     if reset_index or (current_command_index >= len(commands)):
         current_command_index = 0
 
-
 refresh_root_menu(reset_index=True)
-
 
 def git_pull():
     global git_last_check
@@ -1484,7 +1376,6 @@ def git_pull():
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
 
-
 def unlock_memory():
     set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
     openocd_command = [
@@ -1508,14 +1399,12 @@ def unlock_memory():
     need_update = True
     return False
 
-
 def restart_script():
     set_ui_progress(25, "재시작 중", pos=(20, 10), font_size=15)
     def restart():
         time.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart, daemon=True).start()
-
 
 def lock_memory_procedure():
     global need_update
@@ -1554,12 +1443,10 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR1, False)
         need_update = True
 
-
 def request_wifi_setup():
     global wifi_action_requested
     with wifi_action_lock:
         wifi_action_requested = True
-
 
 def prepare_for_ap_mode():
     global last_good_wifi_profile
@@ -1573,7 +1460,6 @@ def prepare_for_ap_mode():
         nm_disconnect_wlan0()
         nm_set_managed(False)
         time.sleep(0.3)
-
 
 def restore_after_ap_mode(timeout=25):
     global last_good_wifi_profile
@@ -1606,7 +1492,6 @@ def restore_after_ap_mode(timeout=25):
     time.sleep(0.6)
     wifi_stage_clear()
     return ok
-
 
 def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     wifi_stage_set(10, "연결 준비", "AP 종료")
@@ -1647,7 +1532,6 @@ def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     time.sleep(0.6)
     wifi_stage_clear()
     return ok2
-
 
 def _portal_loop_until_connected_or_cancel():
     global wifi_cancel_requested
@@ -1740,7 +1624,6 @@ def _portal_loop_until_connected_or_cancel():
 
         time.sleep(0.2)
 
-
 def wifi_worker_thread():
     global wifi_action_requested, wifi_action_running
     global status_message, message_position, message_font_size, need_update, wifi_cancel_requested
@@ -1805,7 +1688,6 @@ def wifi_worker_thread():
                 with wifi_action_lock:
                     wifi_action_running = False
         time.sleep(0.05)
-
 
 def execute_command(command_index):
     global is_executing, is_command_executing
@@ -1960,10 +1842,6 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    # =========================
-    # 아래는 기존 BIN 플래시 로직(원본)
-    # =========================
-
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
@@ -2042,7 +1920,6 @@ def execute_command(command_index):
     is_executing = False
     is_command_executing = False
 
-
 def get_wifi_level():
     try:
         rc, out, _ = run_capture(["iw", "dev", "wlan0", "link"], timeout=0.6)
@@ -2065,7 +1942,6 @@ def get_wifi_level():
     except Exception:
         return 0
 
-
 def net_poll_thread():
     global cached_ip, cached_wifi_level, cached_online, last_menu_online, need_update
     while not stop_threads:
@@ -2081,7 +1957,6 @@ def net_poll_thread():
             time.sleep(1.5)
         except Exception:
             time.sleep(0.8)
-
 
 def _draw_override(draw):
     with ui_override_lock:
@@ -2111,7 +1986,6 @@ def _draw_override(draw):
         return True
     return False
 
-
 def get_ap_station_count():
     try:
         r = subprocess.run(["iw", "dev", "wlan0", "station", "dump"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.7)
@@ -2120,7 +1994,6 @@ def get_ap_station_count():
         return sum(1 for line in (r.stdout or "").splitlines() if line.strip().startswith("Station "))
     except Exception:
         return 0
-
 
 def ap_client_tick(wifi_running: bool):
     now = time.time()
@@ -2141,9 +2014,7 @@ def ap_client_tick(wifi_running: bool):
         if cnt > 0 and prev == 0:
             ap_state["flash_until"] = now + 1.3
 
-
 last_oled_update_time = 0.0
-
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
@@ -2242,7 +2113,6 @@ def update_oled_display():
     finally:
         display_lock.release()
 
-
 def realtime_update_display():
     global need_update, last_oled_update_time
     while not stop_threads:
@@ -2257,7 +2127,6 @@ def realtime_update_display():
             need_update = False
         time.sleep(0.03)
 
-
 def shutdown_system():
     set_ui_text("배터리 부족", "시스템 종료 중...", pos=(10, 18), font_size=15)
     time.sleep(2)
@@ -2265,7 +2134,6 @@ def shutdown_system():
         os.system("sudo shutdown -h now")
     except Exception:
         pass
-
 
 def execute_button_logic():
     global current_command_index, need_update
@@ -2328,7 +2196,6 @@ def execute_button_logic():
                 auto_flash_done_connection = True
 
         time.sleep(0.03)
-
 
 init_ina219()
 
