@@ -219,6 +219,7 @@ GIT_REPO_DIR = "/home/user/stm32"
 
 scan_lock = threading.Lock()
 scan_active = False
+scan_done = False
 scan_ips = []
 scan_infos = {}
 scan_selected_idx = 0
@@ -1460,114 +1461,74 @@ def _scan_reset_from_myip(ip: str):
 def modbus_scan_loop():
     global scan_ips, scan_infos, scan_selected_idx, scan_selected_ip, need_update, scan_last_tick
     global scan_cursor, scan_base_prefix, scan_seen, scan_menu_dirty, scan_menu_dirty_ts
-    global scan_prefix_candidate, scan_prefix_candidate_cnt
+    global scan_done, scan_active
 
-    last_prefix_check = 0.0
     while not stop_threads:
-        time.sleep(0.18)
+        time.sleep(0.08)
         with scan_lock:
             active = scan_active
-        if not active:
+            done = scan_done
+            pref = scan_base_prefix
+
+        if (not active) or done:
             continue
 
         now = time.time()
-
-        if now - last_prefix_check > 1.2:
-            last_prefix_check = now
-            ip_now = get_ip_address()
-            pref_now = _scan_compute_prefix(ip_now) if ip_now != "0.0.0.0" else None
-            with scan_lock:
-                pref_cur = scan_base_prefix
-            if pref_now and pref_cur and pref_now != pref_cur:
-                if scan_prefix_candidate != pref_now:
-                    scan_prefix_candidate = pref_now
-                    scan_prefix_candidate_cnt = 1
-                else:
-                    scan_prefix_candidate_cnt += 1
-                if scan_prefix_candidate_cnt >= SCAN_PREFIX_STABLE_CNT:
-                    with scan_lock:
-                        _scan_reset_from_myip(ip_now)
-                        scan_seen.clear()
-                        scan_infos.clear()
-                        scan_ips = []
-                        scan_selected_idx = 0
-                        scan_selected_ip = None
-                        scan_menu_dirty = True
-                        scan_menu_dirty_ts = now
-            else:
-                scan_prefix_candidate = None
-                scan_prefix_candidate_cnt = 0
-
-        with scan_lock:
-            pref = scan_base_prefix
-            cur = scan_cursor
-
         if not pref:
             with scan_lock:
-                if scan_ips:
-                    scan_ips = []
-                    scan_menu_dirty = True
-                    scan_menu_dirty_ts = now
+                scan_ips = []
+                scan_infos.clear()
+                scan_selected_idx = 0
+                scan_selected_ip = None
+                scan_done = True
+                scan_active = False
+                scan_menu_dirty = True
+                scan_menu_dirty_ts = now
                 scan_last_tick = now
             need_update = True
             continue
 
-        found_this_tick = []
-        for _ in range(SCAN_HOSTS_PER_TICK):
-            host = cur
-            cur += 1
-            if cur > 254:
-                cur = 2
+        found = []
+        infos_local = {}
+        last_push = 0.0
+
+        for host in range(2, 255):
+            if stop_threads:
+                break
             ip = pref + str(host)
             if _quick_modbus_probe(ip, timeout=0.22):
-                found_this_tick.append(ip)
+                found.append(ip)
+                info = _read_device_info_fast(ip)
+                if info:
+                    infos_local[ip] = info
 
-        infos_local = {}
-        for ip in found_this_tick:
-            info = _read_device_info_fast(ip)
-            if info:
-                infos_local[ip] = info
+            tnow = time.time()
+            if tnow - last_push >= 0.35:
+                last_push = tnow
+                new_ips = sorted(found, key=lambda x: tuple(int(p) for p in x.split(".")))
+                with scan_lock:
+                    scan_ips = new_ips
+                    for k, v in infos_local.items():
+                        scan_infos[k] = v
+                    if scan_selected_idx >= len(scan_ips):
+                        scan_selected_idx = 0
+                    scan_menu_dirty = True
+                    scan_menu_dirty_ts = tnow
+                    scan_last_tick = tnow
+                need_update = True
 
-        changed = False
+        new_ips = sorted(found, key=lambda x: tuple(int(p) for p in x.split(".")))
         with scan_lock:
-            scan_cursor = cur
-            for ip in found_this_tick:
-                if ip not in scan_seen:
-                    changed = True
-                scan_seen[ip] = now
-
-            for ip, ts in list(scan_seen.items()):
-                if (now - ts) > SCAN_PRUNE_SEC:
-                    scan_seen.pop(ip, None)
-                    scan_infos.pop(ip, None)
-                    if scan_selected_ip == ip:
-                        scan_selected_ip = None
-                    changed = True
-
-            for k, v in infos_local.items():
-                if scan_infos.get(k) != v:
-                    scan_infos[k] = v
-                    changed = True
-
-            new_ips = sorted(scan_seen.keys(), key=lambda x: tuple(int(p) for p in x.split(".")))
-            if new_ips != scan_ips:
-                scan_ips = new_ips
-                changed = True
-
-            if scan_selected_ip and scan_selected_ip in scan_ips:
-                new_idx = scan_ips.index(scan_selected_ip)
-                if scan_selected_idx != new_idx:
-                    scan_selected_idx = new_idx
-                    changed = True
-            else:
-                if scan_selected_idx >= len(scan_ips):
-                    scan_selected_idx = 0
-                    changed = True
-
-            scan_last_tick = now
-            if changed:
-                scan_menu_dirty = True
-                scan_menu_dirty_ts = now
+            scan_ips = new_ips
+            scan_infos.clear()
+            scan_infos.update(infos_local)
+            if scan_selected_idx >= len(scan_ips):
+                scan_selected_idx = 0
+            scan_done = True
+            scan_active = False
+            scan_menu_dirty = True
+            scan_menu_dirty_ts = time.time()
+            scan_last_tick = time.time()
 
         need_update = True
 
@@ -2016,7 +1977,7 @@ def execute_command(command_index):
     global current_menu, commands, command_names, command_types, menu_extras
     global current_command_index, menu_stack, need_update
     global connection_success, connection_failed_since_last_success
-    global scan_active, scan_selected_idx, scan_selected_ip, scan_infos, scan_seen, scan_base_prefix
+    global scan_active, scan_selected_idx, scan_selected_ip, scan_infos, scan_seen, scan_base_prefix, scan_done
     global scan_detail_active, scan_detail_ip
     global scan_menu_dirty, scan_menu_dirty_ts
 
@@ -2041,13 +2002,13 @@ def execute_command(command_index):
         myip = get_ip_address()
         with scan_lock:
             scan_active = True
+            scan_done = False
             scan_selected_idx = 0
             scan_selected_ip = None
             scan_infos.clear()
             scan_seen.clear()
+            scan_ips = []
             scan_base_prefix = _scan_compute_prefix(myip)
-            if scan_base_prefix:
-                _scan_reset_from_myip(myip)
             scan_menu_dirty = True
             scan_menu_dirty_ts = time.time()
         with scan_detail_lock:
@@ -2069,6 +2030,7 @@ def execute_command(command_index):
     if item_type == "back_from_scan":
         with scan_lock:
             scan_active = False
+            scan_done = True
             scan_selected_ip = None
         with scan_detail_lock:
             scan_detail_active = False
@@ -2096,6 +2058,7 @@ def execute_command(command_index):
         clear_ui_override()
         with scan_lock:
             scan_active = False
+            scan_done = True
         with scan_detail_lock:
             scan_detail_active = True
             scan_detail_ip = target_ip
@@ -2129,6 +2092,7 @@ def execute_command(command_index):
         tftp_upgrade_device(ip)
         with scan_lock:
             scan_active = False
+            scan_done = True
         with scan_detail_lock:
             scan_detail_active = True
             scan_detail_ip = ip
@@ -2413,6 +2377,7 @@ def _draw_scan_screen(draw):
         ips = list(scan_ips)
         idx = scan_selected_idx
         infos = dict(scan_infos)
+        done = scan_done
     draw.rectangle(device.bounding_box, fill="black")
     now_dt = datetime.now()
     current_time = now_dt.strftime("%H:%M")
@@ -2434,8 +2399,12 @@ def _draw_scan_screen(draw):
         draw.text((2, 46), _ellipsis_to_width(draw, (info or ""), get_font(11), device.width - 4), font=get_font(11), fill=255)
     else:
         cx = device.width // 2 + VISUAL_X_OFFSET
-        draw_center_text_autofit(draw, "장치 검색중...", cx, 28, device.width - 4, 18, min_size=12)
-        draw.text((2, 46), _ellipsis_to_width(draw, "NEXT:대기  EXEC:대기", get_font(11), device.width - 4), font=get_font(11), fill=255)
+        if done:
+            draw_center_text_autofit(draw, "장치 없음", cx, 28, device.width - 4, 18, min_size=12)
+            draw.text((2, 46), _ellipsis_to_width(draw, "◀ 이전으로", get_font(11), device.width - 4), font=get_font(11), fill=255)
+        else:
+            draw_center_text_autofit(draw, "장치 검색중...", cx, 28, device.width - 4, 18, min_size=12)
+            draw.text((2, 46), _ellipsis_to_width(draw, "잠시만...", get_font(11), device.width - 4), font=get_font(11), fill=255)
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
@@ -2662,9 +2631,6 @@ def execute_button_logic():
                     menu_extras = current_menu["extras"]
                     current_command_index = prev_index if (0 <= prev_index < len(commands)) else 0
                 clear_ui_override()
-                if current_menu and current_menu.get("dir") == "__scan__":
-                    with scan_lock:
-                        scan_active = True
                 need_update = True
                 next_pressed_event = False
                 time.sleep(0.02)
