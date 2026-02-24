@@ -1763,18 +1763,21 @@ def get_wifi_level():
 def net_poll_thread():
     global cached_ip, cached_wifi_level, cached_online, last_menu_online, need_update
     while not stop_threads:
-        cached_ip = get_ip_address()
+        try:
+            cached_ip = get_ip_address()
 
-        online_now = has_real_internet()
-        cached_online = online_now
-        cached_wifi_level = get_wifi_level() if online_now else 0
+            online_now = has_real_internet()
+            cached_online = online_now
+            cached_wifi_level = get_wifi_level() if online_now else 0
 
-        if last_menu_online is None or online_now != last_menu_online:
-            last_menu_online = online_now
-            refresh_root_menu(reset_index=False)
-            need_update = True
+            if last_menu_online is None or online_now != last_menu_online:
+                last_menu_online = online_now
+                refresh_root_menu(reset_index=False)
+                need_update = True
 
-        time.sleep(1.5)
+            time.sleep(1.5)
+        except Exception:
+            time.sleep(0.8)
 
 def _draw_override(draw):
     with ui_override_lock:
