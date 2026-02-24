@@ -155,8 +155,8 @@ GPIO.setwarnings(False)
 
 last_time_button_next_pressed = 0.0
 last_time_button_execute_pressed = 0.0
-SOFT_DEBOUNCE_NEXT = 0.08
-SOFT_DEBOUNCE_EXEC = 0.08
+SOFT_DEBOUNCE_NEXT = 0.05
+SOFT_DEBOUNCE_EXEC = 0.05
 
 button_press_interval = 0.15
 LONG_PRESS_THRESHOLD = 0.7
@@ -222,13 +222,20 @@ scan_active = False
 scan_ips = []
 scan_infos = {}
 scan_selected_idx = 0
+scan_selected_ip = None
 scan_last_tick = 0.0
 scan_base_prefix = None
 scan_cursor = 2
 scan_seen = {}
-SCAN_PRUNE_SEC = 3.0
-SCAN_HOSTS_PER_TICK = 8
+SCAN_PRUNE_SEC = 12.0
+SCAN_HOSTS_PER_TICK = 4
 scan_menu_dirty = False
+scan_menu_dirty_ts = 0.0
+scan_menu_rebuild_last = 0.0
+SCAN_MENU_REBUILD_MIN_SEC = 0.6
+scan_prefix_candidate = None
+scan_prefix_candidate_cnt = 0
+SCAN_PREFIX_STABLE_CNT = 2
 
 scan_detail_lock = threading.Lock()
 scan_detail_active = False
@@ -599,8 +606,8 @@ def button_execute_callback(channel):
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_next_edge, bouncetime=60)
-GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=80)
+GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_next_edge, bouncetime=40)
+GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=40)
 
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
@@ -759,7 +766,7 @@ def encode_ip_to_words(ip: str):
             raise ValueError("bad ip")
     return ((a << 8) | b, (c << 8) | d)
 
-def _quick_modbus_probe(ip: str, timeout=0.25) -> bool:
+def _quick_modbus_probe(ip: str, timeout=0.22) -> bool:
     try:
         s = socket.create_connection((ip, MODBUS_PORT), timeout=timeout)
         s.close()
@@ -825,7 +832,7 @@ def _try_read_some_modbus_info(client: ModbusTcpClient) -> Optional[str]:
         return ("READ ERR:" + str(e))[:18]
 
 def _read_device_info_fast(ip: str) -> Optional[str]:
-    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.35, retries=1, delay=0.0)
+    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.45, retries=1, delay=0.0)
     if c is None:
         return None
     try:
@@ -1388,36 +1395,56 @@ def _scan_reset_from_myip(ip: str):
     scan_cursor = 2
 
 def modbus_scan_loop():
-    global scan_ips, scan_infos, scan_selected_idx, need_update, scan_last_tick
-    global scan_cursor, scan_base_prefix, scan_seen, scan_menu_dirty
+    global scan_ips, scan_infos, scan_selected_idx, scan_selected_ip, need_update, scan_last_tick
+    global scan_cursor, scan_base_prefix, scan_seen, scan_menu_dirty, scan_menu_dirty_ts
+    global scan_prefix_candidate, scan_prefix_candidate_cnt
+
     last_prefix_check = 0.0
     while not stop_threads:
-        time.sleep(0.2)
+        time.sleep(0.18)
         with scan_lock:
             active = scan_active
         if not active:
             continue
+
         now = time.time()
+
         if now - last_prefix_check > 1.2:
             last_prefix_check = now
             ip_now = get_ip_address()
-            pref = _scan_compute_prefix(ip_now) if ip_now != "0.0.0.0" else None
+            pref_now = _scan_compute_prefix(ip_now) if ip_now != "0.0.0.0" else None
             with scan_lock:
-                if pref and pref != scan_base_prefix:
-                    _scan_reset_from_myip(ip_now)
-                    scan_seen.clear()
-                    scan_infos.clear()
-                    scan_ips = []
-                    scan_selected_idx = 0
-                    scan_menu_dirty = True
+                pref_cur = scan_base_prefix
+            if pref_now and pref_cur and pref_now != pref_cur:
+                if scan_prefix_candidate != pref_now:
+                    scan_prefix_candidate = pref_now
+                    scan_prefix_candidate_cnt = 1
+                else:
+                    scan_prefix_candidate_cnt += 1
+                if scan_prefix_candidate_cnt >= SCAN_PREFIX_STABLE_CNT:
+                    with scan_lock:
+                        _scan_reset_from_myip(ip_now)
+                        scan_seen.clear()
+                        scan_infos.clear()
+                        scan_ips = []
+                        scan_selected_idx = 0
+                        scan_selected_ip = None
+                        scan_menu_dirty = True
+                        scan_menu_dirty_ts = now
+            else:
+                scan_prefix_candidate = None
+                scan_prefix_candidate_cnt = 0
+
         with scan_lock:
             pref = scan_base_prefix
             cur = scan_cursor
+
         if not pref:
             with scan_lock:
                 if scan_ips:
                     scan_ips = []
                     scan_menu_dirty = True
+                    scan_menu_dirty_ts = now
                 scan_last_tick = now
             need_update = True
             continue
@@ -1429,7 +1456,7 @@ def modbus_scan_loop():
             if cur > 254:
                 cur = 2
             ip = pref + str(host)
-            if _quick_modbus_probe(ip, timeout=0.18):
+            if _quick_modbus_probe(ip, timeout=0.22):
                 found_this_tick.append(ip)
 
         infos_local = {}
@@ -1445,11 +1472,15 @@ def modbus_scan_loop():
                 if ip not in scan_seen:
                     changed = True
                 scan_seen[ip] = now
+
             for ip, ts in list(scan_seen.items()):
                 if (now - ts) > SCAN_PRUNE_SEC:
                     scan_seen.pop(ip, None)
                     scan_infos.pop(ip, None)
+                    if scan_selected_ip == ip:
+                        scan_selected_ip = None
                     changed = True
+
             for k, v in infos_local.items():
                 if scan_infos.get(k) != v:
                     scan_infos[k] = v
@@ -1460,13 +1491,20 @@ def modbus_scan_loop():
                 scan_ips = new_ips
                 changed = True
 
-            if scan_selected_idx >= len(scan_ips):
-                scan_selected_idx = 0
-                changed = True
+            if scan_selected_ip and scan_selected_ip in scan_ips:
+                new_idx = scan_ips.index(scan_selected_ip)
+                if scan_selected_idx != new_idx:
+                    scan_selected_idx = new_idx
+                    changed = True
+            else:
+                if scan_selected_idx >= len(scan_ips):
+                    scan_selected_idx = 0
+                    changed = True
 
             scan_last_tick = now
             if changed:
                 scan_menu_dirty = True
+                scan_menu_dirty_ts = now
 
         need_update = True
 
