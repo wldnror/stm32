@@ -1801,6 +1801,7 @@ def execute_command(command_index):
     global current_menu, commands, command_names, command_types, menu_extras
     global current_command_index, menu_stack, need_update
     global connection_success, connection_failed_since_last_success
+    global scan_active, scan_selected_idx, scan_infos, scan_seen, scan_base_prefix
 
     item_type = command_types[command_index]
     if item_type == "wifi":
@@ -1816,35 +1817,17 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    if item_type == "remote_update":
-        GPIO.output(LED_SUCCESS, False)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
-
-        set_ui_progress(5, "주변 장치\n스캔 중...", pos=(10, 10), font_size=15)
-        ips = scan_modbus_devices_same_subnet(limit=64)
-
-        if not ips:
-            GPIO.output(LED_ERROR, True)
-            set_ui_text("장치 없음", "같은 대역", pos=(12, 18), font_size=15)
-            time.sleep(1.3)
-            GPIO.output(LED_ERROR, False)
-            clear_ui_override()
-            need_update = True
-            is_executing = False
-            is_command_executing = False
-            return
-
-        if len(ips) == 1:
-            clear_ui_override()
-            tftp_upgrade_device(ips[0])
-            need_update = True
-            is_executing = False
-            is_command_executing = False
-            return
-
+    if item_type == "device_scan":
+        with scan_lock:
+            scan_active = True
+            scan_selected_idx = 0
+            scan_infos.clear()
+            scan_seen.clear()
+            scan_base_prefix = _scan_compute_prefix(get_ip_address())
+            if scan_base_prefix:
+                _scan_reset_from_myip(get_ip_address())
         menu_stack.append((current_menu, current_command_index))
-        current_menu = build_remote_ip_menu(ips)
+        current_menu = build_scan_menu()
         commands = current_menu["commands"]
         command_names = current_menu["names"]
         command_types = current_menu["types"]
@@ -1856,10 +1839,38 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    if item_type == "remote_update_ip":
+    if item_type == "back_from_scan":
+        with scan_lock:
+            scan_active = False
+        if menu_stack:
+            prev_menu, prev_index = menu_stack.pop()
+            current_menu = prev_menu
+            commands = current_menu["commands"]
+            command_names = current_menu["names"]
+            command_types = current_menu["types"]
+            menu_extras = current_menu["extras"]
+            current_command_index = prev_index if (0 <= prev_index < len(commands)) else 0
+        clear_ui_override()
+        need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "scan_item":
         target_ip = menu_extras[command_index]
         clear_ui_override()
+        with scan_lock:
+            scan_active = False
         tftp_upgrade_device(target_ip if target_ip else "")
+        with scan_lock:
+            scan_active = True
+        current_menu = build_scan_menu()
+        commands = current_menu["commands"]
+        command_names = current_menu["names"]
+        command_types = current_menu["types"]
+        menu_extras = current_menu["extras"]
+        if current_command_index >= len(commands):
+            current_command_index = 0
         need_update = True
         is_executing = False
         is_command_executing = False
@@ -2349,4 +2360,3 @@ finally:
     except Exception:
         pass
     GPIO.cleanup()
-
