@@ -725,6 +725,16 @@ def encode_ip_to_words(ip: str):
             raise ValueError("bad ip")
     return ((a << 8) | b, (c << 8) | d)
 
+def decode_words_to_ip(w1: int, w2: int) -> str:
+    try:
+        a = (int(w1) >> 8) & 0xFF
+        b = int(w1) & 0xFF
+        c = (int(w2) >> 8) & 0xFF
+        d = int(w2) & 0xFF
+        return f"{a}.{b}.{c}.{d}"
+    except Exception:
+        return "?.?.?.?"
+
 def _quick_modbus_probe(ip: str, timeout=0.25) -> bool:
     try:
         s = socket.create_connection((ip, MODBUS_PORT), timeout=timeout)
@@ -777,6 +787,74 @@ def _treat_as_ok_modbus_write_exception(e: Exception) -> bool:
         "Socket is closed",
     ]
     return any(k in msg for k in ok_like)
+
+def _modbus_read_holding_words(ip: str, addr_4xxxx: int, count: int, timeout=2.0):
+    client = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=timeout, retries=3, delay=0.25)
+    if client is None:
+        return None
+    try:
+        rr = client.read_holding_registers(reg_addr(addr_4xxxx), count)
+        if _is_modbus_error(rr):
+            return None
+        regs = getattr(rr, "registers", None)
+        if not isinstance(regs, list) or len(regs) < count:
+            return None
+        return regs
+    except Exception:
+        return None
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+def modbus_show_device_info(ip: str):
+    ip = (ip or "").strip()
+    if not ip:
+        return
+    if not _quick_modbus_probe(ip, timeout=0.35):
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_text("포트 응답X", ip, pos=(2, 18), font_size=12)
+        time.sleep(1.6)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        return
+
+    set_ui_text("Modbus", "조회중...", pos=(18, 18), font_size=14)
+
+    regs_ip = _modbus_read_holding_words(ip, 40088, 2, timeout=2.2)
+    regs_ctrl = _modbus_read_holding_words(ip, 40091, 1, timeout=2.2)
+
+    line1 = ip
+    line2 = ""
+
+    if regs_ip and len(regs_ip) >= 2:
+        line2 = decode_words_to_ip(regs_ip[0], regs_ip[1])
+
+    if regs_ctrl and len(regs_ctrl) >= 1:
+        v = regs_ctrl[0]
+        if line2:
+            line2 = (line2[:10] + f" C{v}")[:18]
+        else:
+            line2 = f"CTRL {v}"[:18]
+
+    if (not regs_ip) and (not regs_ctrl):
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_text("조회 실패", ip, pos=(6, 18), font_size=13)
+        time.sleep(1.6)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        return
+
+    GPIO.output(LED_SUCCESS, True)
+    set_ui_text(line1[:18], line2[:18], pos=(0, 18), font_size=12)
+    time.sleep(2.2)
+    GPIO.output(LED_SUCCESS, False)
+    clear_ui_override()
 
 def make_openocd_program_cmd(bin_path: str) -> str:
     return (
@@ -1043,6 +1121,28 @@ def build_tftp_device_menu(ip_list):
         "extras": extras_local,
     }
 
+def build_modbus_info_device_menu(ip_list):
+    commands_local = []
+    names_local = []
+    types_local = []
+    extras_local = []
+    for ip in ip_list:
+        commands_local.append("mb_info_dev")
+        names_local.append(f"▶ {ip}")
+        types_local.append("mb_info_dev")
+        extras_local.append(ip)
+    commands_local.append(None)
+    names_local.append("◀ 이전으로")
+    types_local.append("back")
+    extras_local.append(None)
+    return {
+        "dir": "__mb_info_devices__",
+        "commands": commands_local,
+        "names": names_local,
+        "types": types_local,
+        "extras": extras_local,
+    }
+
 def pick_remote_fw_file_for_device(ip: str) -> str:
     if not os.path.isdir(TFTP_REMOTE_DIR):
         return ""
@@ -1290,6 +1390,11 @@ def build_menu_for_dir(dir_path, is_root=False):
         commands_local.append("wifi_setup")
         names_local.append("Wi-Fi 설정")
         types_local.append("wifi")
+        extras_local.append(None)
+
+        commands_local.append("mb_info_scan")
+        names_local.append("원격(Modbus) 정보")
+        types_local.append("mb_info_scan")
         extras_local.append(None)
 
         commands_local.append("tftp_scan")
@@ -1705,6 +1810,43 @@ def execute_command(command_index):
     is_command_executing = True
 
     if not commands:
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "mb_info_scan":
+        GPIO.output(LED_SUCCESS, False)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        set_ui_progress(5, "Modbus\n스캔 중...", pos=(10, 10), font_size=15)
+        ips = scan_modbus_devices_same_subnet(limit=64)
+        if not ips:
+            GPIO.output(LED_ERROR, True)
+            set_ui_text("장치 없음", "같은 대역", pos=(12, 18), font_size=15)
+            time.sleep(1.3)
+            GPIO.output(LED_ERROR, False)
+            clear_ui_override()
+            need_update = True
+            is_executing = False
+            is_command_executing = False
+            return
+        menu_stack.append((current_menu, current_command_index))
+        current_menu = build_modbus_info_device_menu(ips)
+        commands = current_menu["commands"]
+        command_names = current_menu["names"]
+        command_types = current_menu["types"]
+        menu_extras = current_menu["extras"]
+        current_command_index = 0
+        clear_ui_override()
+        need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "mb_info_dev":
+        target_ip = menu_extras[command_index]
+        modbus_show_device_info(target_ip if target_ip else "")
+        need_update = True
         is_executing = False
         is_command_executing = False
         return
@@ -2159,7 +2301,7 @@ def execute_button_logic():
                 execute_long_handled = True
                 if commands and (not is_executing):
                     item_type = command_types[current_command_index]
-                    if item_type in ("system", "dir", "back", "script", "wifi", "bin", "tftp_scan", "tftp_dev"):
+                    if item_type in ("system", "dir", "back", "script", "wifi", "bin", "tftp_scan", "tftp_dev", "mb_info_scan", "mb_info_dev"):
                         execute_command(current_command_index)
                         need_update = True
 
