@@ -229,6 +229,13 @@ scan_seen = {}
 SCAN_PRUNE_SEC = 3.0
 SCAN_HOSTS_PER_TICK = 8
 
+scan_detail_lock = threading.Lock()
+scan_detail_active = False
+scan_detail_ip = None
+scan_detail_data = {"ts": 0.0, "line1": "", "line2": "", "line3": "", "line4": ""}
+SCAN_DETAIL_POLL_SEC = 0.5
+MODBUS_DETAIL_READS = [(40001, 4, "INFO"), (40100, 2, "GAS")]
+
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -728,10 +735,7 @@ def reg_addr(addr_4xxxx: int) -> int:
     return int(addr_4xxxx) - 40001
 
 def encode_ip_to_words(ip: str):
-    try:
-        a, b, c, d = map(int, (ip or "").strip().split("."))
-    except Exception:
-        raise ValueError("bad ip")
+    a, b, c, d = map(int, (ip or "").strip().split("."))
     for x in (a, b, c, d):
         if x < 0 or x > 255:
             raise ValueError("bad ip")
@@ -1072,7 +1076,6 @@ def pick_remote_fw_file_for_device(ip: str) -> str:
         return ""
     if not bins:
         return ""
-
     def _score(path: str):
         base = os.path.basename(path)
         stem = os.path.splitext(base)[0].strip()
@@ -1089,7 +1092,6 @@ def pick_remote_fw_file_for_device(ip: str) -> str:
                 n = -1
             return (2, n, mt)
         return (1, -1, mt)
-
     bins.sort(key=_score, reverse=True)
     return bins[0]
 
@@ -1109,9 +1111,7 @@ def tftp_upgrade_device(ip: str):
     ip = (ip or "").strip()
     if not ip:
         return
-
     set_ui_progress(5, "원격 업뎃\n준비...", pos=(18, 0), font_size=15)
-
     if not _quick_modbus_probe(ip, timeout=0.35):
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -1121,7 +1121,6 @@ def tftp_upgrade_device(ip: str):
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
         return
-
     fw_src = pick_remote_fw_file_for_device(ip)
     if not fw_src:
         GPIO.output(LED_ERROR, True)
@@ -1132,9 +1131,7 @@ def tftp_upgrade_device(ip: str):
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
         return
-
     set_ui_progress(20, "FW 복사중", pos=(18, 10), font_size=15)
-
     device_dir = os.path.join(TFTP_SERVER_ROOT, TFTP_DEVICE_SUBDIR)
     if not _ensure_tftp_dir(device_dir):
         GPIO.output(LED_ERROR, True)
@@ -1145,9 +1142,7 @@ def tftp_upgrade_device(ip: str):
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
         return
-
     dst_path = os.path.join(device_dir, TFTP_DEVICE_FILENAME)
-
     try:
         try:
             if os.path.exists(dst_path):
@@ -1156,7 +1151,6 @@ def tftp_upgrade_device(ip: str):
             run_quiet(["sudo", "rm", "-f", dst_path], timeout=4.0)
         except Exception:
             pass
-
         try:
             shutil.copyfile(fw_src, dst_path)
         except PermissionError:
@@ -1164,7 +1158,6 @@ def tftp_upgrade_device(ip: str):
             run_quiet(["sudo", "chmod", "0644", dst_path], timeout=3.0)
         except Exception:
             shutil.copyfile(fw_src, dst_path)
-
     except Exception as e:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -1174,10 +1167,8 @@ def tftp_upgrade_device(ip: str):
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
         return
-
     tftp_ip = get_ip_address()
     set_ui_progress(45, f"명령 전송\n{ip}", pos=(6, 0), font_size=13)
-
     client = _modbus_connect_with_retries(ip, port=502, timeout=2.2, retries=4, delay=0.35)
     if client is None:
         GPIO.output(LED_ERROR, True)
@@ -1188,7 +1179,6 @@ def tftp_upgrade_device(ip: str):
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
         return
-
     try:
         try:
             info = _try_read_some_modbus_info(client)
@@ -1198,11 +1188,9 @@ def tftp_upgrade_device(ip: str):
                 clear_ui_override()
         except Exception:
             pass
-
         ok_final = False
         addr_ip1 = reg_addr(40088)
         addr_ctrl = reg_addr(40091)
-
         try:
             w1, w2 = encode_ip_to_words(tftp_ip)
             try:
@@ -1211,7 +1199,6 @@ def tftp_upgrade_device(ip: str):
                 pass
         except Exception:
             pass
-
         try:
             r = client.write_register(addr_ctrl, 1)
             if _is_modbus_error(r):
@@ -1220,7 +1207,6 @@ def tftp_upgrade_device(ip: str):
                 ok_final = True
         except Exception as e:
             ok_final = _treat_as_ok_modbus_write_exception(e)
-
         if not ok_final:
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
@@ -1230,18 +1216,15 @@ def tftp_upgrade_device(ip: str):
             GPIO.output(LED_ERROR1, False)
             clear_ui_override()
             return
-
         GPIO.output(LED_SUCCESS, True)
         set_ui_progress(100, "전송 완료\n업뎃 진행", pos=(10, 5), font_size=15)
         time.sleep(1.1)
         GPIO.output(LED_SUCCESS, False)
-
     finally:
         try:
             client.close()
         except Exception:
             pass
-
     clear_ui_override()
 
 def build_scan_menu():
@@ -1257,13 +1240,72 @@ def build_scan_menu():
     names_local.append("◀ 이전으로")
     types_local.append("back_from_scan")
     extras_local.append(None)
-    return {
-        "dir": "__scan__",
-        "commands": commands_local,
-        "names": names_local,
-        "types": types_local,
-        "extras": extras_local,
-    }
+    return {"dir": "__scan__", "commands": commands_local, "names": names_local, "types": types_local, "extras": extras_local}
+
+def build_scan_detail_menu(ip: str):
+    return {"dir": "__scan_detail__", "commands": [None], "names": [f"{ip}"], "types": ["scan_detail"], "extras": [ip]}
+
+def _scan_detail_set_lines(l1="", l2="", l3="", l4=""):
+    with scan_detail_lock:
+        scan_detail_data["ts"] = time.time()
+        scan_detail_data["line1"] = (l1 or "")
+        scan_detail_data["line2"] = (l2 or "")
+        scan_detail_data["line3"] = (l3 or "")
+        scan_detail_data["line4"] = (l4 or "")
+
+def _read_detail_lines_for_ip(ip: str) -> Tuple[str, str, str, str]:
+    l1 = f"MODBUS {ip}"
+    l2 = ""
+    l3 = ""
+    l4 = "NEXT:뒤로 EXEC길게:TFTP"
+    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.7, retries=2, delay=0.1)
+    if c is None:
+        return (l1, "연결 실패", "", l4)
+    try:
+        parts = []
+        for start_4x, count, label in MODBUS_DETAIL_READS:
+            try:
+                r = c.read_holding_registers(reg_addr(start_4x), count)
+                if _is_modbus_error(r):
+                    parts.append(f"{label}:ERR")
+                    continue
+                regs = getattr(r, "registers", []) or []
+                if not regs:
+                    parts.append(f"{label}:--")
+                    continue
+                short = ",".join(str(x) for x in regs[:min(len(regs), 4)])
+                parts.append(f"{label}:{short}")
+            except Exception:
+                parts.append(f"{label}:EXC")
+        if parts:
+            l2 = (parts[0])[:18]
+        if len(parts) >= 2:
+            l3 = (parts[1])[:18]
+        if len(parts) >= 3:
+            l3 = (l3 + " " + parts[2])[:18]
+        return (l1, l2, l3, l4)
+    finally:
+        try:
+            c.close()
+        except Exception:
+            pass
+
+def modbus_detail_poll_thread():
+    global need_update
+    while not stop_threads:
+        time.sleep(SCAN_DETAIL_POLL_SEC)
+        with scan_detail_lock:
+            active = scan_detail_active
+            ip = scan_detail_ip
+        if (not active) or (not ip):
+            continue
+        try:
+            l1, l2, l3, l4 = _read_detail_lines_for_ip(ip)
+            _scan_detail_set_lines(l1, l2, l3, l4)
+            need_update = True
+        except Exception:
+            _scan_detail_set_lines(f"MODBUS {ip}", "읽기 오류", "", "NEXT:뒤로 EXEC길게:TFTP")
+            need_update = True
 
 def _scan_reset_from_myip(ip: str):
     global scan_base_prefix, scan_cursor
@@ -1279,7 +1321,6 @@ def modbus_scan_loop():
             active = scan_active
         if not active:
             continue
-
         now = time.time()
         if now - last_prefix_check > 1.2:
             last_prefix_check = now
@@ -1290,18 +1331,15 @@ def modbus_scan_loop():
                     _scan_reset_from_myip(ip_now)
                     scan_seen.clear()
                     scan_infos.clear()
-
         with scan_lock:
             pref = scan_base_prefix
             cur = scan_cursor
-
         if not pref:
             with scan_lock:
                 scan_ips = []
                 scan_last_tick = now
             need_update = True
             continue
-
         found_this_tick = []
         for _ in range(SCAN_HOSTS_PER_TICK):
             host = cur
@@ -1311,13 +1349,11 @@ def modbus_scan_loop():
             ip = pref + str(host)
             if _quick_modbus_probe(ip, timeout=0.18):
                 found_this_tick.append(ip)
-
         infos_local = {}
         for ip in found_this_tick:
             info = _read_device_info_fast(ip)
             if info:
                 infos_local[ip] = info
-
         with scan_lock:
             scan_cursor = cur
             for ip in found_this_tick:
@@ -1373,7 +1409,6 @@ def build_menu_for_dir(dir_path, is_root=False):
     names_local = []
     types_local = []
     extras_local = []
-
     for order, type_pri, display_name, item_type, extra in entries:
         commands_local.append(None)
         names_local.append(display_name)
@@ -1394,12 +1429,10 @@ def build_menu_for_dir(dir_path, is_root=False):
                 names_local.append("시스템 업데이트")
                 types_local.append("system")
                 extras_local.append(None)
-
         commands_local.append("wifi_setup")
         names_local.append("Wi-Fi 설정")
         types_local.append("wifi")
         extras_local.append(None)
-
         commands_local.append("device_scan")
         names_local.append("감지기 연결(스캔)")
         types_local.append("device_scan")
@@ -1410,13 +1443,7 @@ def build_menu_for_dir(dir_path, is_root=False):
         types_local.append("back")
         extras_local.append(None)
 
-    return {
-        "dir": dir_path,
-        "commands": commands_local,
-        "names": names_local,
-        "types": types_local,
-        "extras": extras_local,
-    }
+    return {"dir": dir_path, "commands": commands_local, "names": names_local, "types": types_local, "extras": extras_local}
 
 def refresh_root_menu(reset_index=False):
     global current_menu, commands, command_names, command_types, menu_extras, current_command_index
@@ -1645,9 +1672,7 @@ def _portal_loop_until_connected_or_cancel():
     prepare_for_ap_mode()
     wifi_stage_clear()
     _portal_set_state_safe(last_error="", last_ok="", connect_stage="설정 모드 시작", running=True, done=False)
-
     wifi_portal.start_ap()
-
     try:
         st = getattr(wifi_portal, "_state", {})
         if isinstance(st, dict) and (not st.get("server_started", False)):
@@ -1659,7 +1684,6 @@ def _portal_loop_until_connected_or_cancel():
             wifi_portal.run_portal(block=False)
         except Exception:
             pass
-
     t0 = time.time()
     while True:
         if wifi_cancel_requested:
@@ -1670,7 +1694,6 @@ def _portal_loop_until_connected_or_cancel():
             except Exception:
                 pass
             return "cancel"
-
         req = None
         try:
             st = getattr(wifi_portal, "_state", {})
@@ -1678,7 +1701,6 @@ def _portal_loop_until_connected_or_cancel():
                 req = st.get("requested")
         except Exception:
             req = None
-
         if not req:
             req = _portal_pop_req_safe()
             if req and isinstance(getattr(wifi_portal, "_state", None), dict):
@@ -1686,7 +1708,6 @@ def _portal_loop_until_connected_or_cancel():
                     wifi_portal._state["requested"] = req
                 except Exception:
                     pass
-
         if req:
             _portal_clear_req_safe()
             mode = (req.get("mode") or "new").strip().lower()
@@ -1695,7 +1716,6 @@ def _portal_loop_until_connected_or_cancel():
             psk = (req.get("psk") or "").strip()
             nm_id = (req.get("nm_id") or "").strip()
             ok = False
-
             if mode == "saved":
                 wifi_stage_set(60, "저장된 WiFi", "연결 시도")
                 _portal_set_state_safe(connect_stage="저장된 설정으로 연결 중…", last_error="", last_ok="")
@@ -1715,20 +1735,16 @@ def _portal_loop_until_connected_or_cancel():
             else:
                 if ssid:
                     ok = connect_from_portal_nm(ssid, psk, timeout=35)
-
             if ok:
                 _portal_set_state_safe(last_ok="연결 완료", last_error="", connect_stage="연결 완료", running=False, done=True)
                 return True
-
             _portal_set_state_safe(last_error="연결 실패", connect_stage="", running=True, done=False)
             prepare_for_ap_mode()
             wifi_stage_clear()
             wifi_portal.start_ap()
-
         if time.time() - t0 > 600:
             _portal_set_state_safe(last_error="시간 초과", connect_stage="", running=False)
             return False
-
         time.sleep(0.2)
 
 def wifi_worker_thread():
@@ -1750,9 +1766,7 @@ def wifi_worker_thread():
                     ap_state["flash_until"] = 0.0
                     ap_state["poll_next"] = 0.0
                     ap_state["spinner"] = 0
-
                 _portal_set_state_safe(last_error="", last_ok="", connect_stage="설정 시작 준비…", running=True, done=False)
-
                 r1 = subprocess.run(["which", "hostapd"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 r2 = subprocess.run(["which", "dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 if (r1.returncode != 0) or (r2.returncode != 0):
@@ -1802,6 +1816,7 @@ def execute_command(command_index):
     global current_command_index, menu_stack, need_update
     global connection_success, connection_failed_since_last_success
     global scan_active, scan_selected_idx, scan_infos, scan_seen, scan_base_prefix
+    global scan_detail_active, scan_detail_ip
 
     item_type = command_types[command_index]
     if item_type == "wifi":
@@ -1826,6 +1841,9 @@ def execute_command(command_index):
             scan_base_prefix = _scan_compute_prefix(get_ip_address())
             if scan_base_prefix:
                 _scan_reset_from_myip(get_ip_address())
+        with scan_detail_lock:
+            scan_detail_active = False
+            scan_detail_ip = None
         menu_stack.append((current_menu, current_command_index))
         current_menu = build_scan_menu()
         commands = current_menu["commands"]
@@ -1842,6 +1860,9 @@ def execute_command(command_index):
     if item_type == "back_from_scan":
         with scan_lock:
             scan_active = False
+        with scan_detail_lock:
+            scan_detail_active = False
+            scan_detail_ip = None
         if menu_stack:
             prev_menu, prev_index = menu_stack.pop()
             current_menu = prev_menu
@@ -1858,19 +1879,42 @@ def execute_command(command_index):
 
     if item_type == "scan_item":
         target_ip = menu_extras[command_index]
+        if not target_ip:
+            is_executing = False
+            is_command_executing = False
+            return
         clear_ui_override()
-        with scan_lock:
-            scan_active = False
-        tftp_upgrade_device(target_ip if target_ip else "")
-        with scan_lock:
-            scan_active = True
-        current_menu = build_scan_menu()
+        with scan_detail_lock:
+            scan_detail_active = True
+            scan_detail_ip = target_ip
+        _scan_detail_set_lines(f"MODBUS {target_ip}", "읽는중...", "", "NEXT:뒤로 EXEC길게:TFTP")
+        menu_stack.append((current_menu, current_command_index))
+        current_menu = build_scan_detail_menu(target_ip)
         commands = current_menu["commands"]
         command_names = current_menu["names"]
         command_types = current_menu["types"]
         menu_extras = current_menu["extras"]
-        if current_command_index >= len(commands):
-            current_command_index = 0
+        current_command_index = 0
+        need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "scan_detail":
+        ip = None
+        try:
+            ip = menu_extras[command_index]
+        except Exception:
+            ip = None
+        if not ip:
+            is_executing = False
+            is_command_executing = False
+            return
+        clear_ui_override()
+        tftp_upgrade_device(ip)
+        with scan_detail_lock:
+            scan_detail_active = True
+            scan_detail_ip = ip
         need_update = True
         is_executing = False
         is_command_executing = False
@@ -2213,11 +2257,9 @@ def update_oled_display():
                     with ap_state_lock:
                         flash_until = ap_state["flash_until"]
                         ap_sp = ap_state["spinner"]
-
                     dots = "." * sp
                     dots2 = "." * ap_sp
                     now = time.time()
-
                     if st_active:
                         draw.text((x, 0), (st1 or "")[:16], font=get_font(13), fill=255)
                         line2 = (st2 or "")
@@ -2252,6 +2294,19 @@ def update_oled_display():
                         draw.text((2, 46), (info or "")[:18], font=get_font(11), fill=255)
                     else:
                         draw.text((2, 46), "장치 검색중...", font=get_font(11), fill=255)
+
+                if current_menu and current_menu.get("dir") == "__scan_detail__":
+                    with scan_detail_lock:
+                        l1 = scan_detail_data.get("line1", "")
+                        l2 = scan_detail_data.get("line2", "")
+                        l3 = scan_detail_data.get("line3", "")
+                        l4 = scan_detail_data.get("line4", "")
+                    draw.rectangle(device.bounding_box, fill="black")
+                    draw.text((2, 0), (l1 or "")[:18], font=get_font(12), fill=255)
+                    draw.text((2, 16), (l2 or "")[:18], font=get_font(11), fill=255)
+                    draw.text((2, 30), (l3 or "")[:18], font=get_font(11), fill=255)
+                    draw.text((2, 46), (l4 or "")[:18], font=get_font(11), fill=255)
+                    return
 
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 if item_type in ("system", "wifi"):
@@ -2296,6 +2351,7 @@ def execute_button_logic():
     global auto_flash_done_connection
     global next_long_handled, wifi_cancel_requested
     global scan_selected_idx
+    global scan_detail_active, scan_detail_ip
     while True:
         now = time.time()
         if battery_percentage == 0:
@@ -2314,7 +2370,7 @@ def execute_button_logic():
                 execute_long_handled = True
                 if commands and (not is_executing):
                     item_type = command_types[current_command_index]
-                    if item_type in ("system", "dir", "back", "script", "wifi", "bin", "device_scan", "scan_item", "back_from_scan"):
+                    if item_type in ("system", "dir", "back", "script", "wifi", "bin", "device_scan", "scan_item", "back_from_scan", "scan_detail"):
                         execute_command(current_command_index)
                         need_update = True
 
@@ -2335,6 +2391,24 @@ def execute_button_logic():
             execute_long_handled = False
 
         if next_pressed_event:
+            if (current_menu and current_menu.get("dir") == "__scan_detail__") and (not is_executing):
+                with scan_detail_lock:
+                    scan_detail_active = False
+                    scan_detail_ip = None
+                if menu_stack:
+                    prev_menu, prev_index = menu_stack.pop()
+                    current_menu = prev_menu
+                    commands = current_menu["commands"]
+                    command_names = current_menu["names"]
+                    command_types = current_menu["types"]
+                    menu_extras = current_menu["extras"]
+                    current_command_index = prev_index if (0 <= prev_index < len(commands)) else 0
+                clear_ui_override()
+                need_update = True
+                next_pressed_event = False
+                time.sleep(0.03)
+                continue
+
             if (not execute_is_down) and (not is_executing):
                 if commands:
                     current_command_index = (current_command_index + 1) % len(commands)
@@ -2382,6 +2456,9 @@ git_thread.start()
 
 scan_thread = threading.Thread(target=modbus_scan_loop, daemon=True)
 scan_thread.start()
+
+detail_thread = threading.Thread(target=modbus_detail_poll_thread, daemon=True)
+detail_thread.start()
 
 need_update = True
 
