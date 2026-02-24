@@ -1672,6 +1672,17 @@ def execute_command(command_index):
     is_executing = False
     is_command_executing = False
 
+def get_ip_address():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.5)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "0.0.0.0"
+
 def get_wifi_level():
     try:
         rc, out, _ = run_capture(["iw", "dev", "wlan0", "link"], timeout=0.6)
@@ -1807,7 +1818,7 @@ def update_oled_display():
                     ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
                     draw.text((0, 51), ip_display, font=font_big, fill=255)
                     draw.text((80, -3), "GDSENG", font=font_big, fill=255)
-                    draw.text((83, 50), "ver 3.73", font=font_big, fill=255)
+                    draw.text((83, 50), "ver 3.72", font=font_big, fill=255)
                     draw.text((0, -3), current_time, font=font_time, fill=255)
                     if not cached_online:
                         draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
