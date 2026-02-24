@@ -19,6 +19,7 @@ from typing import Optional, Tuple
 from pymodbus.client import ModbusTcpClient
 from pymodbus.pdu import ExceptionResponse
 
+
 VISUAL_X_OFFSET = 0
 display_lock = threading.Lock()
 stm32_state_lock = threading.Lock()
@@ -61,83 +62,6 @@ AP_PASS = getattr(wifi_portal, "AP_PASS", "12345678")
 AP_IP = getattr(wifi_portal, "AP_IP", "192.168.4.1")
 PORTAL_PORT = 8080
 
-def logi(msg: str):
-    try:
-        print("[AUTOSEL] " + str(msg), flush=True)
-    except Exception:
-        pass
-
-def _portal_set_state_safe(**kwargs):
-    try:
-        if hasattr(wifi_portal, "_set_state"):
-            wifi_portal._set_state(**kwargs)
-            return
-    except Exception:
-        pass
-    try:
-        st = getattr(wifi_portal, "_state", None)
-        if isinstance(st, dict):
-            st.update(kwargs)
-    except Exception:
-        pass
-    try:
-        if hasattr(wifi_portal, "_write_state_file"):
-            wifi_portal._write_state_file()
-    except Exception:
-        pass
-
-def _portal_pop_req_safe():
-    try:
-        if hasattr(wifi_portal, "_pop_req_file"):
-            return wifi_portal._pop_req_file()
-    except Exception:
-        pass
-    return None
-
-def _portal_clear_req_safe():
-    try:
-        st = getattr(wifi_portal, "_state", None)
-        if isinstance(st, dict):
-            st["requested"] = None
-    except Exception:
-        pass
-    _portal_set_state_safe(requested=None)
-
-def wifi_stage_set(percent, line1, line2=""):
-    with wifi_stage_lock:
-        wifi_stage["active"] = True
-        wifi_stage["target_percent"] = int(max(0, min(100, percent)))
-        if wifi_stage["display_percent"] > wifi_stage["target_percent"]:
-            wifi_stage["display_percent"] = wifi_stage["target_percent"]
-        wifi_stage["line1"] = line1 or ""
-        wifi_stage["line2"] = line2 or ""
-    _portal_set_state_safe(connect_stage=(line1 or ""))
-
-def wifi_stage_clear():
-    with wifi_stage_lock:
-        wifi_stage["active"] = False
-        wifi_stage["target_percent"] = 0
-        wifi_stage["display_percent"] = 0
-        wifi_stage["line1"] = ""
-        wifi_stage["line2"] = ""
-        wifi_stage["spinner"] = 0
-
-def wifi_stage_tick():
-    with wifi_stage_lock:
-        if not wifi_stage["active"]:
-            wifi_stage["spinner"] = (wifi_stage["spinner"] + 1) % 4
-            return
-        t = wifi_stage["target_percent"]
-        d = wifi_stage["display_percent"]
-        if d < t:
-            step = 1
-            if t - d > 25:
-                step = 3
-            elif t - d > 12:
-                step = 2
-            wifi_stage["display_percent"] = min(t, d + step)
-        wifi_stage["spinner"] = (wifi_stage["spinner"] + 1) % 4
-
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
 LED_SUCCESS = 24
@@ -148,33 +72,59 @@ SHUNT_OHMS = 0.1
 MIN_VOLTAGE = 3.1
 MAX_VOLTAGE = 4.2
 
-auto_flash_done_connection = False
-
-GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(False)
-
-last_time_button_next_pressed = 0.0
-last_time_button_execute_pressed = 0.0
 SOFT_DEBOUNCE_NEXT = 0.05
 SOFT_DEBOUNCE_EXEC = 0.05
 
-button_press_interval = 0.15
 LONG_PRESS_THRESHOLD = 0.7
 NEXT_LONG_CANCEL_THRESHOLD = 0.7
 
+POST_FLASH_WAIT_SEC = 1.2
+
+FIRMWARE_DIR = "/home/user/stm32/Program"
+OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
+
+GENERAL_DIRNAME = "1.일반"
+TFTP_DIRNAME = "2.TFTP"
+GENERAL_ROOT = os.path.join(FIRMWARE_DIR, GENERAL_DIRNAME)
+TFTP_ROOT = os.path.join(FIRMWARE_DIR, TFTP_DIRNAME)
+FLASH_KB_THRESHOLD = 300
+
+TFTP_REMOTE_DIR = "/home/user/stm32/Program/2.TFTP_REMOTE"
+TFTP_SERVER_ROOT = "/srv/tftp"
+TFTP_DEVICE_SUBDIR = os.path.join("GDS", "ASGD-3200")
+TFTP_DEVICE_FILENAME = "asgd3200.bin"
+
+GIT_REPO_DIR = "/home/user/stm32"
+MODBUS_PORT = 502
+
+REG_STATUS_4XXXX = 40001
+REG_GAS_FLOAT_HI = 40003
+REG_GAS_FLOAT_LO = 40004
+REG_GAS_INT_4XXXX = 40005
+REG_FAULT_4XXXX = 40008
+
+SCAN_PRUNE_SEC = 12.0
+SCAN_HOSTS_PER_TICK = 4
+SCAN_MENU_REBUILD_MIN_SEC = 0.6
+SCAN_PREFIX_STABLE_CNT = 2
+
+SCAN_DETAIL_POLL_SEC = 0.2
+
+
+auto_flash_done_connection = False
 need_update = False
 is_command_executing = False
+is_executing = False
 
 execute_press_time = None
 execute_is_down = False
 execute_long_handled = False
+execute_short_event = False
 
 next_press_time = None
 next_is_down = False
 next_long_handled = False
 next_pressed_event = False
-
-is_executing = False
 
 menu_stack = []
 current_menu = None
@@ -200,22 +150,18 @@ connection_failed_since_last_success = False
 last_stm32_check_time = 0.0
 
 stop_threads = False
-
 wifi_cancel_requested = False
 
 cached_ip = "0.0.0.0"
 cached_wifi_level = 0
-
-last_good_wifi_profile = None
-
 cached_online = False
 last_menu_online = None
+last_good_wifi_profile = None
 
 git_state_lock = threading.Lock()
 git_has_update_cached = False
 git_last_check = 0.0
 git_check_interval = 5.0
-GIT_REPO_DIR = "/home/user/stm32"
 
 scan_lock = threading.Lock()
 scan_active = False
@@ -228,20 +174,15 @@ scan_last_tick = 0.0
 scan_base_prefix = None
 scan_cursor = 2
 scan_seen = {}
-SCAN_PRUNE_SEC = 12.0
-SCAN_HOSTS_PER_TICK = 4
 scan_menu_dirty = False
 scan_menu_dirty_ts = 0.0
 scan_menu_rebuild_last = 0.0
-SCAN_MENU_REBUILD_MIN_SEC = 0.6
 scan_prefix_candidate = None
 scan_prefix_candidate_cnt = 0
-SCAN_PREFIX_STABLE_CNT = 2
 
 scan_detail_lock = threading.Lock()
 scan_detail_active = False
 scan_detail_ip = None
-
 scan_detail = {
     "gas": None,
     "flags": {"PWR": False, "A1": False, "A2": False, "FUT": False},
@@ -249,18 +190,103 @@ scan_detail = {
     "err": "",
 }
 
-SCAN_DETAIL_POLL_SEC = 0.2
+_detect_cache_lock = threading.Lock()
+_detect_cache = {"ts": 0.0, "flash_kb": None, "dev_id": None}
 
-MODBUS_PORT = 502
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
 
-REG_STATUS_4XXXX    = 40001
-REG_GAS_FLOAT_HI    = 40003
-REG_GAS_FLOAT_LO    = 40004
-REG_GAS_INT_4XXXX   = 40005
-REG_FAULT_4XXXX     = 40008
+last_time_button_next_pressed = 0.0
+last_time_button_execute_pressed = 0.0
+
+
+def logi(msg: str):
+    try:
+        print("[AUTOSEL] " + str(msg), flush=True)
+    except Exception:
+        pass
+
+
+def _portal_set_state_safe(**kwargs):
+    try:
+        if hasattr(wifi_portal, "_set_state"):
+            wifi_portal._set_state(**kwargs)
+            return
+    except Exception:
+        pass
+    try:
+        st = getattr(wifi_portal, "_state", None)
+        if isinstance(st, dict):
+            st.update(kwargs)
+    except Exception:
+        pass
+    try:
+        if hasattr(wifi_portal, "_write_state_file"):
+            wifi_portal._write_state_file()
+    except Exception:
+        pass
+
+
+def _portal_pop_req_safe():
+    try:
+        if hasattr(wifi_portal, "_pop_req_file"):
+            return wifi_portal._pop_req_file()
+    except Exception:
+        pass
+    return None
+
+
+def _portal_clear_req_safe():
+    try:
+        st = getattr(wifi_portal, "_state", None)
+        if isinstance(st, dict):
+            st["requested"] = None
+    except Exception:
+        pass
+    _portal_set_state_safe(requested=None)
+
+
+def wifi_stage_set(percent, line1, line2=""):
+    with wifi_stage_lock:
+        wifi_stage["active"] = True
+        wifi_stage["target_percent"] = int(max(0, min(100, percent)))
+        if wifi_stage["display_percent"] > wifi_stage["target_percent"]:
+            wifi_stage["display_percent"] = wifi_stage["target_percent"]
+        wifi_stage["line1"] = line1 or ""
+        wifi_stage["line2"] = line2 or ""
+    _portal_set_state_safe(connect_stage=(line1 or ""))
+
+
+def wifi_stage_clear():
+    with wifi_stage_lock:
+        wifi_stage["active"] = False
+        wifi_stage["target_percent"] = 0
+        wifi_stage["display_percent"] = 0
+        wifi_stage["line1"] = ""
+        wifi_stage["line2"] = ""
+        wifi_stage["spinner"] = 0
+
+
+def wifi_stage_tick():
+    with wifi_stage_lock:
+        if not wifi_stage["active"]:
+            wifi_stage["spinner"] = (wifi_stage["spinner"] + 1) % 4
+            return
+        t = wifi_stage["target_percent"]
+        d = wifi_stage["display_percent"]
+        if d < t:
+            step = 1
+            if t - d > 25:
+                step = 3
+            elif t - d > 12:
+                step = 2
+            wifi_stage["display_percent"] = min(t, d + step)
+        wifi_stage["spinner"] = (wifi_stage["spinner"] + 1) % 4
+
 
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
 def run_quiet(cmd, timeout=3.0, shell=False):
     try:
@@ -269,12 +295,14 @@ def run_quiet(cmd, timeout=3.0, shell=False):
     except Exception:
         return False
 
+
 def run_capture(cmd, timeout=4.0, shell=False):
     try:
         r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout, shell=shell)
         return r.returncode, (r.stdout or ""), (r.stderr or "")
     except Exception as e:
         return 999, "", str(e)
+
 
 def set_ui_progress(percent, message, pos=(0, 0), font_size=15):
     with ui_override_lock:
@@ -286,6 +314,7 @@ def set_ui_progress(percent, message, pos=(0, 0), font_size=15):
         ui_override["font_size"] = font_size
         ui_override["line2"] = ""
 
+
 def set_ui_text(line1, line2="", pos=(0, 0), font_size=15):
     with ui_override_lock:
         ui_override["active"] = True
@@ -296,6 +325,7 @@ def set_ui_text(line1, line2="", pos=(0, 0), font_size=15):
         ui_override["font_size"] = font_size
         ui_override["percent"] = 0
 
+
 def clear_ui_override():
     with ui_override_lock:
         ui_override["active"] = False
@@ -304,11 +334,13 @@ def clear_ui_override():
         ui_override["line2"] = ""
         ui_override["percent"] = 0
 
+
 def _iface_exists(name: str) -> bool:
     try:
         return os.path.isdir(f"/sys/class/net/{name}")
     except Exception:
         return False
+
 
 def has_real_internet(timeout=1.5):
     try:
@@ -326,12 +358,14 @@ def has_real_internet(timeout=1.5):
     except Exception:
         return False
 
+
 def _git_head_hash():
     rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "rev-parse", "HEAD"], timeout=1.2)
     if rc != 0:
         return None
     v = (out or "").strip()
     return v if v else None
+
 
 def _git_branch_name():
     rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "rev-parse", "--abbrev-ref", "HEAD"], timeout=1.2)
@@ -342,6 +376,7 @@ def _git_branch_name():
         return None
     return v
 
+
 def _git_has_origin():
     rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "remote"], timeout=1.2)
     if rc != 0:
@@ -349,12 +384,14 @@ def _git_has_origin():
     remotes = [x.strip() for x in (out or "").splitlines() if x.strip()]
     return "origin" in remotes
 
+
 def _git_upstream_hash():
     rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "rev-parse", "@{u}"], timeout=1.2)
     if rc != 0:
         return None
     v = (out or "").strip()
     return v if v else None
+
 
 def git_has_remote_updates_light(timeout=2.2) -> bool:
     if not os.path.isdir(GIT_REPO_DIR):
@@ -377,6 +414,7 @@ def git_has_remote_updates_light(timeout=2.2) -> bool:
     if not uh:
         return False
     return uh != lh
+
 
 def git_poll_thread():
     global git_has_update_cached, git_last_check, need_update
@@ -413,20 +451,25 @@ def git_poll_thread():
         except Exception:
             time.sleep(0.5)
 
+
 def nm_is_active():
     rc, out, _ = run_capture(["systemctl", "is-active", "NetworkManager"], timeout=2.0)
     return (rc == 0) and ("active" in out.strip())
+
 
 def nm_restart():
     run_quiet(["sudo", "systemctl", "enable", "--now", "NetworkManager"], timeout=6.0)
     run_quiet(["sudo", "systemctl", "restart", "NetworkManager"], timeout=6.0)
 
+
 def nm_set_managed(managed: bool):
     v = "yes" if managed else "no"
     run_quiet(["sudo", "nmcli", "dev", "set", "wlan0", "managed", v], timeout=4.0)
 
+
 def nm_disconnect_wlan0():
     run_quiet(["sudo", "nmcli", "dev", "disconnect", "wlan0"], timeout=4.0)
+
 
 def nm_get_active_wifi_profile():
     rc, out, _ = run_capture(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"], timeout=3.0)
@@ -440,6 +483,7 @@ def nm_get_active_wifi_profile():
                 return name
     return None
 
+
 def nm_autoconnect(timeout=25):
     t0 = time.time()
     while time.time() - t0 < timeout:
@@ -447,6 +491,7 @@ def nm_autoconnect(timeout=25):
             return True
         time.sleep(0.7)
     return has_real_internet()
+
 
 def nm_connect(ssid: str, psk: str, timeout=30):
     run_quiet(["sudo", "nmcli", "dev", "wifi", "rescan", "ifname", "wlan0"], timeout=6.0)
@@ -461,11 +506,13 @@ def nm_connect(ssid: str, psk: str, timeout=30):
     rc2, _, _ = run_capture(cmd, timeout=timeout + 5)
     return rc2 == 0
 
+
 def nm_up_profile(nm_id: str, timeout=20) -> bool:
     if not nm_id:
         return False
     rc, _, _ = run_capture(["sudo", "nmcli", "--wait", str(int(timeout)), "connection", "up", "id", nm_id], timeout=timeout + 2)
     return rc == 0
+
 
 def wpa_select_saved_ssid(ssid: str) -> bool:
     if not ssid:
@@ -491,6 +538,7 @@ def wpa_select_saved_ssid(ssid: str) -> bool:
     run_quiet(["sudo", "dhclient", "wlan0"], timeout=10.0)
     return True
 
+
 def kill_portal_tmp_procs():
     cmd = r"""sudo bash -lc '
 pids=$(pgrep -a hostapd | awk "/\/tmp\/hostapd\.conf/{print \$1}" | xargs)
@@ -500,12 +548,14 @@ pids=$(pgrep -a dnsmasq | awk "/\/tmp\/dnsmasq\.conf/{print \$1}" | xargs)
 '"""
     run_quiet(cmd, timeout=6.0, shell=True)
 
+
 def wlan0_soft_reset():
     run_quiet(["sudo", "ip", "addr", "flush", "dev", "wlan0"], timeout=3.0)
     run_quiet(["sudo", "ip", "link", "set", "wlan0", "down"], timeout=3.0)
     time.sleep(1)
     run_quiet(["sudo", "ip", "link", "set", "wlan0", "up"], timeout=3.0)
     time.sleep(1)
+
 
 def ina_poll_loop(interval=0.35):
     global ina_last
@@ -532,6 +582,7 @@ def ina_poll_loop(interval=0.35):
             pass
         time.sleep(interval)
 
+
 def init_ina219():
     global ina, ina_poll_started
     try:
@@ -543,12 +594,14 @@ def init_ina219():
         ina_poll_started = True
         threading.Thread(target=ina_poll_loop, daemon=True).start()
 
+
 def _ina_get_voltage(max_age=2.0):
     d = ina_last
     ts = d.get("ts", 0.0) or 0.0
     if ts and (time.time() - ts) <= max_age:
         return d.get("v", None)
     return None
+
 
 def read_ina219_percentage():
     try:
@@ -564,11 +617,13 @@ def read_ina219_percentage():
     except Exception:
         return -1
 
+
 def battery_monitor_thread():
     global battery_percentage
     while not stop_threads:
         battery_percentage = read_ina219_percentage()
         time.sleep(2)
+
 
 def button_next_edge(channel):
     global last_time_button_next_pressed
@@ -589,25 +644,36 @@ def button_next_edge(channel):
         next_is_down = False
         next_press_time = None
 
-def button_execute_callback(channel):
-    global last_time_button_execute_pressed, execute_press_time, execute_is_down, execute_long_handled
+
+def button_execute_edge(channel):
+    global last_time_button_execute_pressed
+    global execute_press_time, execute_is_down, execute_long_handled, execute_short_event
     now = time.time()
     if (now - last_time_button_execute_pressed) < SOFT_DEBOUNCE_EXEC:
         return
     last_time_button_execute_pressed = now
-    execute_press_time = now
-    execute_is_down = True
-    execute_long_handled = False
+    if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
+        execute_press_time = now
+        execute_is_down = True
+        execute_long_handled = False
+    else:
+        if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
+            execute_short_event = True
+        execute_is_down = False
+        execute_press_time = None
+        execute_long_handled = False
+
 
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_next_edge, bouncetime=40)
-GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=40)
+GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.BOTH, callback=button_execute_edge, bouncetime=40)
 
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
+
 
 def check_stm32_connection():
     global connection_success, connection_failed_since_last_success, is_command_executing
@@ -642,6 +708,7 @@ def check_stm32_connection():
             connection_success = False
         return False
 
+
 def stm32_poll_thread():
     global last_stm32_check_time, auto_flash_done_connection
     while not stop_threads:
@@ -665,6 +732,7 @@ def stm32_poll_thread():
             cur_state = connection_success
         if cur_state and (not prev_state):
             auto_flash_done_connection = False
+
 
 serial = i2c(port=1, address=0x3C)
 device = sh1107(serial, rotate=1)
@@ -696,6 +764,7 @@ def select_battery_icon(percentage):
         return high_battery_icon
     return full_battery_icon
 
+
 def _text_size(draw, text, font):
     try:
         bbox = draw.textbbox((0, 0), text, font=font)
@@ -705,6 +774,7 @@ def _text_size(draw, text, font):
             return draw.textsize(text, font=font)
         except Exception:
             return (len(text) * 6, 10)
+
 
 def _ellipsis_to_width(draw, text, font, max_w):
     s = text or ""
@@ -729,6 +799,7 @@ def _ellipsis_to_width(draw, text, font, max_w):
         else:
             hi = mid - 1
     return best if best else ell
+
 
 def _wrap_lines(draw, text, font, max_w, max_lines=2):
     s = (text or "").strip()
@@ -760,6 +831,7 @@ def _wrap_lines(draw, text, font, max_w, max_lines=2):
             lines[-1] = _ellipsis_to_width(draw, last, font, max_w)
     return lines
 
+
 def _right_text(draw, x_right, y, text, font, fill=255):
     try:
         bbox = draw.textbbox((0, 0), text, font=font)
@@ -771,6 +843,7 @@ def _right_text(draw, x_right, y, text, font, fill=255):
             w = len(text) * 6
     xx = max(0, int(x_right - w))
     draw.text((xx, y), text, font=font, fill=fill)
+
 
 def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_size, min_size=10):
     size = start_size
@@ -790,6 +863,7 @@ def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_si
     except TypeError:
         draw.text((center_x, center_y), text, font=f, fill=255)
 
+
 def draw_wifi_bars(draw, x, y, level):
     bar_w = 3
     gap = 2
@@ -804,25 +878,10 @@ def draw_wifi_bars(draw, x, y, level):
         else:
             draw.rectangle([xx, y + max_h - 1, xx + bar_w, y + max_h], fill=255)
 
-FIRMWARE_DIR = "/home/user/stm32/Program"
-OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
-
-GENERAL_DIRNAME = "1.일반"
-TFTP_DIRNAME = "2.TFTP"
-GENERAL_ROOT = os.path.join(FIRMWARE_DIR, GENERAL_DIRNAME)
-TFTP_ROOT = os.path.join(FIRMWARE_DIR, TFTP_DIRNAME)
-FLASH_KB_THRESHOLD = 300
-
-TFTP_REMOTE_DIR = "/home/user/stm32/Program/2.TFTP_REMOTE"
-TFTP_SERVER_ROOT = "/srv/tftp"
-TFTP_DEVICE_SUBDIR = os.path.join("GDS", "ASGD-3200")
-TFTP_DEVICE_FILENAME = "asgd3200.bin"
-
-_detect_cache_lock = threading.Lock()
-_detect_cache = {"ts": 0.0, "flash_kb": None, "dev_id": None}
 
 def reg_addr(addr_4xxxx: int) -> int:
     return int(addr_4xxxx) - 40001
+
 
 def encode_ip_to_words(ip: str):
     a, b, c, d = map(int, (ip or "").strip().split("."))
@@ -830,6 +889,7 @@ def encode_ip_to_words(ip: str):
         if x < 0 or x > 255:
             raise ValueError("bad ip")
     return ((a << 8) | b, (c << 8) | d)
+
 
 def _quick_modbus_probe(ip: str, timeout=0.22) -> bool:
     try:
@@ -839,7 +899,8 @@ def _quick_modbus_probe(ip: str, timeout=0.22) -> bool:
     except Exception:
         return False
 
-def _modbus_connect_with_retries(ip: str, port=502, timeout=2.0, retries=4, delay=0.35) -> Optional[ModbusTcpClient]:
+
+def _modbus_connect_with_retries(ip: str, port=502, timeout=1.2, retries=3, delay=0.25) -> Optional[ModbusTcpClient]:
     c = ModbusTcpClient(ip, port=port, timeout=timeout)
     try:
         for _ in range(max(1, int(retries))):
@@ -861,6 +922,7 @@ def _modbus_connect_with_retries(ip: str, port=502, timeout=2.0, retries=4, dela
             pass
         return None
 
+
 def _is_modbus_error(resp) -> bool:
     try:
         if resp is None:
@@ -873,6 +935,7 @@ def _is_modbus_error(resp) -> bool:
         return True
     return False
 
+
 def _treat_as_ok_modbus_write_exception(e: Exception) -> bool:
     msg = str(e or "")
     ok_like = [
@@ -884,9 +947,10 @@ def _treat_as_ok_modbus_write_exception(e: Exception) -> bool:
     ]
     return any(k in msg for k in ok_like)
 
+
 def _try_read_some_modbus_info(client: ModbusTcpClient) -> Optional[str]:
     try:
-        r = client.read_holding_registers(reg_addr(40001), 4)
+        r = client.read_holding_registers(address=reg_addr(40001), count=4, slave=1)
         if _is_modbus_error(r):
             return None
         vals = getattr(r, "registers", None)
@@ -896,12 +960,13 @@ def _try_read_some_modbus_info(client: ModbusTcpClient) -> Optional[str]:
     except Exception as e:
         return ("READ ERR:" + str(e))[:18]
 
+
 def _read_device_info_fast(ip: str) -> Optional[str]:
-    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.45, retries=1, delay=0.0)
+    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.8, retries=1, delay=0.0)
     if c is None:
         return None
     try:
-        r = c.read_holding_registers(reg_addr(40001), 4)
+        r = c.read_holding_registers(address=reg_addr(40001), count=4, slave=1)
         if _is_modbus_error(r):
             return None
         vals = getattr(r, "registers", None)
@@ -916,11 +981,13 @@ def _read_device_info_fast(ip: str) -> Optional[str]:
         except Exception:
             pass
 
+
 def _u16(v):
     try:
         return int(v) & 0xFFFF
     except Exception:
         return 0
+
 
 def make_openocd_program_cmd(bin_path: str) -> str:
     return (
@@ -929,6 +996,7 @@ def make_openocd_program_cmd(bin_path: str) -> str:
         "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
         f"-c \"program {bin_path} verify reset exit 0x08000000\""
     )
+
 
 def _parse_openocd_flash_kb(text: str) -> Optional[int]:
     m = re.search(r"flash size\s*=\s*(\d+)\s*KiB", text, re.IGNORECASE)
@@ -945,6 +1013,7 @@ def _parse_openocd_flash_kb(text: str) -> Optional[int]:
             return None
     return None
 
+
 def _detect_flash_kb_by_probe(timeout=3.5) -> Optional[int]:
     cmd = [
         "sudo", "openocd",
@@ -959,6 +1028,7 @@ def _detect_flash_kb_by_probe(timeout=3.5) -> Optional[int]:
     txt = (out or "") + "\n" + (err or "")
     kb = _parse_openocd_flash_kb(txt)
     return kb
+
 
 def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optional[int]]:
     now = time.time()
@@ -1010,6 +1080,7 @@ def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optio
             return None, kb
         return None, None
 
+
 def _strip_order_prefix(name: str) -> str:
     s = (name or "").strip()
     m = re.match(r"^\d+\.(.*)$", s)
@@ -1017,12 +1088,15 @@ def _strip_order_prefix(name: str) -> str:
         s = (m.group(1) or "").strip()
     return s
 
+
 def _canon(name: str) -> str:
     return _strip_order_prefix(name).strip().lower()
+
 
 def _is_ir_variant(selected_bin_path: str) -> bool:
     fn = os.path.basename(selected_bin_path).upper()
     return fn.startswith("IR_") or fn.startswith("IR")
+
 
 def _key_from_filename(path_or_name: str) -> str:
     base = os.path.basename(path_or_name or "")
@@ -1035,9 +1109,11 @@ def _key_from_filename(path_or_name: str) -> str:
         return (m2.group(1) or "").strip()
     return _strip_order_prefix(stem).strip()
 
+
 def _gas_key_from_selected_path(selected_bin_path: str) -> str:
     sp = os.path.abspath(selected_bin_path)
     return _key_from_filename(sp)
+
 
 def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]) -> Tuple[str, str]:
     if flash_kb is None:
@@ -1097,6 +1173,7 @@ def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]) -
             return c, chosen_kind
     return selected_bin_path, "원본"
 
+
 def parse_order_and_name(name: str, is_dir: bool):
     raw = name if is_dir else os.path.splitext(name)[0]
     m = re.match(r"^(\d+)\.(.*)$", raw)
@@ -1108,6 +1185,7 @@ def parse_order_and_name(name: str, is_dir: bool):
         display = raw
     return order, display
 
+
 def _ip_from_ip_cmd(ifname: str) -> str:
     rc, out, _ = run_capture(["bash", "-lc", f"ip -4 addr show {ifname} | awk '/inet /{{print $2}}' | head -n1"], timeout=0.9)
     if rc != 0:
@@ -1117,6 +1195,7 @@ def _ip_from_ip_cmd(ifname: str) -> str:
         return "0.0.0.0"
     ip = v.split("/")[0].strip()
     return ip if ip else "0.0.0.0"
+
 
 def get_ip_address():
     try:
@@ -1146,11 +1225,13 @@ def get_ip_address():
         pass
     return "0.0.0.0"
 
+
 def _scan_compute_prefix(ip: str) -> Optional[str]:
     parts = (ip or "").split(".")
     if len(parts) != 4:
         return None
     return ".".join(parts[:3]) + "."
+
 
 def pick_remote_fw_file_for_device(ip: str) -> str:
     if not os.path.isdir(TFTP_REMOTE_DIR):
@@ -1191,6 +1272,7 @@ def pick_remote_fw_file_for_device(ip: str) -> str:
     bins.sort(key=_score, reverse=True)
     return bins[0]
 
+
 def _ensure_tftp_dir(path: str) -> bool:
     try:
         os.makedirs(path, exist_ok=True)
@@ -1202,6 +1284,7 @@ def _ensure_tftp_dir(path: str) -> bool:
         return ok
     except Exception:
         return False
+
 
 def tftp_upgrade_device(ip: str):
     ip = (ip or "").strip()
@@ -1263,6 +1346,7 @@ def tftp_upgrade_device(ip: str):
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
         return
+
     tftp_ip = get_ip_address()
     set_ui_progress(45, f"명령 전송\n{ip}", pos=(6, 0), font_size=13)
     client = _modbus_connect_with_retries(ip, port=502, timeout=2.2, retries=4, delay=0.35)
@@ -1284,25 +1368,29 @@ def tftp_upgrade_device(ip: str):
                 clear_ui_override()
         except Exception:
             pass
+
         ok_final = False
         addr_ip1 = reg_addr(40088)
         addr_ctrl = reg_addr(40091)
+
         try:
             w1, w2 = encode_ip_to_words(tftp_ip)
             try:
-                client.write_registers(addr_ip1, [w1, w2])
+                client.write_registers(address=addr_ip1, values=[w1, w2], slave=1)
             except Exception:
                 pass
         except Exception:
             pass
+
         try:
-            r = client.write_register(addr_ctrl, 1)
+            r = client.write_register(address=addr_ctrl, value=1, slave=1)
             if _is_modbus_error(r):
                 ok_final = False
             else:
                 ok_final = True
         except Exception as e:
             ok_final = _treat_as_ok_modbus_write_exception(e)
+
         if not ok_final:
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
@@ -1312,6 +1400,7 @@ def tftp_upgrade_device(ip: str):
             GPIO.output(LED_ERROR1, False)
             clear_ui_override()
             return
+
         GPIO.output(LED_SUCCESS, True)
         set_ui_progress(100, "전송 완료\n업뎃 진행", pos=(10, 5), font_size=15)
         time.sleep(1.1)
@@ -1322,6 +1411,7 @@ def tftp_upgrade_device(ip: str):
         except Exception:
             pass
     clear_ui_override()
+
 
 def build_scan_menu():
     with scan_lock:
@@ -1338,8 +1428,10 @@ def build_scan_menu():
     extras_local.append(None)
     return {"dir": "__scan__", "commands": commands_local, "names": names_local, "types": types_local, "extras": extras_local}
 
+
 def build_scan_detail_menu(ip: str):
     return {"dir": "__scan_detail__", "commands": [None], "names": [f"{ip}"], "types": ["scan_detail"], "extras": [ip]}
+
 
 def _draw_box_label(draw, x, y, w, h, label, active):
     f = get_font(11)
@@ -1349,6 +1441,7 @@ def _draw_box_label(draw, x, y, w, h, label, active):
     else:
         draw.rectangle([x, y, x + w, y + h], outline=255, fill=0)
         draw.text((x + 3, y + 1), label, font=f, fill=255)
+
 
 def _fmt_gas(v):
     if v is None:
@@ -1363,12 +1456,13 @@ def _fmt_gas(v):
     except Exception:
         return "--"
 
+
 def _read_gas_and_alarm_flags_with_client(c: ModbusTcpClient):
     lo = 40001
     hi = 40008
     start = reg_addr(lo)
     count = (hi - lo) + 1
-    r = c.read_holding_registers(start, count)
+    r = c.read_holding_registers(address=start, count=count, slave=1)
     if _is_modbus_error(r):
         return None, None, "read"
     regs = getattr(r, "registers", None) or []
@@ -1392,8 +1486,9 @@ def _read_gas_and_alarm_flags_with_client(c: ModbusTcpClient):
     flags = {"PWR": pwr_fault, "A1": a1, "A2": a2, "FUT": fut}
     return gas, flags, ""
 
+
 def read_gas_and_alarm_flags(ip: str):
-    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.35, retries=1, delay=0.0)
+    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.8, retries=1, delay=0.0)
     if c is None:
         return None, None, "connect"
     try:
@@ -1406,14 +1501,15 @@ def read_gas_and_alarm_flags(ip: str):
         except Exception:
             pass
 
+
 def draw_scan_detail_screen(draw):
     draw.rectangle(device.bounding_box, fill="black")
 
     f = scan_detail.get("flags", {}) or {}
-    _draw_box_label(draw,  2,  0, 24, 14, "PWR", bool(f.get("PWR")))
-    _draw_box_label(draw, 28,  0, 20, 14, "A1",  bool(f.get("A1")))
-    _draw_box_label(draw, 50,  0, 20, 14, "A2",  bool(f.get("A2")))
-    _draw_box_label(draw, 72,  0, 26, 14, "FUT", bool(f.get("FUT")))
+    _draw_box_label(draw, 2, 0, 24, 14, "PWR", bool(f.get("PWR")))
+    _draw_box_label(draw, 28, 0, 20, 14, "A1", bool(f.get("A1")))
+    _draw_box_label(draw, 50, 0, 20, 14, "A2", bool(f.get("A2")))
+    _draw_box_label(draw, 72, 0, 26, 14, "FUT", bool(f.get("FUT")))
 
     ip_txt = (scan_detail_ip or "").strip()
     if ip_txt:
@@ -1438,6 +1534,7 @@ def draw_scan_detail_screen(draw):
             draw.text((2, y0 + i * 10), ln, font=fbot, fill=255)
     else:
         draw.text((2, y0), _ellipsis_to_width(draw, "NEXT:뒤로  EXEC길게:TFTP", fbot, max_w), font=fbot, fill=255)
+
 
 def modbus_detail_poll_thread():
     global need_update
@@ -1474,7 +1571,7 @@ def modbus_detail_poll_thread():
             client_ip = None
 
         if client is None:
-            c = ModbusTcpClient(ip, port=MODBUS_PORT, timeout=0.15)
+            c = ModbusTcpClient(ip, port=MODBUS_PORT, timeout=0.8)
             try:
                 if not c.connect():
                     try:
@@ -1529,10 +1626,6 @@ def modbus_detail_poll_thread():
             client_ip = None
             backoff_until = time.time() + 0.2
 
-def _scan_reset_from_myip(ip: str):
-    global scan_base_prefix, scan_cursor
-    scan_base_prefix = _scan_compute_prefix(ip)
-    scan_cursor = 2
 
 def modbus_scan_loop():
     global scan_ips, scan_infos, scan_selected_idx, scan_selected_ip, need_update, scan_last_tick
@@ -1607,6 +1700,7 @@ def modbus_scan_loop():
             scan_last_tick = time.time()
 
         need_update = True
+
 
 def build_menu_for_dir(dir_path, is_root=False):
     entries = []
@@ -1683,6 +1777,7 @@ def build_menu_for_dir(dir_path, is_root=False):
 
     return {"dir": dir_path, "commands": commands_local, "names": names_local, "types": types_local, "extras": extras_local}
 
+
 def refresh_root_menu(reset_index=False):
     global current_menu, commands, command_names, command_types, menu_extras, current_command_index
     current_menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
@@ -1693,7 +1788,9 @@ def refresh_root_menu(reset_index=False):
     if reset_index or (current_command_index >= len(commands)):
         current_command_index = 0
 
+
 refresh_root_menu(reset_index=True)
+
 
 def git_pull():
     global git_last_check, git_has_update_cached
@@ -1748,6 +1845,7 @@ def git_pull():
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
 
+
 def unlock_memory():
     global need_update
     set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
@@ -1771,12 +1869,14 @@ def unlock_memory():
     need_update = True
     return False
 
+
 def restart_script():
     set_ui_progress(25, "재시작 중", pos=(20, 10), font_size=15)
     def restart():
         time.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=restart, daemon=True).start()
+
 
 def lock_memory_procedure():
     global need_update
@@ -1815,10 +1915,12 @@ def lock_memory_procedure():
         GPIO.output(LED_ERROR1, False)
         need_update = True
 
+
 def request_wifi_setup():
     global wifi_action_requested
     with wifi_action_lock:
         wifi_action_requested = True
+
 
 def prepare_for_ap_mode():
     global last_good_wifi_profile
@@ -1832,6 +1934,7 @@ def prepare_for_ap_mode():
         nm_disconnect_wlan0()
         nm_set_managed(False)
         time.sleep(0.3)
+
 
 def restore_after_ap_mode(timeout=25):
     global last_good_wifi_profile
@@ -1864,6 +1967,7 @@ def restore_after_ap_mode(timeout=25):
     time.sleep(0.6)
     wifi_stage_clear()
     return ok
+
 
 def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     wifi_stage_set(10, "연결 준비", "AP 종료")
@@ -1904,6 +2008,7 @@ def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
     time.sleep(0.6)
     wifi_stage_clear()
     return ok2
+
 
 def _portal_loop_until_connected_or_cancel():
     global wifi_cancel_requested
@@ -1985,6 +2090,7 @@ def _portal_loop_until_connected_or_cancel():
             return False
         time.sleep(0.2)
 
+
 def wifi_worker_thread():
     global wifi_action_requested, wifi_action_running
     global status_message, message_position, message_font_size, need_update, wifi_cancel_requested
@@ -2047,6 +2153,266 @@ def wifi_worker_thread():
                 with wifi_action_lock:
                     wifi_action_running = False
         time.sleep(0.05)
+
+
+def _draw_override(draw):
+    with ui_override_lock:
+        active = ui_override["active"]
+        kind = ui_override["kind"]
+        percent = ui_override["percent"]
+        msg = ui_override["message"]
+        pos = ui_override["pos"]
+        fs = ui_override["font_size"]
+        line2 = ui_override["line2"]
+    if not active:
+        return False
+    draw.rectangle(device.bounding_box, fill="black")
+    if kind == "progress":
+        draw.text(pos, msg, font=get_font(fs), fill=255)
+        x1, y1, x2, y2 = 10, 50, 110, 60
+        draw.rectangle([(x1, y1), (x2, y2)], fill=0)
+        fill_w = int((x2 - x1) * (percent / 100.0))
+        fill_w = int(max(0, min((x2 - x1), fill_w)))
+        if fill_w > 0:
+            draw.rectangle([(x1, y1), (x1 + fill_w, y2)], fill=255)
+        return True
+    if kind == "text":
+        draw.text(pos, msg, font=get_font(fs), fill=255)
+        if line2:
+            draw.text((pos[0], pos[1] + 18), line2, font=get_font(fs), fill=255)
+        return True
+    return False
+
+
+def get_ap_station_count():
+    try:
+        r = subprocess.run(["iw", "dev", "wlan0", "station", "dump"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.7)
+        if r.returncode != 0:
+            return 0
+        return sum(1 for line in (r.stdout or "").splitlines() if line.strip().startswith("Station "))
+    except Exception:
+        return 0
+
+
+def ap_client_tick(wifi_running: bool):
+    now = time.time()
+    with ap_state_lock:
+        ap_state["spinner"] = (ap_state["spinner"] + 1) % 4
+        if not wifi_running:
+            ap_state["last_clients"] = 0
+            ap_state["flash_until"] = 0.0
+            ap_state["poll_next"] = 0.0
+            return
+        if now < ap_state["poll_next"]:
+            return
+        ap_state["poll_next"] = now + 0.8
+        prev = ap_state["last_clients"]
+    cnt = get_ap_station_count()
+    with ap_state_lock:
+        ap_state["last_clients"] = cnt
+        if cnt > 0 and prev == 0:
+            ap_state["flash_until"] = now + 1.3
+
+
+last_oled_update_time = 0.0
+
+
+def _draw_scan_screen(draw):
+    global scan_selected_ip
+    with scan_lock:
+        ips = list(scan_ips)
+        idx = scan_selected_idx
+        infos = dict(scan_infos)
+        done = scan_done
+    draw.rectangle(device.bounding_box, fill="black")
+    now_dt = datetime.now()
+    current_time = now_dt.strftime("%H:%M")
+    draw.text((2, 1), current_time, font=get_font(12), fill=255)
+
+    if ips:
+        if idx < 0:
+            idx = 0
+        if idx >= len(ips):
+            idx = len(ips) - 1
+        sel_ip = ips[idx]
+        scan_selected_ip = sel_ip
+        title = f"{sel_ip}"
+        info = infos.get(sel_ip, "")
+        if not info:
+            info = "읽는중..."
+        cx = device.width // 2 + VISUAL_X_OFFSET
+        draw_center_text_autofit(draw, title, cx, 28, device.width - 4, 18, min_size=12)
+        draw.text((2, 46), _ellipsis_to_width(draw, (info or ""), get_font(11), device.width - 4), font=get_font(11), fill=255)
+    else:
+        cx = device.width // 2 + VISUAL_X_OFFSET
+        if done:
+            draw_center_text_autofit(draw, "장치 없음", cx, 28, device.width - 4, 18, min_size=12)
+            draw.text((2, 46), _ellipsis_to_width(draw, "◀ 이전으로", get_font(11), device.width - 4), font=get_font(11), fill=255)
+        else:
+            draw_center_text_autofit(draw, "장치 검색중...", cx, 28, device.width - 4, 18, min_size=12)
+            draw.text((2, 46), _ellipsis_to_width(draw, "잠시만...", get_font(11), device.width - 4), font=get_font(11), fill=255)
+
+
+def update_oled_display():
+    global current_command_index, status_message, message_position, message_font_size
+    global current_menu, commands, command_names, command_types, menu_extras
+    if not display_lock.acquire(timeout=0.2):
+        return
+    try:
+        if not commands:
+            return
+
+        with wifi_action_lock:
+            wifi_running = wifi_action_running
+
+        now_dt = datetime.now()
+        current_time = now_dt.strftime("%H시 %M분")
+        voltage_percentage = battery_percentage
+        ip_address = cached_ip
+        wifi_level = cached_wifi_level
+
+        try:
+            with canvas(device) as draw:
+                if _draw_override(draw):
+                    return
+
+                if current_menu and current_menu.get("dir") == "__scan_detail__":
+                    draw_scan_detail_screen(draw)
+                    return
+
+                if current_menu and current_menu.get("dir") == "__scan__":
+                    _draw_scan_screen(draw)
+                    return
+
+                title = command_names[current_command_index]
+                item_type = command_types[current_command_index]
+
+                if item_type in ("system", "wifi"):
+                    ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
+                    draw.text((0, 51), _ellipsis_to_width(draw, ip_display, font_big, device.width - 2), font=font_big, fill=255)
+                    draw.text((80, -3), "GDSENG", font=font_big, fill=255)
+                    draw.text((83, 50), "ver 3.72", font=font_big, fill=255)
+                    draw.text((0, -3), current_time, font=font_time, fill=255)
+                    if not cached_online:
+                        draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
+                else:
+                    battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
+                    draw.bitmap((90, -11), battery_icon, fill=255)
+                    perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
+                    draw.text((99, 1), perc_text, font=font_st, fill=255)
+                    draw.text((2, 1), current_time, font=font_time, fill=255)
+                    draw_wifi_bars(draw, 70, 3, wifi_level)
+
+                if status_message:
+                    draw.rectangle(device.bounding_box, fill="black")
+                    draw.text(message_position, status_message, font=get_font(message_font_size), fill=255)
+                    return
+
+                if wifi_running:
+                    draw.rectangle(device.bounding_box, fill="black")
+                    x = 2
+                    with wifi_stage_lock:
+                        st_active = wifi_stage["active"]
+                        st_p = wifi_stage["display_percent"]
+                        st1 = wifi_stage["line1"]
+                        st2 = wifi_stage["line2"]
+                        sp = wifi_stage["spinner"]
+                    with ap_state_lock:
+                        flash_until = ap_state["flash_until"]
+                        ap_sp = ap_state["spinner"]
+                    dots = "." * sp
+                    dots2 = "." * ap_sp
+                    now = time.time()
+                    if st_active:
+                        draw.text((x, 0), (st1 or "")[:16], font=get_font(13), fill=255)
+                        line2 = (st2 or "")
+                        if line2:
+                            draw.text((x, 16), _ellipsis_to_width(draw, (line2 + dots), get_font(11), device.width - 4), font=get_font(11), fill=255)
+                        else:
+                            draw.text((x, 16), _ellipsis_to_width(draw, ("처리중" + dots), get_font(11), device.width - 4), font=get_font(11), fill=255)
+                        x1, y1, x2, y2 = 8, 48, 120, 60
+                        draw.rectangle([(x1, y1), (x2, y2)], outline=255, fill=0)
+                        fill_w = int((x2 - x1) * (st_p / 100.0))
+                        if fill_w > 0:
+                            draw.rectangle([(x1, y1), (x1 + fill_w, y2)], fill=255)
+                        draw.text((x, 32), "NEXT 길게: 취소", font=get_font(11), fill=255)
+                    else:
+                        if now < flash_until:
+                            draw.text((x, 0), ("연결됨!" + dots2)[:16], font=get_font(14), fill=255)
+                        else:
+                            draw.text((x, 0), "WiFi 설정 모드", font=get_font(14), fill=255)
+                        draw.text((x, 18), f"AP: {AP_SSID}"[:18], font=get_font(12), fill=255)
+                        draw.text((x, 34), f"PW: {AP_PASS}"[:18], font=get_font(12), fill=255)
+                        draw.text((x, 50), f"IP: {AP_IP}:{PORTAL_PORT}"[:18], font=get_font(12), fill=255)
+                    return
+
+                center_x = device.width // 2 + VISUAL_X_OFFSET
+                if item_type in ("system", "wifi"):
+                    center_y = 33
+                    start_size = 17
+                else:
+                    center_y = 42
+                    start_size = 21
+                max_w = device.width - 4
+                draw_center_text_autofit(draw, title, center_x, center_y, max_w, start_size, min_size=11)
+        except Exception:
+            return
+    finally:
+        display_lock.release()
+
+
+def realtime_update_display():
+    global need_update, last_oled_update_time
+    global scan_menu_dirty, scan_menu_rebuild_last
+    global current_menu, commands, command_names, command_types, menu_extras, current_command_index
+    while not stop_threads:
+        with wifi_action_lock:
+            wifi_running = wifi_action_running
+        wifi_stage_tick()
+        ap_client_tick(wifi_running)
+
+        now = time.time()
+
+        if scan_menu_dirty and current_menu and current_menu.get("dir") == "__scan__":
+            if (not next_is_down) and (not execute_is_down):
+                if now - scan_menu_rebuild_last >= SCAN_MENU_REBUILD_MIN_SEC:
+                    scan_menu_rebuild_last = now
+                    with scan_lock:
+                        scan_menu_dirty = False
+                        ips_now = list(scan_ips)
+                        sel_ip = scan_selected_ip
+                    nm = build_scan_menu()
+                    current_menu = nm
+                    commands = nm["commands"]
+                    command_names = nm["names"]
+                    command_types = nm["types"]
+                    menu_extras = nm["extras"]
+
+                    if sel_ip and (sel_ip in ips_now):
+                        new_idx = ips_now.index(sel_ip)
+                        current_command_index = new_idx
+                        with scan_lock:
+                            scan_selected_idx = new_idx
+                    else:
+                        if current_command_index >= len(commands):
+                            current_command_index = max(0, len(commands) - 1)
+                    need_update = True
+
+        if need_update or (now - last_oled_update_time >= 0.22):
+            update_oled_display()
+            last_oled_update_time = now
+            need_update = False
+        time.sleep(0.02)
+
+
+def shutdown_system():
+    set_ui_text("배터리 부족", "시스템 종료 중...", pos=(10, 18), font_size=15)
+    time.sleep(2)
+    try:
+        os.system("sudo shutdown -h now")
+    except Exception:
+        pass
+
 
 def execute_command(command_index):
     global is_executing, is_command_executing
@@ -2335,7 +2701,7 @@ def execute_command(command_index):
     result = process.returncode
     if result == 0:
         set_ui_progress(80, f"업데이트 성공!\n{info_line}", pos=(6, 0), font_size=13)
-        time.sleep(10.5)
+        time.sleep(POST_FLASH_WAIT_SEC)
         lock_memory_procedure()
     else:
         GPIO.output(LED_ERROR, True)
@@ -2350,6 +2716,7 @@ def execute_command(command_index):
     need_update = True
     is_executing = False
     is_command_executing = False
+
 
 def get_wifi_level():
     try:
@@ -2373,6 +2740,7 @@ def get_wifi_level():
     except Exception:
         return 0
 
+
 def net_poll_thread():
     global cached_ip, cached_wifi_level, cached_online, last_menu_online, need_update
     while not stop_threads:
@@ -2389,270 +2757,18 @@ def net_poll_thread():
         except Exception:
             time.sleep(0.8)
 
-def _draw_override(draw):
-    with ui_override_lock:
-        active = ui_override["active"]
-        kind = ui_override["kind"]
-        percent = ui_override["percent"]
-        msg = ui_override["message"]
-        pos = ui_override["pos"]
-        fs = ui_override["font_size"]
-        line2 = ui_override["line2"]
-    if not active:
-        return False
-    draw.rectangle(device.bounding_box, fill="black")
-    if kind == "progress":
-        draw.text(pos, msg, font=get_font(fs), fill=255)
-        x1, y1, x2, y2 = 10, 50, 110, 60
-        draw.rectangle([(x1, y1), (x2, y2)], fill=0)
-        fill_w = int((x2 - x1) * (percent / 100.0))
-        fill_w = int(max(0, min((x2 - x1), fill_w)))
-        if fill_w > 0:
-            draw.rectangle([(x1, y1), (x1 + fill_w, y2)], fill=255)
-        return True
-    if kind == "text":
-        draw.text(pos, msg, font=get_font(fs), fill=255)
-        if line2:
-            draw.text((pos[0], pos[1] + 18), line2, font=get_font(fs), fill=255)
-        return True
-    return False
-
-def get_ap_station_count():
-    try:
-        r = subprocess.run(["iw", "dev", "wlan0", "station", "dump"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.7)
-        if r.returncode != 0:
-            return 0
-        return sum(1 for line in (r.stdout or "").splitlines() if line.strip().startswith("Station "))
-    except Exception:
-        return 0
-
-def ap_client_tick(wifi_running: bool):
-    now = time.time()
-    with ap_state_lock:
-        ap_state["spinner"] = (ap_state["spinner"] + 1) % 4
-        if not wifi_running:
-            ap_state["last_clients"] = 0
-            ap_state["flash_until"] = 0.0
-            ap_state["poll_next"] = 0.0
-            return
-        if now < ap_state["poll_next"]:
-            return
-        ap_state["poll_next"] = now + 0.8
-        prev = ap_state["last_clients"]
-    cnt = get_ap_station_count()
-    with ap_state_lock:
-        ap_state["last_clients"] = cnt
-        if cnt > 0 and prev == 0:
-            ap_state["flash_until"] = now + 1.3
-
-last_oled_update_time = 0.0
-
-def _draw_scan_screen(draw):
-    global scan_selected_ip
-    with scan_lock:
-        ips = list(scan_ips)
-        idx = scan_selected_idx
-        infos = dict(scan_infos)
-        done = scan_done
-    draw.rectangle(device.bounding_box, fill="black")
-    now_dt = datetime.now()
-    current_time = now_dt.strftime("%H:%M")
-    draw.text((2, 1), current_time, font=get_font(12), fill=255)
-
-    if ips:
-        if idx < 0:
-            idx = 0
-        if idx >= len(ips):
-            idx = len(ips) - 1
-        sel_ip = ips[idx]
-        scan_selected_ip = sel_ip
-        title = f"{sel_ip}"
-        info = infos.get(sel_ip, "")
-        if not info:
-            info = "읽는중..."
-        cx = device.width // 2 + VISUAL_X_OFFSET
-        draw_center_text_autofit(draw, title, cx, 28, device.width - 4, 18, min_size=12)
-        draw.text((2, 46), _ellipsis_to_width(draw, (info or ""), get_font(11), device.width - 4), font=get_font(11), fill=255)
-    else:
-        cx = device.width // 2 + VISUAL_X_OFFSET
-        if done:
-            draw_center_text_autofit(draw, "장치 없음", cx, 28, device.width - 4, 18, min_size=12)
-            draw.text((2, 46), _ellipsis_to_width(draw, "◀ 이전으로", get_font(11), device.width - 4), font=get_font(11), fill=255)
-        else:
-            draw_center_text_autofit(draw, "장치 검색중...", cx, 28, device.width - 4, 18, min_size=12)
-            draw.text((2, 46), _ellipsis_to_width(draw, "잠시만...", get_font(11), device.width - 4), font=get_font(11), fill=255)
-
-def update_oled_display():
-    global current_command_index, status_message, message_position, message_font_size
-    global current_menu, commands, command_names, command_types, menu_extras
-    if not display_lock.acquire(timeout=0.2):
-        return
-    try:
-        if not commands:
-            return
-
-        with wifi_action_lock:
-            wifi_running = wifi_action_running
-
-        now_dt = datetime.now()
-        current_time = now_dt.strftime("%H시 %M분")
-        voltage_percentage = battery_percentage
-        ip_address = cached_ip
-        wifi_level = cached_wifi_level
-
-        try:
-            with canvas(device) as draw:
-                if _draw_override(draw):
-                    return
-
-                if current_menu and current_menu.get("dir") == "__scan_detail__":
-                    draw_scan_detail_screen(draw)
-                    return
-
-                if current_menu and current_menu.get("dir") == "__scan__":
-                    _draw_scan_screen(draw)
-                    return
-
-                item_type = command_types[current_command_index]
-                title = command_names[current_command_index]
-
-                if item_type in ("system", "wifi"):
-                    ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
-                    draw.text((0, 51), _ellipsis_to_width(draw, ip_display, font_big, device.width - 2), font=font_big, fill=255)
-                    draw.text((80, -3), "GDSENG", font=font_big, fill=255)
-                    draw.text((83, 50), "ver 3.72", font=font_big, fill=255)
-                    draw.text((0, -3), current_time, font=font_time, fill=255)
-                    if not cached_online:
-                        draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
-                else:
-                    battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
-                    draw.bitmap((90, -11), battery_icon, fill=255)
-                    perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
-                    draw.text((99, 1), perc_text, font=font_st, fill=255)
-                    draw.text((2, 1), current_time, font=font_time, fill=255)
-                    draw_wifi_bars(draw, 70, 3, wifi_level)
-
-                if status_message:
-                    draw.rectangle(device.bounding_box, fill="black")
-                    draw.text(message_position, status_message, font=get_font(message_font_size), fill=255)
-                    return
-
-                if wifi_running:
-                    draw.rectangle(device.bounding_box, fill="black")
-                    x = 2
-                    with wifi_stage_lock:
-                        st_active = wifi_stage["active"]
-                        st_p = wifi_stage["display_percent"]
-                        st1 = wifi_stage["line1"]
-                        st2 = wifi_stage["line2"]
-                        sp = wifi_stage["spinner"]
-                    with ap_state_lock:
-                        flash_until = ap_state["flash_until"]
-                        ap_sp = ap_state["spinner"]
-                    dots = "." * sp
-                    dots2 = "." * ap_sp
-                    now = time.time()
-                    if st_active:
-                        draw.text((x, 0), (st1 or "")[:16], font=get_font(13), fill=255)
-                        line2 = (st2 or "")
-                        if line2:
-                            draw.text((x, 16), _ellipsis_to_width(draw, (line2 + dots), get_font(11), device.width - 4), font=get_font(11), fill=255)
-                        else:
-                            draw.text((x, 16), _ellipsis_to_width(draw, ("처리중" + dots), get_font(11), device.width - 4), font=get_font(11), fill=255)
-                        x1, y1, x2, y2 = 8, 48, 120, 60
-                        draw.rectangle([(x1, y1), (x2, y2)], outline=255, fill=0)
-                        fill_w = int((x2 - x1) * (st_p / 100.0))
-                        if fill_w > 0:
-                            draw.rectangle([(x1, y1), (x1 + fill_w, y2)], fill=255)
-                        draw.text((x, 32), "NEXT 길게: 취소", font=get_font(11), fill=255)
-                    else:
-                        if now < flash_until:
-                            draw.text((x, 0), ("연결됨!" + dots2)[:16], font=get_font(14), fill=255)
-                        else:
-                            draw.text((x, 0), "WiFi 설정 모드", font=get_font(14), fill=255)
-                        draw.text((x, 18), f"AP: {AP_SSID}"[:18], font=get_font(12), fill=255)
-                        draw.text((x, 34), f"PW: {AP_PASS}"[:18], font=get_font(12), fill=255)
-                        draw.text((x, 50), f"IP: {AP_IP}:{PORTAL_PORT}"[:18], font=get_font(12), fill=255)
-                    return
-
-                center_x = device.width // 2 + VISUAL_X_OFFSET
-                if item_type in ("system", "wifi"):
-                    center_y = 33
-                    start_size = 17
-                else:
-                    center_y = 42
-                    start_size = 21
-                max_w = device.width - 4
-                draw_center_text_autofit(draw, title, center_x, center_y, max_w, start_size, min_size=11)
-        except Exception:
-            return
-    finally:
-        display_lock.release()
-
-def realtime_update_display():
-    global need_update, last_oled_update_time
-    global scan_menu_dirty, scan_menu_dirty_ts, scan_menu_rebuild_last
-    global current_menu, commands, command_names, command_types, menu_extras, current_command_index
-    while not stop_threads:
-        with wifi_action_lock:
-            wifi_running = wifi_action_running
-        wifi_stage_tick()
-        ap_client_tick(wifi_running)
-
-        now = time.time()
-
-        if scan_menu_dirty and current_menu and current_menu.get("dir") == "__scan__":
-            if (not next_is_down) and (not execute_is_down):
-                if now - scan_menu_rebuild_last >= SCAN_MENU_REBUILD_MIN_SEC:
-                    scan_menu_rebuild_last = now
-                    with scan_lock:
-                        scan_menu_dirty = False
-                        ips_now = list(scan_ips)
-                        sel_ip = scan_selected_ip
-                    nm = build_scan_menu()
-                    current_menu = nm
-                    commands = nm["commands"]
-                    command_names = nm["names"]
-                    command_types = nm["types"]
-                    menu_extras = nm["extras"]
-
-                    if sel_ip and (sel_ip in ips_now):
-                        new_idx = ips_now.index(sel_ip)
-                        current_command_index = new_idx
-                        with scan_lock:
-                            scan_selected_idx = new_idx
-                    else:
-                        if current_command_index >= len(commands):
-                            current_command_index = max(0, len(commands) - 1)
-                    need_update = True
-
-        if need_update or (now - last_oled_update_time >= 0.22):
-            update_oled_display()
-            last_oled_update_time = now
-            need_update = False
-        time.sleep(0.02)
-
-def shutdown_system():
-    set_ui_text("배터리 부족", "시스템 종료 중...", pos=(10, 18), font_size=15)
-    time.sleep(2)
-    try:
-        os.system("sudo shutdown -h now")
-    except Exception:
-        pass
 
 def execute_button_logic():
     global current_command_index, need_update
-    global execute_is_down, execute_long_handled, execute_press_time
-    global next_pressed_event
-    global auto_flash_done_connection
+    global execute_is_down, execute_long_handled, execute_press_time, execute_short_event
+    global next_pressed_event, auto_flash_done_connection
     global next_long_handled, wifi_cancel_requested
     global scan_selected_idx, scan_selected_ip
     global scan_detail_active, scan_detail_ip
     global current_menu, commands, command_names, command_types, menu_extras, menu_stack
     global is_executing
-    global scan_active
 
-    while True:
+    while not stop_threads:
         now = time.time()
         if battery_percentage == 0:
             shutdown_system()
@@ -2676,21 +2792,17 @@ def execute_button_logic():
                         execute_command(current_command_index)
                         need_update = True
 
-        if execute_is_down and GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.HIGH:
-            execute_is_down = False
-            if abs(last_time_button_next_pressed - last_time_button_execute_pressed) < button_press_interval:
-                next_pressed_event = False
-            else:
-                if not execute_long_handled:
-                    if commands and (not is_executing):
-                        current_command_index = (current_command_index - 1) % len(commands)
-                        if current_menu and current_menu.get("dir") == "__scan__":
-                            with scan_lock:
-                                if scan_ips and command_types[current_command_index] == "scan_item":
-                                    scan_selected_idx = min(current_command_index, len(scan_ips) - 1)
-                                    scan_selected_ip = scan_ips[scan_selected_idx]
-                        need_update = True
-            execute_press_time = None
+        if execute_short_event:
+            execute_short_event = False
+            if not execute_long_handled:
+                if commands and (not is_executing):
+                    current_command_index = (current_command_index - 1) % len(commands)
+                    if current_menu and current_menu.get("dir") == "__scan__":
+                        with scan_lock:
+                            if scan_ips and command_types[current_command_index] == "scan_item":
+                                scan_selected_idx = min(current_command_index, len(scan_ips) - 1)
+                                scan_selected_ip = scan_ips[scan_selected_idx]
+                    need_update = True
             execute_long_handled = False
 
         if next_pressed_event:
@@ -2737,6 +2849,7 @@ def execute_button_logic():
                 auto_flash_done_connection = True
 
         time.sleep(0.02)
+
 
 init_ina219()
 
