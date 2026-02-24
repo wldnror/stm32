@@ -759,6 +759,18 @@ def _wrap_lines(draw, text, font, max_w, max_lines=2):
             lines[-1] = _ellipsis_to_width(draw, last, font, max_w)
     return lines
 
+def _right_text(draw, x_right, y, text, font, fill=255):
+    try:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        w = bbox[2] - bbox[0]
+    except Exception:
+        try:
+            w, _ = draw.textsize(text, font=font)
+        except Exception:
+            w = len(text) * 6
+    xx = max(0, int(x_right - w))
+    draw.text((xx, y), text, font=font, fill=fill)
+
 def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_size, min_size=10):
     size = start_size
     while size >= min_size:
@@ -1390,6 +1402,9 @@ def read_gas_and_alarm_flags(ip: str):
         except Exception:
             pass
 
+# =========================
+# UPDATED: scan detail UI (IP 우측정렬 + ERR 2줄 줄바꿈)
+# =========================
 def draw_scan_detail_screen(draw):
     draw.rectangle(device.bounding_box, fill="black")
 
@@ -1399,17 +1414,9 @@ def draw_scan_detail_screen(draw):
     _draw_box_label(draw, 50,  0, 20, 14, "A2",  bool(f.get("A2")))
     _draw_box_label(draw, 72,  0, 26, 14, "FUT", bool(f.get("FUT")))
 
-    ip_txt = (scan_detail_ip or "")
-    fip = get_font(10)
-    ip_disp = _ellipsis_to_width(draw, ip_txt, fip, max(0, device.width - 2 - 100))
-    if not ip_disp:
-        ip_disp = _ellipsis_to_width(draw, ip_txt, fip, max(0, device.width - 2))
-        wip, _ = _text_size(draw, ip_disp, fip)
-        xip = max(0, device.width - wip - 2)
-    else:
-        wip, _ = _text_size(draw, ip_disp, fip)
-        xip = max(100, device.width - wip - 2)
-    draw.text((xip, 2), ip_disp, font=fip, fill=255)
+    ip_txt = (scan_detail_ip or "").strip()
+    if ip_txt:
+        _right_text(draw, device.width - 2, 2, ip_txt, get_font(10), fill=255)
 
     gas_txt = _fmt_gas(scan_detail.get("gas", None))
     fbig = get_font(30)
