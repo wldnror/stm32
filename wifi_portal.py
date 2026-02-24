@@ -88,8 +88,8 @@ form.inline input{
   margin-top:0;
 }
 form.inline button{
-  flex:0 0 120px;
-  width:120px;
+  flex:0 0 90px;
+  width:90px;
   margin-top:0;
 }
 
@@ -165,10 +165,11 @@ form.inline button{
   {% if saved_wpa and saved_wpa|length > 0 %}
     <div class="small" style="margin-top:10px">wpa_supplicant</div>
     {% for s in saved_wpa %}
-      <form method="post" action="/delete" class="inline">
+      <form method="post" class="inline">
         <input name="ssid" value="{{s}}" readonly />
         <input type="hidden" name="src" value="wpa" />
-        <button type="submit">삭제</button>
+        <button type="submit" class="primary" formaction="/connect_saved">연결</button>
+        <button type="submit" formaction="/delete">삭제</button>
       </form>
     {% endfor %}
     <div class="hr"></div>
@@ -177,11 +178,12 @@ form.inline button{
   {% if saved_nm and saved_nm|length > 0 %}
     <div class="small" style="margin-top:10px">NetworkManager</div>
     {% for item in saved_nm %}
-      <form method="post" action="/delete" class="inline">
+      <form method="post" class="inline">
         <input value="{{ item.display }}" readonly />
         <input type="hidden" name="nm_id" value="{{ item.nm_id }}" />
         <input type="hidden" name="src" value="nm" />
-        <button type="submit">삭제</button>
+        <button type="submit" class="primary" formaction="/connect_saved">연결</button>
+        <button type="submit" formaction="/delete">삭제</button>
       </form>
     {% endfor %}
     <div class="hr"></div>
@@ -286,6 +288,18 @@ document.querySelectorAll('form[action="/connect"]').forEach(f => {
   });
 });
 
+// connect_saved 버튼(저장된 와이파이 연결) 로딩
+document.querySelectorAll('form button[formaction="/connect_saved"]').forEach(btn => {
+  btn.addEventListener("click", () => {
+    const form = btn.closest("form");
+    if(form){
+      disableSubmitButtons(form);
+      showLoading("저장된 와이파이로 연결 중…", "연결 화면으로 이동합니다.");
+      loadingSlowHint();
+    }
+  });
+});
+
 let lastScanSig = "";
 let scanBusy = false;
 
@@ -296,9 +310,6 @@ function applyScan(ssids){
   const sig = JSON.stringify(ssids || []);
   if(sig === lastScanSig) return;
   lastScanSig = sig;
-
-  const opts = new Set();
-  Array.from(sel.options).forEach(o => opts.add(o.value));
 
   sel.innerHTML = "";
   (ssids || []).forEach(s => {
@@ -745,6 +756,105 @@ def stop_ap_and_connect(ssid, psk, wait_sec=35):
     _state["connect_stage"] = ""
     return False
 
+# --------------------------
+# 저장된 와이파이 연결(추가)
+# --------------------------
+
+def _nm_up(nm_id: str):
+    p = _run(["sudo", "nmcli", "connection", "up", "id", nm_id], timeout=25.0)
+    ok = (p.returncode == 0)
+    msg = (p.stdout or "").strip() or (p.stderr or "").strip()
+    return ok, (msg or ("연결 실패" if not ok else "연결 요청 완료"))
+
+def _wpa_select_network_by_ssid(ssid: str):
+    p = _run(["sudo", "wpa_cli", "-i", IFACE, "list_networks"], timeout=6.0)
+    txt = (p.stdout or "")
+    net_id = None
+    for line in txt.splitlines():
+        line = line.strip()
+        if not line or line.startswith("network id"):
+            continue
+        parts = re.split(r"\t+", line)
+        if len(parts) >= 2 and parts[1] == ssid:
+            net_id = parts[0]
+            break
+    if net_id is None:
+        return False, "wpa_supplicant에 해당 SSID가 없습니다."
+
+    _run(["sudo", "wpa_cli", "-i", IFACE, "select_network", net_id], timeout=6.0)
+    _run(["sudo", "wpa_cli", "-i", IFACE, "enable_network", net_id], timeout=6.0)
+    _run(["sudo", "wpa_cli", "-i", IFACE, "reconfigure"], timeout=6.0)
+    return True, "선택 완료"
+
+def stop_ap_and_connect_saved(req, wait_sec=35):
+    _state["connect_started_at"] = time.time()
+
+    _state["connect_stage"] = "설정 모드 종료 중…"
+    _run(["sudo", "pkill", "-f", "hostapd"], timeout=4.0)
+    _run(["sudo", "pkill", "-f", "dnsmasq"], timeout=4.0)
+
+    _state["connect_stage"] = "인터페이스 초기화 중…"
+    _run(["sudo", "ip", "addr", "flush", "dev", IFACE], timeout=4.0)
+    _run(["sudo", "ip", "link", "set", IFACE, "down"], timeout=4.0)
+    _run(["sudo", "ip", "link", "set", IFACE, "up"], timeout=4.0)
+
+    src = (req.get("src") or "").strip().lower()
+
+    if src == "nm":
+        nm_id = (req.get("nm_id") or "").strip()
+        if not nm_id:
+            _state["last_error"] = "nm_id가 비어있습니다."
+            _state["connect_stage"] = ""
+            return False
+
+        _state["connect_stage"] = "NetworkManager 연결 시도 중…"
+        ok, msg = _nm_up(nm_id)
+        if not ok:
+            _state["last_error"] = msg or "NM 연결 실패"
+            _state["connect_stage"] = ""
+            return False
+
+    else:
+        ssid = (req.get("ssid") or "").strip()
+        if not ssid:
+            _state["last_error"] = "SSID가 비어있습니다."
+            _state["connect_stage"] = ""
+            return False
+
+        _state["connect_stage"] = "무선 연결 시도 중…"
+        _run(["sudo", "pkill", "-f", f"wpa_supplicant.*{IFACE}"], timeout=4.0)
+        _run(["sudo", "wpa_supplicant", "-B", "-i", IFACE, "-c", WPA_CONF], timeout=10.0)
+
+        ok, msg = _wpa_select_network_by_ssid(ssid)
+        if not ok:
+            _state["last_error"] = msg
+            _state["connect_stage"] = ""
+            return False
+
+    _state["connect_stage"] = "IP 받는 중…"
+    _run(["sudo", "dhclient", "-r", IFACE], timeout=8.0)
+    _run(["sudo", "dhclient", IFACE], timeout=12.0)
+
+    _state["connect_stage"] = "인터넷 확인 중…"
+    t0 = time.time()
+    while time.time() - t0 < wait_sec:
+        if has_internet():
+            _state["done"] = True
+            _state["running"] = False
+            _state["last_ok"] = "연결 완료"
+            _state["last_error"] = ""
+            _state["connect_stage"] = "연결 완료"
+            return True
+        time.sleep(1)
+
+    _state["last_error"] = "연결 시간 초과"
+    _state["connect_stage"] = ""
+    return False
+
+# --------------------------
+# Flask routes
+# --------------------------
+
 @app.route("/", methods=["GET"])
 def index():
     ssids = scan_ssids()
@@ -791,10 +901,34 @@ def connect():
     psk  = (request.form.get("psk") or "").strip()
     if not ssid:
         return "SSID가 비어있습니다.", 400
-    _state["requested"] = {"ssid": ssid, "psk": psk}
+    _state["requested"] = {"mode": "new", "ssid": ssid, "psk": psk}
     _state["last_error"] = ""
     _state["last_ok"] = ""
     _state["connect_stage"] = "연결 준비 중…"
+    _state["connect_started_at"] = time.time()
+    return redirect("/connecting")
+
+# 저장된 와이파이 연결(추가 라우트)
+@app.route("/connect_saved", methods=["POST"])
+def connect_saved():
+    src = (request.form.get("src") or "").strip().lower()
+    req = {"mode": "saved", "src": src}
+
+    if src == "nm":
+        nm_id = (request.form.get("nm_id") or "").strip()
+        if not nm_id:
+            return "nm_id가 비어있습니다.", 400
+        req["nm_id"] = nm_id
+    else:
+        ssid = (request.form.get("ssid") or "").strip()
+        if not ssid:
+            return "SSID가 비어있습니다.", 400
+        req["ssid"] = ssid
+
+    _state["requested"] = req
+    _state["last_error"] = ""
+    _state["last_ok"] = ""
+    _state["connect_stage"] = "저장된 설정으로 연결 준비 중…"
     _state["connect_started_at"] = time.time()
     return redirect("/connecting")
 
@@ -845,7 +979,11 @@ def ensure_wifi_connected(auto_start_ap=True):
     while _state["running"]:
         req = _state.get("requested")
         if req:
-            ok = stop_ap_and_connect(req["ssid"], req["psk"])
+            if req.get("mode") == "saved":
+                ok = stop_ap_and_connect_saved(req)
+            else:
+                ok = stop_ap_and_connect(req["ssid"], req.get("psk", ""))
+
             _state["requested"] = None
             if ok:
                 return True
