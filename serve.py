@@ -1681,4 +1681,348 @@ def execute_command(command_index):
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        set_ui_text("메모리 잠금", "해제
+        set_ui_text("메모리 잠금", "해제 실패", pos=(20, 12), font_size=15)
+        time.sleep(2)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        is_executing = False
+        is_command_executing = False
+        need_update = True
+        return
+
+    info_line = chosen_kind
+    if flash_kb is not None:
+        info_line = f"{chosen_kind} ({flash_kb}KB)"
+    progress_msg = f"업데이트 중...\n{info_line}"
+    set_ui_progress(30, progress_msg, pos=(6, 0), font_size=13)
+
+    openocd_cmd = make_openocd_program_cmd(resolved_path)
+    process = subprocess.Popen(openocd_cmd, shell=True)
+    start_time = time.time()
+    max_duration = 6
+    progress_increment = 20 / max_duration
+
+    while process.poll() is None:
+        elapsed = time.time() - start_time
+        current_progress = 30 + (elapsed * progress_increment)
+        current_progress = min(current_progress, 80)
+        set_ui_progress(current_progress, progress_msg, pos=(6, 0), font_size=13)
+        time.sleep(0.2)
+
+    result = process.returncode
+    if result == 0:
+        set_ui_progress(80, f"업데이트 성공!\n{info_line}", pos=(6, 0), font_size=13)
+        time.sleep(10.5)
+        lock_memory_procedure()
+    else:
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_progress(0, f"업데이트 실패\n{info_line}", pos=(6, 0), font_size=13)
+        time.sleep(1)
+
+    GPIO.output(LED_SUCCESS, False)
+    GPIO.output(LED_ERROR, False)
+    GPIO.output(LED_ERROR1, False)
+    clear_ui_override()
+    need_update = True
+    is_executing = False
+    is_command_executing = False
+
+def get_wifi_level():
+    try:
+        rc, out, _ = run_capture(["iw", "dev", "wlan0", "link"], timeout=0.6)
+        if rc != 0 or "Not connected" in out:
+            return 0
+        r = subprocess.run(["iwconfig", "wlan0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.6)
+        m = re.search(r"Signal level=(-?\d+)\s*dBm", r.stdout)
+        if not m:
+            return 0
+        dbm = int(m.group(1))
+        if dbm >= -55:
+            return 4
+        if dbm >= -65:
+            return 3
+        if dbm >= -75:
+            return 2
+        if dbm >= -85:
+            return 1
+        return 0
+    except Exception:
+        return 0
+
+def net_poll_thread():
+    global cached_ip, cached_wifi_level, cached_online, last_menu_online, need_update
+    while not stop_threads:
+        try:
+            cached_ip = get_ip_address()
+            online_now = has_real_internet()
+            cached_online = online_now
+            cached_wifi_level = get_wifi_level() if online_now else 0
+            if last_menu_online is None or online_now != last_menu_online:
+                last_menu_online = online_now
+                refresh_root_menu(reset_index=False)
+                need_update = True
+            time.sleep(1.5)
+        except Exception:
+            time.sleep(0.8)
+
+def _draw_override(draw):
+    with ui_override_lock:
+        active = ui_override["active"]
+        kind = ui_override["kind"]
+        percent = ui_override["percent"]
+        msg = ui_override["message"]
+        pos = ui_override["pos"]
+        fs = ui_override["font_size"]
+        line2 = ui_override["line2"]
+    if not active:
+        return False
+    draw.rectangle(device.bounding_box, fill="black")
+    if kind == "progress":
+        draw.text(pos, msg, font=get_font(fs), fill=255)
+        x1, y1, x2, y2 = 10, 50, 110, 60
+        draw.rectangle([(x1, y1), (x2, y2)], fill=0)
+        fill_w = int((x2 - x1) * (percent / 100.0))
+        fill_w = int(max(0, min((x2 - x1), fill_w)))
+        if fill_w > 0:
+            draw.rectangle([(x1, y1), (x1 + fill_w, y2)], fill=255)
+        return True
+    if kind == "text":
+        draw.text(pos, msg, font=get_font(fs), fill=255)
+        if line2:
+            draw.text((pos[0], pos[1] + 18), line2, font=get_font(fs), fill=255)
+        return True
+    return False
+
+def get_ap_station_count():
+    try:
+        r = subprocess.run(["iw", "dev", "wlan0", "station", "dump"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.7)
+        if r.returncode != 0:
+            return 0
+        return sum(1 for line in (r.stdout or "").splitlines() if line.strip().startswith("Station "))
+    except Exception:
+        return 0
+
+def ap_client_tick(wifi_running: bool):
+    now = time.time()
+    with ap_state_lock:
+        ap_state["spinner"] = (ap_state["spinner"] + 1) % 4
+        if not wifi_running:
+            ap_state["last_clients"] = 0
+            ap_state["flash_until"] = 0.0
+            ap_state["poll_next"] = 0.0
+            return
+        if now < ap_state["poll_next"]:
+            return
+        ap_state["poll_next"] = now + 0.8
+        prev = ap_state["last_clients"]
+    cnt = get_ap_station_count()
+    with ap_state_lock:
+        ap_state["last_clients"] = cnt
+        if cnt > 0 and prev == 0:
+            ap_state["flash_until"] = now + 1.3
+
+last_oled_update_time = 0.0
+
+def update_oled_display():
+    global current_command_index, status_message, message_position, message_font_size
+    if not display_lock.acquire(timeout=0.2):
+        return
+    try:
+        if not commands:
+            return
+        with wifi_action_lock:
+            wifi_running = wifi_action_running
+        now_dt = datetime.now()
+        current_time = now_dt.strftime("%H시 %M분")
+        voltage_percentage = battery_percentage
+        ip_address = cached_ip
+        wifi_level = cached_wifi_level
+        try:
+            with canvas(device) as draw:
+                if _draw_override(draw):
+                    return
+                item_type = command_types[current_command_index]
+                title = command_names[current_command_index]
+                if item_type in ("system", "wifi"):
+                    ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
+                    draw.text((0, 51), ip_display, font=font_big, fill=255)
+                    draw.text((80, -3), "GDSENG", font=font_big, fill=255)
+                    draw.text((83, 50), "ver 3.72", font=font_big, fill=255)
+                    draw.text((0, -3), current_time, font=font_time, fill=255)
+                    if not cached_online:
+                        draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
+                else:
+                    battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
+                    draw.bitmap((90, -11), battery_icon, fill=255)
+                    perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
+                    draw.text((99, 1), perc_text, font=font_st, fill=255)
+                    draw.text((2, 1), current_time, font=font_time, fill=255)
+                    draw_wifi_bars(draw, 70, 3, wifi_level)
+                if status_message:
+                    draw.rectangle(device.bounding_box, fill="black")
+                    draw.text(message_position, status_message, font=get_font(message_font_size), fill=255)
+                    return
+                if wifi_running:
+                    draw.rectangle(device.bounding_box, fill="black")
+                    x = 2
+                    with wifi_stage_lock:
+                        st_active = wifi_stage["active"]
+                        st_p = wifi_stage["display_percent"]
+                        st1 = wifi_stage["line1"]
+                        st2 = wifi_stage["line2"]
+                        sp = wifi_stage["spinner"]
+                    with ap_state_lock:
+                        flash_until = ap_state["flash_until"]
+                        ap_sp = ap_state["spinner"]
+                    dots = "." * sp
+                    dots2 = "." * ap_sp
+                    now = time.time()
+                    if st_active:
+                        draw.text((x, 0), (st1 or "")[:16], font=get_font(13), fill=255)
+                        line2 = (st2 or "")
+                        if line2:
+                            draw.text((x, 16), (line2 + dots)[:18], font=get_font(11), fill=255)
+                        else:
+                            draw.text((x, 16), ("처리중" + dots)[:18], font=get_font(11), fill=255)
+                        x1, y1, x2, y2 = 8, 48, 120, 60
+                        draw.rectangle([(x1, y1), (x2, y2)], outline=255, fill=0)
+                        fill_w = int((x2 - x1) * (st_p / 100.0))
+                        if fill_w > 0:
+                            draw.rectangle([(x1, y1), (x1 + fill_w, y2)], fill=255)
+                        draw.text((x, 32), "NEXT 길게: 취소", font=get_font(11), fill=255)
+                    else:
+                        if now < flash_until:
+                            draw.text((x, 0), ("연결됨!" + dots2)[:16], font=get_font(14), fill=255)
+                        else:
+                            draw.text((x, 0), "WiFi 설정 모드", font=get_font(14), fill=255)
+                        draw.text((x, 18), f"AP: {AP_SSID}"[:18], font=get_font(12), fill=255)
+                        draw.text((x, 34), f"PW: {AP_PASS}"[:18], font=get_font(12), fill=255)
+                        draw.text((x, 50), f"IP: {AP_IP}:{PORTAL_PORT}"[:18], font=get_font(12), fill=255)
+                    return
+                center_x = device.width // 2 + VISUAL_X_OFFSET
+                if item_type in ("system", "wifi"):
+                    center_y = 33
+                    start_size = 17
+                else:
+                    center_y = 42
+                    start_size = 21
+                max_w = device.width - 4
+                draw_center_text_autofit(draw, title, center_x, center_y, max_w, start_size, min_size=11)
+        except Exception:
+            return
+    finally:
+        display_lock.release()
+
+def realtime_update_display():
+    global need_update, last_oled_update_time
+    while not stop_threads:
+        with wifi_action_lock:
+            wifi_running = wifi_action_running
+        wifi_stage_tick()
+        ap_client_tick(wifi_running)
+        now = time.time()
+        if need_update or (now - last_oled_update_time >= 0.2):
+            update_oled_display()
+            last_oled_update_time = now
+            need_update = False
+        time.sleep(0.03)
+
+def shutdown_system():
+    set_ui_text("배터리 부족", "시스템 종료 중...", pos=(10, 18), font_size=15)
+    time.sleep(2)
+    try:
+        os.system("sudo shutdown -h now")
+    except Exception:
+        pass
+
+def execute_button_logic():
+    global current_command_index, need_update
+    global execute_is_down, execute_long_handled, execute_press_time
+    global next_pressed_event
+    global auto_flash_done_connection
+    global next_long_handled, wifi_cancel_requested
+    while True:
+        now = time.time()
+        if battery_percentage == 0:
+            shutdown_system()
+        with wifi_action_lock:
+            wifi_running = wifi_action_running
+        if wifi_running and next_is_down and (not next_long_handled) and (next_press_time is not None):
+            if now - next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
+                next_long_handled = True
+                wifi_cancel_requested = True
+                wifi_stage_set(5, "취소 처리중", "잠시만")
+                need_update = True
+        if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
+            if now - execute_press_time >= LONG_PRESS_THRESHOLD:
+                execute_long_handled = True
+                if commands and (not is_executing):
+                    item_type = command_types[current_command_index]
+                    if item_type in ("system", "dir", "back", "script", "wifi", "bin", "tftp_scan", "tftp_dev"):
+                        execute_command(current_command_index)
+                        need_update = True
+        if execute_is_down and GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.HIGH:
+            execute_is_down = False
+            if abs(last_time_button_next_pressed - last_time_button_execute_pressed) < button_press_interval:
+                next_pressed_event = False
+            else:
+                if not execute_long_handled:
+                    if commands and (not is_executing):
+                        current_command_index = (current_command_index - 1) % len(commands)
+                        need_update = True
+            execute_press_time = None
+            execute_long_handled = False
+        if next_pressed_event:
+            if (not execute_is_down) and (not is_executing):
+                if commands:
+                    current_command_index = (current_command_index + 1) % len(commands)
+                    need_update = True
+            next_pressed_event = False
+        with stm32_state_lock:
+            cs = connection_success
+        if commands:
+            if (
+                command_types[current_command_index] == "bin"
+                and (not is_executing)
+                and cs
+                and (not auto_flash_done_connection)
+            ):
+                execute_command(current_command_index)
+                auto_flash_done_connection = True
+        time.sleep(0.03)
+
+init_ina219()
+
+battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
+battery_thread.start()
+
+realtime_update_thread = threading.Thread(target=realtime_update_display, daemon=True)
+realtime_update_thread.start()
+
+stm32_thread = threading.Thread(target=stm32_poll_thread, daemon=True)
+stm32_thread.start()
+
+wifi_thread = threading.Thread(target=wifi_worker_thread, daemon=True)
+wifi_thread.start()
+
+net_thread = threading.Thread(target=net_poll_thread, daemon=True)
+net_thread.start()
+
+git_thread = threading.Thread(target=git_poll_thread, daemon=True)
+git_thread.start()
+
+need_update = True
+
+try:
+    execute_button_logic()
+except KeyboardInterrupt:
+    pass
+finally:
+    stop_threads = True
+    try:
+        kill_openocd()
+    except Exception:
+        pass
+    GPIO.cleanup()
