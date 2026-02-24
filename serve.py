@@ -2340,6 +2340,36 @@ def ap_client_tick(wifi_running: bool):
 
 last_oled_update_time = 0.0
 
+def _draw_scan_screen(draw):
+    global scan_selected_ip
+    with scan_lock:
+        ips = list(scan_ips)
+        idx = scan_selected_idx
+        infos = dict(scan_infos)
+    draw.rectangle(device.bounding_box, fill="black")
+    now_dt = datetime.now()
+    current_time = now_dt.strftime("%H:%M")
+    draw.text((2, 1), current_time, font=get_font(12), fill=255)
+
+    if ips:
+        if idx < 0:
+            idx = 0
+        if idx >= len(ips):
+            idx = len(ips) - 1
+        sel_ip = ips[idx]
+        scan_selected_ip = sel_ip
+        title = f"{sel_ip}"
+        info = infos.get(sel_ip, "")
+        if not info:
+            info = "읽는중..."
+        cx = device.width // 2 + VISUAL_X_OFFSET
+        draw_center_text_autofit(draw, title, cx, 28, device.width - 4, 18, min_size=12)
+        draw.text((2, 46), (info or "")[:18], font=get_font(11), fill=255)
+    else:
+        cx = device.width // 2 + VISUAL_X_OFFSET
+        draw_center_text_autofit(draw, "장치 검색중...", cx, 28, device.width - 4, 18, min_size=12)
+        draw.text((2, 46), "NEXT:대기  EXEC:대기", font=get_font(11), fill=255)
+
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
     global current_menu, commands, command_names, command_types, menu_extras
@@ -2365,6 +2395,10 @@ def update_oled_display():
 
                 if current_menu and current_menu.get("dir") == "__scan_detail__":
                     draw_scan_detail_screen(draw)
+                    return
+
+                if current_menu and current_menu.get("dir") == "__scan__":
+                    _draw_scan_screen(draw)
                     return
 
                 item_type = command_types[current_command_index]
@@ -2429,18 +2463,6 @@ def update_oled_display():
                         draw.text((x, 50), f"IP: {AP_IP}:{PORTAL_PORT}"[:18], font=get_font(12), fill=255)
                     return
 
-                if current_menu and current_menu.get("dir") == "__scan__":
-                    with scan_lock:
-                        ips = list(scan_ips)
-                        idx = scan_selected_idx
-                        infos = dict(scan_infos)
-                    if ips:
-                        sel_ip = ips[min(idx, len(ips) - 1)]
-                        info = infos.get(sel_ip, "읽는중...")
-                        draw.text((2, 46), (info or "")[:18], font=get_font(11), fill=255)
-                    else:
-                        draw.text((2, 46), "장치 검색중...", font=get_font(11), fill=255)
-
                 center_x = device.width // 2 + VISUAL_X_OFFSET
                 if item_type in ("system", "wifi"):
                     center_y = 33
@@ -2457,32 +2479,46 @@ def update_oled_display():
 
 def realtime_update_display():
     global need_update, last_oled_update_time
-    global scan_menu_dirty, current_menu, commands, command_names, command_types, menu_extras, current_command_index
+    global scan_menu_dirty, scan_menu_dirty_ts, scan_menu_rebuild_last
+    global current_menu, commands, command_names, command_types, menu_extras, current_command_index
     while not stop_threads:
         with wifi_action_lock:
             wifi_running = wifi_action_running
         wifi_stage_tick()
         ap_client_tick(wifi_running)
 
-        if scan_menu_dirty and current_menu and current_menu.get("dir") == "__scan__":
-            with scan_lock:
-                scan_menu_dirty = False
-            nm = build_scan_menu()
-            current_menu = nm
-            commands = nm["commands"]
-            command_names = nm["names"]
-            command_types = nm["types"]
-            menu_extras = nm["extras"]
-            if current_command_index >= len(commands):
-                current_command_index = 0
-            need_update = True
-
         now = time.time()
-        if need_update or (now - last_oled_update_time >= 0.2):
+
+        if scan_menu_dirty and current_menu and current_menu.get("dir") == "__scan__":
+            if (not next_is_down) and (not execute_is_down):
+                if now - scan_menu_rebuild_last >= SCAN_MENU_REBUILD_MIN_SEC:
+                    scan_menu_rebuild_last = now
+                    with scan_lock:
+                        scan_menu_dirty = False
+                        ips_now = list(scan_ips)
+                        sel_ip = scan_selected_ip
+                    nm = build_scan_menu()
+                    current_menu = nm
+                    commands = nm["commands"]
+                    command_names = nm["names"]
+                    command_types = nm["types"]
+                    menu_extras = nm["extras"]
+
+                    if sel_ip and (sel_ip in ips_now):
+                        new_idx = ips_now.index(sel_ip)
+                        current_command_index = new_idx
+                        with scan_lock:
+                            scan_selected_idx = new_idx
+                    else:
+                        if current_command_index >= len(commands):
+                            current_command_index = max(0, len(commands) - 1)
+                    need_update = True
+
+        if need_update or (now - last_oled_update_time >= 0.22):
             update_oled_display()
             last_oled_update_time = now
             need_update = False
-        time.sleep(0.03)
+        time.sleep(0.02)
 
 def shutdown_system():
     set_ui_text("배터리 부족", "시스템 종료 중...", pos=(10, 18), font_size=15)
@@ -2498,7 +2534,7 @@ def execute_button_logic():
     global next_pressed_event
     global auto_flash_done_connection
     global next_long_handled, wifi_cancel_requested
-    global scan_selected_idx
+    global scan_selected_idx, scan_selected_ip
     global scan_detail_active, scan_detail_ip
     global current_menu, commands, command_names, command_types, menu_extras, menu_stack
     global is_executing
@@ -2537,8 +2573,9 @@ def execute_button_logic():
                         current_command_index = (current_command_index - 1) % len(commands)
                         if current_menu and current_menu.get("dir") == "__scan__":
                             with scan_lock:
-                                if scan_ips:
-                                    scan_selected_idx = min(current_command_index, max(0, len(scan_ips) - 1))
+                                if scan_ips and command_types[current_command_index] == "scan_item":
+                                    scan_selected_idx = min(current_command_index, len(scan_ips) - 1)
+                                    scan_selected_ip = scan_ips[scan_selected_idx]
                         need_update = True
             execute_press_time = None
             execute_long_handled = False
@@ -2559,7 +2596,7 @@ def execute_button_logic():
                 clear_ui_override()
                 need_update = True
                 next_pressed_event = False
-                time.sleep(0.03)
+                time.sleep(0.02)
                 continue
 
             if (not execute_is_down) and (not is_executing):
@@ -2568,7 +2605,8 @@ def execute_button_logic():
                     if current_menu and current_menu.get("dir") == "__scan__":
                         with scan_lock:
                             if scan_ips and command_types[current_command_index] == "scan_item":
-                                scan_selected_idx = min(current_command_index, max(0, len(scan_ips) - 1))
+                                scan_selected_idx = min(current_command_index, len(scan_ips) - 1)
+                                scan_selected_ip = scan_ips[scan_selected_idx]
                     need_update = True
             next_pressed_event = False
 
@@ -2585,7 +2623,7 @@ def execute_button_logic():
                 execute_command(current_command_index)
                 auto_flash_done_connection = True
 
-        time.sleep(0.03)
+        time.sleep(0.02)
 
 init_ina219()
 
