@@ -1284,4 +1284,401 @@ def restore_after_ap_mode(timeout=25):
     time.sleep(1.2)
     if last_good_wifi_profile:
         wifi_stage_set(60, "재연결 중", last_good_wifi_profile[:18])
-        run_quiet(["sudo", "nmcli", "connection", "up", last_good_wifi
+        run_quiet(["sudo", "nmcli", "connection", "up", last_good_wifi_profile], timeout=12.0)
+    wifi_stage_set(75, "인터넷 확인", "")
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if has_real_internet():
+            wifi_stage_set(100, "완료", "")
+            time.sleep(0.4)
+            wifi_stage_clear()
+            return True
+        p = 75 + int(25 * ((time.time() - t0) / max(1.0, timeout)))
+        wifi_stage_set(min(99, p), "인터넷 확인", "")
+        time.sleep(0.35)
+    ok = has_real_internet()
+    wifi_stage_set(100 if ok else 0, "완료" if ok else "실패", "")
+    time.sleep(0.6)
+    wifi_stage_clear()
+    return ok
+
+def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
+    wifi_stage_set(10, "연결 준비", "AP 종료")
+    _portal_set_state_safe(connect_stage="연결 준비 중…", last_error="", last_ok="")
+    try:
+        if hasattr(wifi_portal, "stop_ap"):
+            wifi_portal.stop_ap()
+    except Exception:
+        pass
+    kill_portal_tmp_procs()
+    run_quiet(["sudo", "systemctl", "stop", "hostapd"], timeout=3.0)
+    run_quiet(["sudo", "systemctl", "stop", "dnsmasq"], timeout=3.0)
+    wifi_stage_set(30, "연결 준비", "인터페이스 초기화")
+    _portal_set_state_safe(connect_stage="인터페이스 초기화 중…")
+    wlan0_soft_reset()
+    wifi_stage_set(50, "연결 준비", "NetworkManager")
+    _portal_set_state_safe(connect_stage="NetworkManager 준비 중…")
+    nm_set_managed(True)
+    nm_restart()
+    time.sleep(1.5)
+    wifi_stage_set(70, "WiFi 연결 중", ssid[:18])
+    _portal_set_state_safe(connect_stage="무선 연결 시도 중…")
+    ok = nm_connect(ssid, psk, timeout=timeout)
+    if not ok:
+        _portal_set_state_safe(last_error="연결 실패", connect_stage="")
+        wifi_stage_set(0, "연결 실패", "")
+        time.sleep(0.8)
+        wifi_stage_clear()
+        return False
+    wifi_stage_set(85, "인터넷 확인", "")
+    _portal_set_state_safe(connect_stage="인터넷 확인 중…")
+    ok2 = nm_autoconnect(timeout=20)
+    if ok2:
+        _portal_set_state_safe(last_ok="연결 완료", last_error="", connect_stage="연결 완료")
+    else:
+        _portal_set_state_safe(last_error="인터넷 확인 실패", connect_stage="")
+    wifi_stage_set(100 if ok2 else 0, "완료" if ok2 else "실패", "")
+    time.sleep(0.6)
+    wifi_stage_clear()
+    return ok2
+
+def _portal_loop_until_connected_or_cancel():
+    global wifi_cancel_requested
+    prepare_for_ap_mode()
+    wifi_stage_clear()
+    _portal_set_state_safe(last_error="", last_ok="", connect_stage="설정 모드 시작", running=True, done=False)
+
+    wifi_portal.start_ap()
+
+    try:
+        st = getattr(wifi_portal, "_state", {})
+        if isinstance(st, dict) and (not st.get("server_started", False)):
+            wifi_portal.run_portal(block=False)
+            st["server_started"] = True
+            _portal_set_state_safe(server_started=True)
+    except Exception:
+        try:
+            wifi_portal.run_portal(block=False)
+        except Exception:
+            pass
+
+    t0 = time.time()
+    while True:
+        if wifi_cancel_requested:
+            _portal_set_state_safe(connect_stage="취소 처리 중…")
+            try:
+                if hasattr(wifi_portal, "stop_ap"):
+                    wifi_portal.stop_ap()
+            except Exception:
+                pass
+            return "cancel"
+
+        req = None
+        try:
+            st = getattr(wifi_portal, "_state", {})
+            if isinstance(st, dict):
+                req = st.get("requested")
+        except Exception:
+            req = None
+
+        if not req:
+            req = _portal_pop_req_safe()
+            if req and isinstance(getattr(wifi_portal, "_state", None), dict):
+                try:
+                    wifi_portal._state["requested"] = req
+                except Exception:
+                    pass
+
+        if req:
+            _portal_clear_req_safe()
+            mode = (req.get("mode") or "new").strip().lower()
+            src = (req.get("src") or "").strip().lower()
+            ssid = (req.get("ssid") or "").strip()
+            psk = (req.get("psk") or "").strip()
+            nm_id = (req.get("nm_id") or "").strip()
+            ok = False
+
+            if mode == "saved":
+                wifi_stage_set(60, "저장된 WiFi", "연결 시도")
+                _portal_set_state_safe(connect_stage="저장된 설정으로 연결 중…", last_error="", last_ok="")
+                if src == "nm" and nm_id:
+                    wlan0_soft_reset()
+                    nm_set_managed(True)
+                    nm_restart()
+                    time.sleep(1.0)
+                    _portal_set_state_safe(connect_stage="NetworkManager 연결 시도 중…")
+                    ok = nm_up_profile(nm_id, timeout=20) and nm_autoconnect(timeout=20)
+                elif src == "wpa" and ssid:
+                    wlan0_soft_reset()
+                    _portal_set_state_safe(connect_stage="wpa_supplicant 연결 시도 중…")
+                    ok = wpa_select_saved_ssid(ssid) and nm_autoconnect(timeout=20)
+                else:
+                    ok = False
+            else:
+                if ssid:
+                    ok = connect_from_portal_nm(ssid, psk, timeout=35)
+
+            if ok:
+                _portal_set_state_safe(last_ok="연결 완료", last_error="", connect_stage="연결 완료", running=False, done=True)
+                return True
+
+            _portal_set_state_safe(last_error="연결 실패", connect_stage="", running=True, done=False)
+            prepare_for_ap_mode()
+            wifi_stage_clear()
+            wifi_portal.start_ap()
+
+        if time.time() - t0 > 600:
+            _portal_set_state_safe(last_error="시간 초과", connect_stage="", running=False)
+            return False
+
+        time.sleep(0.2)
+
+def wifi_worker_thread():
+    global wifi_action_requested, wifi_action_running
+    global status_message, message_position, message_font_size, need_update, wifi_cancel_requested
+    while not stop_threads:
+        do = False
+        with wifi_action_lock:
+            if wifi_action_requested and (not wifi_action_running):
+                wifi_action_requested = False
+                wifi_action_running = True
+                do = True
+        if do:
+            try:
+                wifi_cancel_requested = False
+                wifi_stage_clear()
+                with ap_state_lock:
+                    ap_state["last_clients"] = 0
+                    ap_state["flash_until"] = 0.0
+                    ap_state["poll_next"] = 0.0
+                    ap_state["spinner"] = 0
+
+                _portal_set_state_safe(last_error="", last_ok="", connect_stage="설정 시작 준비…", running=True, done=False)
+
+                r1 = subprocess.run(["which", "hostapd"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                r2 = subprocess.run(["which", "dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if (r1.returncode != 0) or (r2.returncode != 0):
+                    status_message = "AP 구성 불가"
+                    message_position = (12, 10)
+                    message_font_size = 15
+                    need_update = True
+                    _portal_set_state_safe(last_error="hostapd/dnsmasq 없음", connect_stage="", running=False)
+                    time.sleep(2.0)
+                else:
+                    status_message = ""
+                    need_update = True
+                    result = _portal_loop_until_connected_or_cancel()
+                    refresh_root_menu(reset_index=True)
+                    need_update = True
+                    if result == "cancel":
+                        wifi_stage_set(10, "취소 처리중", "재연결 준비")
+                        _portal_set_state_safe(connect_stage="취소 처리 중…", last_error="취소됨", last_ok="")
+                        ok_restore = restore_after_ap_mode(timeout=25)
+                        set_ui_text("재연결 완료" if ok_restore else "재연결 실패", "", pos=(15, 18), font_size=15)
+                        time.sleep(1.0)
+                        clear_ui_override()
+                        wifi_stage_clear()
+                        _portal_set_state_safe(connect_stage="", running=False)
+                    elif result is True:
+                        set_ui_text("WiFi 연결 완료", "", pos=(12, 18), font_size=15)
+                        time.sleep(1.1)
+                        clear_ui_override()
+                        wifi_stage_clear()
+                        _portal_set_state_safe(last_ok="연결 완료", last_error="", connect_stage="연결 완료", running=False, done=True)
+                    else:
+                        set_ui_text("WiFi 연결 실패", "", pos=(12, 18), font_size=15)
+                        time.sleep(1.1)
+                        clear_ui_override()
+                        wifi_stage_clear()
+                        _portal_set_state_safe(last_error="연결 실패", connect_stage="", running=False)
+                status_message = ""
+                need_update = True
+            finally:
+                with wifi_action_lock:
+                    wifi_action_running = False
+        time.sleep(0.05)
+
+def execute_command(command_index):
+    global is_executing, is_command_executing
+    global current_menu, commands, command_names, command_types, menu_extras
+    global current_command_index, menu_stack, need_update
+    global connection_success, connection_failed_since_last_success
+
+    item_type = command_types[command_index]
+    if item_type == "wifi":
+        request_wifi_setup()
+        need_update = True
+        return
+
+    is_executing = True
+    is_command_executing = True
+
+    if not commands:
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "tftp_scan":
+        GPIO.output(LED_SUCCESS, False)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        set_ui_progress(5, "주변 장치\n스캔 중...", pos=(10, 10), font_size=15)
+        ips = scan_modbus_devices_same_subnet(limit=64)
+        if not ips:
+            GPIO.output(LED_ERROR, True)
+            set_ui_text("장치 없음", "같은 대역", pos=(12, 18), font_size=15)
+            time.sleep(1.3)
+            GPIO.output(LED_ERROR, False)
+            clear_ui_override()
+            need_update = True
+            is_executing = False
+            is_command_executing = False
+            return
+        menu_stack.append((current_menu, current_command_index))
+        current_menu = build_tftp_device_menu(ips)
+        commands = current_menu["commands"]
+        command_names = current_menu["names"]
+        command_types = current_menu["types"]
+        menu_extras = current_menu["extras"]
+        current_command_index = 0
+        clear_ui_override()
+        need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "tftp_dev":
+        target_ip = menu_extras[command_index]
+        tftp_upgrade_device(target_ip if target_ip else "")
+        need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "dir":
+        subdir = menu_extras[command_index]
+        if subdir and os.path.isdir(subdir):
+            menu_stack.append((current_menu, current_command_index))
+            current_menu = build_menu_for_dir(subdir, is_root=False)
+            commands = current_menu["commands"]
+            command_names = current_menu["names"]
+            command_types = current_menu["types"]
+            menu_extras = current_menu["extras"]
+            current_command_index = 0
+            need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "back":
+        if menu_stack:
+            prev_menu, prev_index = menu_stack.pop()
+            current_menu = prev_menu
+            commands = current_menu["commands"]
+            command_names = current_menu["names"]
+            command_types = current_menu["types"]
+            menu_extras = current_menu["extras"]
+            current_command_index = prev_index if (0 <= prev_index < len(commands)) else 0
+            need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "system":
+        kill_openocd()
+        with stm32_state_lock:
+            connection_success = False
+            connection_failed_since_last_success = False
+        git_pull()
+        refresh_root_menu(reset_index=True)
+        need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
+    if item_type == "script":
+        kill_openocd()
+        with stm32_state_lock:
+            connection_success = False
+            connection_failed_since_last_success = False
+        GPIO.output(LED_SUCCESS, False)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        if not os.path.isfile(OUT_SCRIPT_PATH):
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            set_ui_text("out.py 없음", "", pos=(15, 18), font_size=15)
+            time.sleep(1.5)
+            GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
+            clear_ui_override()
+            need_update = True
+            is_executing = False
+            is_command_executing = False
+            return
+        set_ui_progress(10, "추출/업로드\n 실행 중...", pos=(10, 5), font_size=15)
+        try:
+            result = subprocess.run(
+                commands[command_index],
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            if result.returncode == 0:
+                GPIO.output(LED_SUCCESS, True)
+                set_ui_progress(100, "완료!", pos=(35, 10), font_size=15)
+                time.sleep(1)
+                GPIO.output(LED_SUCCESS, False)
+            else:
+                GPIO.output(LED_ERROR, True)
+                GPIO.output(LED_ERROR1, True)
+                set_ui_progress(0, "실패!", pos=(35, 10), font_size=15)
+                time.sleep(1.2)
+                GPIO.output(LED_ERROR, False)
+                GPIO.output(LED_ERROR1, False)
+        except Exception:
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            set_ui_progress(0, "오류 발생", pos=(25, 10), font_size=15)
+            time.sleep(1.2)
+            GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        refresh_root_menu(reset_index=True)
+        need_update = True
+        is_executing = False
+        is_command_executing = False
+        return
+
+    GPIO.output(LED_SUCCESS, False)
+    GPIO.output(LED_ERROR, False)
+    GPIO.output(LED_ERROR1, False)
+
+    selected_path = None
+    try:
+        selected_path = menu_extras[command_index]
+    except Exception:
+        selected_path = None
+
+    dev_id, flash_kb = detect_stm32_flash_kb_with_unlock(timeout=4.0)
+
+    if not selected_path:
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_text("BIN 경로", "없음", pos=(20, 12), font_size=15)
+        time.sleep(1.5)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        is_executing = False
+        is_command_executing = False
+        need_update = True
+        return
+
+    resolved_path, chosen_kind = resolve_target_bin_by_gas(selected_path, flash_kb)
+
+    if not unlock_memory():
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_text("메모리 잠금", "해제
