@@ -1714,49 +1714,17 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    if item_type == "mb_info_scan":
+    # -----------------------------
+    # (변경) 원격 업데이트 통합 실행
+    # -----------------------------
+    if item_type == "remote_update":
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
-        set_ui_progress(5, "Modbus\n스캔 중...", pos=(10, 10), font_size=15)
-        ips = scan_modbus_devices_same_subnet(limit=64)
-        if not ips:
-            GPIO.output(LED_ERROR, True)
-            set_ui_text("장치 없음", "같은 대역", pos=(12, 18), font_size=15)
-            time.sleep(1.3)
-            GPIO.output(LED_ERROR, False)
-            clear_ui_override()
-            need_update = True
-            is_executing = False
-            is_command_executing = False
-            return
-        menu_stack.append((current_menu, current_command_index))
-        current_menu = build_modbus_info_device_menu(ips)
-        commands = current_menu["commands"]
-        command_names = current_menu["names"]
-        command_types = current_menu["types"]
-        menu_extras = current_menu["extras"]
-        current_command_index = 0
-        clear_ui_override()
-        need_update = True
-        is_executing = False
-        is_command_executing = False
-        return
 
-    if item_type == "mb_info_dev":
-        target_ip = menu_extras[command_index]
-        modbus_show_device_info(target_ip if target_ip else "")
-        need_update = True
-        is_executing = False
-        is_command_executing = False
-        return
-
-    if item_type == "tftp_scan":
-        GPIO.output(LED_SUCCESS, False)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
         set_ui_progress(5, "주변 장치\n스캔 중...", pos=(10, 10), font_size=15)
         ips = scan_modbus_devices_same_subnet(limit=64)
+
         if not ips:
             GPIO.output(LED_ERROR, True)
             set_ui_text("장치 없음", "같은 대역", pos=(12, 18), font_size=15)
@@ -1767,8 +1735,19 @@ def execute_command(command_index):
             is_executing = False
             is_command_executing = False
             return
+
+        # 1개면 바로 실행 (단순화)
+        if len(ips) == 1:
+            clear_ui_override()
+            tftp_upgrade_device(ips[0])
+            need_update = True
+            is_executing = False
+            is_command_executing = False
+            return
+
+        # 여러 개면 목록 메뉴로
         menu_stack.append((current_menu, current_command_index))
-        current_menu = build_tftp_device_menu(ips)
+        current_menu = build_remote_ip_menu(ips)
         commands = current_menu["commands"]
         command_names = current_menu["names"]
         command_types = current_menu["types"]
@@ -1780,8 +1759,9 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
-    if item_type == "tftp_dev":
+    if item_type == "remote_update_ip":
         target_ip = menu_extras[command_index]
+        clear_ui_override()
         tftp_upgrade_device(target_ip if target_ip else "")
         need_update = True
         is_executing = False
@@ -1884,6 +1864,7 @@ def execute_command(command_index):
         is_command_executing = False
         return
 
+    # 기본: 로컬(OpenOCD) BIN 플래시
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
@@ -2201,7 +2182,7 @@ def execute_button_logic():
                 execute_long_handled = True
                 if commands and (not is_executing):
                     item_type = command_types[current_command_index]
-                    if item_type in ("system", "dir", "back", "script", "wifi", "bin", "tftp_scan", "tftp_dev", "mb_info_scan", "mb_info_dev"):
+                    if item_type in ("system", "dir", "back", "script", "wifi", "bin", "remote_update", "remote_update_ip"):
                         execute_command(current_command_index)
                         need_update = True
 
