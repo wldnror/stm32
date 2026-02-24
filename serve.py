@@ -190,6 +190,10 @@ message_font_size = 17
 ina = None
 battery_percentage = -1
 
+ina_lock = threading.Lock()
+ina_last = {"v": None, "c": None, "p": None, "ts": 0.0}
+ina_poll_started = False
+
 connection_success = False
 connection_failed_since_last_success = False
 last_stm32_check_time = 0.0
@@ -460,20 +464,55 @@ def wlan0_soft_reset():
     run_quiet(["sudo", "ip", "link", "set", "wlan0", "up"], timeout=3.0)
     time.sleep(1)
 
+def ina_poll_loop(interval=0.35):
+    global ina_last
+    while not stop_threads:
+        try:
+            sensor = ina
+            if sensor is None:
+                time.sleep(0.6)
+                continue
+            with ina_lock:
+                v = sensor.voltage()
+                c = None
+                p = None
+                try:
+                    c = sensor.current()
+                except Exception:
+                    c = None
+                try:
+                    p = sensor.power()
+                except Exception:
+                    p = None
+            ina_last = {"v": v, "c": c, "p": p, "ts": time.time()}
+        except Exception:
+            pass
+        time.sleep(interval)
+
 def init_ina219():
-    global ina
+    global ina, ina_poll_started
     try:
         ina = INA219(SHUNT_OHMS)
         ina.configure()
     except Exception:
         ina = None
+    if (not ina_poll_started):
+        ina_poll_started = True
+        threading.Thread(target=ina_poll_loop, daemon=True).start()
+
+def _ina_get_voltage(max_age=2.0):
+    d = ina_last
+    ts = d.get("ts", 0.0) or 0.0
+    if ts and (time.time() - ts) <= max_age:
+        return d.get("v", None)
+    return None
 
 def read_ina219_percentage():
-    global ina
-    if ina is None:
-        return -1
     try:
-        voltage = ina.voltage()
+        v = _ina_get_voltage(max_age=2.5)
+        if v is None:
+            return -1
+        voltage = float(v)
         if voltage <= MIN_VOLTAGE:
             return 0
         if voltage >= MAX_VOLTAGE:
