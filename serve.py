@@ -1,4 +1,4 @@
-ㅍfrom datetime import datetime
+from datetime import datetime
 import RPi.GPIO as GPIO
 import time
 import os
@@ -1301,32 +1301,45 @@ def _fmt_gas(v):
     except Exception:
         return "--"
 
+# ---------------------------
+# MODBUS READ (문서 기준으로 수정)
+# - 40001~40008 범위 한번에 읽어서 처리
+# - gas: 40005 (int)
+# - A1: 40001 bit6, A2: 40001 bit7
+# - PWR: 40008 bit2 (24V low power fault)
+# - FUT: fault != 0
+# ---------------------------
 def read_gas_and_alarm_flags(ip: str):
-    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.8, retries=2, delay=0.12)
+    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=1.0, retries=2, delay=0.12)
     if c is None:
         return None, None, "connect"
     try:
-        lo = min(REG_GAS_VALUE_4XXXX, REG_ALARM_BITS_4XXXX)
-        hi = max(REG_GAS_VALUE_4XXXX, REG_ALARM_BITS_4XXXX)
+        lo = 40001
+        hi = 40008
         start = reg_addr(lo)
-        count = (hi - lo) + 1
+        count = (hi - lo) + 1  # 8개
         r = c.read_holding_registers(start, count)
         if _is_modbus_error(r):
             return None, None, "read"
         regs = getattr(r, "registers", None) or []
         if len(regs) < count:
             return None, None, "short"
-        idx_g = REG_GAS_VALUE_4XXXX - lo
-        idx_a = REG_ALARM_BITS_4XXXX - lo
-        gas_raw = _u16(regs[idx_g])
-        alarm_bits = _u16(regs[idx_a])
-        gas = float(gas_raw) * float(GAS_SCALE)
-        flags = {
-            "PWR": bool(alarm_bits & (1 << ALARM_BIT["PWR"])),
-            "A1":  bool(alarm_bits & (1 << ALARM_BIT["A1"])),
-            "A2":  bool(alarm_bits & (1 << ALARM_BIT["A2"])),
-            "FUT": bool(alarm_bits & (1 << ALARM_BIT["FUT"])),
-        }
+
+        def R(addr_4xxxx: int) -> int:
+            return _u16(regs[addr_4xxxx - lo])
+
+        status_40001 = R(REG_STATUS_4XXXX)
+        gas_int = R(REG_GAS_INT_4XXXX)
+        fault_40008 = R(REG_FAULT_4XXXX)
+
+        gas = float(gas_int)
+
+        a1 = bool(status_40001 & (1 << 6))
+        a2 = bool(status_40001 & (1 << 7))
+        pwr_fault = bool(fault_40008 & (1 << 2))
+        fut = (fault_40008 != 0)
+
+        flags = {"PWR": pwr_fault, "A1": a1, "A2": a2, "FUT": fut}
         return gas, flags, ""
     except Exception as e:
         return None, None, str(e)[:10]
