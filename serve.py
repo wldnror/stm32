@@ -2423,11 +2423,11 @@ def _draw_scan_screen(draw):
             info = "읽는중..."
         cx = device.width // 2 + VISUAL_X_OFFSET
         draw_center_text_autofit(draw, title, cx, 28, device.width - 4, 18, min_size=12)
-        draw.text((2, 46), (info or "")[:18], font=get_font(11), fill=255)
+        draw.text((2, 46), _ellipsis_to_width(draw, (info or ""), get_font(11), device.width - 4), font=get_font(11), fill=255)
     else:
         cx = device.width // 2 + VISUAL_X_OFFSET
         draw_center_text_autofit(draw, "장치 검색중...", cx, 28, device.width - 4, 18, min_size=12)
-        draw.text((2, 46), "NEXT:대기  EXEC:대기", font=get_font(11), fill=255)
+        draw.text((2, 46), _ellipsis_to_width(draw, "NEXT:대기  EXEC:대기", get_font(11), device.width - 4), font=get_font(11), fill=255)
 
 def update_oled_display():
     global current_command_index, status_message, message_position, message_font_size
@@ -2465,7 +2465,7 @@ def update_oled_display():
 
                 if item_type in ("system", "wifi"):
                     ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
-                    draw.text((0, 51), ip_display, font=font_big, fill=255)
+                    draw.text((0, 51), _ellipsis_to_width(draw, ip_display, font_big, device.width - 2), font=font_big, fill=255)
                     draw.text((80, -3), "GDSENG", font=font_big, fill=255)
                     draw.text((83, 50), "ver 3.72", font=font_big, fill=255)
                     draw.text((0, -3), current_time, font=font_time, fill=255)
@@ -2503,9 +2503,9 @@ def update_oled_display():
                         draw.text((x, 0), (st1 or "")[:16], font=get_font(13), fill=255)
                         line2 = (st2 or "")
                         if line2:
-                            draw.text((x, 16), (line2 + dots)[:18], font=get_font(11), fill=255)
+                            draw.text((x, 16), _ellipsis_to_width(draw, (line2 + dots), get_font(11), device.width - 4), font=get_font(11), fill=255)
                         else:
-                            draw.text((x, 16), ("처리중" + dots)[:18], font=get_font(11), fill=255)
+                            draw.text((x, 16), _ellipsis_to_width(draw, ("처리중" + dots), get_font(11), device.width - 4), font=get_font(11), fill=255)
                         x1, y1, x2, y2 = 8, 48, 120, 60
                         draw.rectangle([(x1, y1), (x2, y2)], outline=255, fill=0)
                         fill_w = int((x2 - x1) * (st_p / 100.0))
