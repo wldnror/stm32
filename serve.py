@@ -2352,6 +2352,8 @@ def execute_button_logic():
     global next_long_handled, wifi_cancel_requested
     global scan_selected_idx
     global scan_detail_active, scan_detail_ip
+    global current_menu, commands, command_names, command_types, menu_extras, menu_stack
+    global is_executing
     while True:
         now = time.time()
         if battery_percentage == 0:
