@@ -989,6 +989,8 @@ def build_tftp_device_menu(ip_list):
     }
 
 def pick_remote_fw_file_for_device(ip: str) -> str:
+    if not os.path.isdir(TFTP_REMOTE_DIR):
+        return ""
     p = os.path.join(TFTP_REMOTE_DIR, "default.bin")
     if os.path.isfile(p):
         return p
@@ -999,10 +1001,43 @@ def pick_remote_fw_file_for_device(ip: str) -> str:
     try:
         for fn in os.listdir(TFTP_REMOTE_DIR):
             if fn.lower().endswith(".bin"):
-                bins.append(os.path.join(TFTP_REMOTE_DIR, fn))
+                full = os.path.join(TFTP_REMOTE_DIR, fn)
+                if os.path.isfile(full):
+                    bins.append(full)
     except Exception:
-        pass
-    return bins[0] if bins else ""
+        return ""
+    if not bins:
+        return ""
+    def _score(path: str):
+        base = os.path.basename(path)
+        stem = os.path.splitext(base)[0].strip()
+        m = re.match(r"^(\d+)$", stem)
+        mt = 0.0
+        try:
+            mt = os.path.getmtime(path)
+        except Exception:
+            mt = 0.0
+        if m:
+            try:
+                n = int(m.group(1))
+            except Exception:
+                n = -1
+            return (2, n, mt)
+        return (1, -1, mt)
+    bins.sort(key=_score, reverse=True)
+    return bins[0]
+
+def _ensure_tftp_dir(path: str) -> bool:
+    try:
+        os.makedirs(path, exist_ok=True)
+        return True
+    except PermissionError:
+        ok = run_quiet(["sudo", "mkdir", "-p", path], timeout=6.0)
+        if ok:
+            run_quiet(["sudo", "chmod", "0777", path], timeout=4.0)
+        return ok
+    except Exception:
+        return False
 
 def tftp_upgrade_device(ip: str):
     set_ui_progress(5, "TFTP 업뎃\n준비...", pos=(18, 0), font_size=15)
@@ -1018,15 +1053,31 @@ def tftp_upgrade_device(ip: str):
         return
     set_ui_progress(20, "FW 복사중", pos=(18, 10), font_size=15)
     device_dir = os.path.join(TFTP_SERVER_ROOT, TFTP_DEVICE_SUBDIR)
-    os.makedirs(device_dir, exist_ok=True)
+    if not _ensure_tftp_dir(device_dir):
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        set_ui_text("권한 오류", "/srv/tftp", pos=(6, 18), font_size=13)
+        time.sleep(2.0)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        return
     dst_path = os.path.join(device_dir, TFTP_DEVICE_FILENAME)
     try:
         try:
             if os.path.exists(dst_path):
                 os.remove(dst_path)
+        except PermissionError:
+            run_quiet(["sudo", "rm", "-f", dst_path], timeout=4.0)
         except Exception:
             pass
-        shutil.copyfile(fw_src, dst_path)
+        try:
+            shutil.copyfile(fw_src, dst_path)
+        except PermissionError:
+            run_quiet(["sudo", "cp", "-f", fw_src, dst_path], timeout=6.0)
+            run_quiet(["sudo", "chmod", "0644", dst_path], timeout=3.0)
+        except Exception:
+            shutil.copyfile(fw_src, dst_path)
     except Exception as e:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
