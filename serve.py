@@ -725,16 +725,6 @@ def encode_ip_to_words(ip: str):
             raise ValueError("bad ip")
     return ((a << 8) | b, (c << 8) | d)
 
-def decode_words_to_ip(w1: int, w2: int) -> str:
-    try:
-        a = (int(w1) >> 8) & 0xFF
-        b = int(w1) & 0xFF
-        c = (int(w2) >> 8) & 0xFF
-        d = int(w2) & 0xFF
-        return f"{a}.{b}.{c}.{d}"
-    except Exception:
-        return "?.?.?.?"
-
 def _quick_modbus_probe(ip: str, timeout=0.25) -> bool:
     try:
         s = socket.create_connection((ip, MODBUS_PORT), timeout=timeout)
@@ -787,74 +777,6 @@ def _treat_as_ok_modbus_write_exception(e: Exception) -> bool:
         "Socket is closed",
     ]
     return any(k in msg for k in ok_like)
-
-def _modbus_read_holding_words(ip: str, addr_4xxxx: int, count: int, timeout=2.0):
-    client = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=timeout, retries=3, delay=0.25)
-    if client is None:
-        return None
-    try:
-        rr = client.read_holding_registers(reg_addr(addr_4xxxx), count)
-        if _is_modbus_error(rr):
-            return None
-        regs = getattr(rr, "registers", None)
-        if not isinstance(regs, list) or len(regs) < count:
-            return None
-        return regs
-    except Exception:
-        return None
-    finally:
-        try:
-            client.close()
-        except Exception:
-            pass
-
-def modbus_show_device_info(ip: str):
-    ip = (ip or "").strip()
-    if not ip:
-        return
-    if not _quick_modbus_probe(ip, timeout=0.35):
-        GPIO.output(LED_ERROR, True)
-        GPIO.output(LED_ERROR1, True)
-        set_ui_text("포트 응답X", ip, pos=(2, 18), font_size=12)
-        time.sleep(1.6)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
-        clear_ui_override()
-        return
-
-    set_ui_text("Modbus", "조회중...", pos=(18, 18), font_size=14)
-
-    regs_ip = _modbus_read_holding_words(ip, 40088, 2, timeout=2.2)
-    regs_ctrl = _modbus_read_holding_words(ip, 40091, 1, timeout=2.2)
-
-    line1 = ip
-    line2 = ""
-
-    if regs_ip and len(regs_ip) >= 2:
-        line2 = decode_words_to_ip(regs_ip[0], regs_ip[1])
-
-    if regs_ctrl and len(regs_ctrl) >= 1:
-        v = regs_ctrl[0]
-        if line2:
-            line2 = (line2[:10] + f" C{v}")[:18]
-        else:
-            line2 = f"CTRL {v}"[:18]
-
-    if (not regs_ip) and (not regs_ctrl):
-        GPIO.output(LED_ERROR, True)
-        GPIO.output(LED_ERROR1, True)
-        set_ui_text("조회 실패", ip, pos=(6, 18), font_size=13)
-        time.sleep(1.6)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
-        clear_ui_override()
-        return
-
-    GPIO.output(LED_SUCCESS, True)
-    set_ui_text(line1[:18], line2[:18], pos=(0, 18), font_size=12)
-    time.sleep(2.2)
-    GPIO.output(LED_SUCCESS, False)
-    clear_ui_override()
 
 def make_openocd_program_cmd(bin_path: str) -> str:
     return (
@@ -1099,44 +1021,25 @@ def scan_modbus_devices_same_subnet(limit=48):
             candidates.append(ip)
     return candidates
 
-def build_tftp_device_menu(ip_list):
+# -----------------------------
+# (변경) 원격 업데이트 메뉴(스캔/선택/실행) 통합
+# -----------------------------
+def build_remote_ip_menu(ip_list):
     commands_local = []
     names_local = []
     types_local = []
     extras_local = []
     for ip in ip_list:
-        commands_local.append("tftp_dev")
+        commands_local.append("remote_update_ip")
         names_local.append(f"▶ {ip}")
-        types_local.append("tftp_dev")
+        types_local.append("remote_update_ip")
         extras_local.append(ip)
     commands_local.append(None)
     names_local.append("◀ 이전으로")
     types_local.append("back")
     extras_local.append(None)
     return {
-        "dir": "__tftp_devices__",
-        "commands": commands_local,
-        "names": names_local,
-        "types": types_local,
-        "extras": extras_local,
-    }
-
-def build_modbus_info_device_menu(ip_list):
-    commands_local = []
-    names_local = []
-    types_local = []
-    extras_local = []
-    for ip in ip_list:
-        commands_local.append("mb_info_dev")
-        names_local.append(f"▶ {ip}")
-        types_local.append("mb_info_dev")
-        extras_local.append(ip)
-    commands_local.append(None)
-    names_local.append("◀ 이전으로")
-    types_local.append("back")
-    extras_local.append(None)
-    return {
-        "dir": "__mb_info_devices__",
+        "dir": "__remote_ips__",
         "commands": commands_local,
         "names": names_local,
         "types": types_local,
@@ -1201,7 +1104,7 @@ def tftp_upgrade_device(ip: str):
     if not ip:
         return
 
-    set_ui_progress(5, "TFTP 업뎃\n준비...", pos=(18, 0), font_size=15)
+    set_ui_progress(5, "원격 업뎃\n준비...", pos=(18, 0), font_size=15)
 
     if not _quick_modbus_probe(ip, timeout=0.35):
         GPIO.output(LED_ERROR, True)
@@ -1392,15 +1295,12 @@ def build_menu_for_dir(dir_path, is_root=False):
         types_local.append("wifi")
         extras_local.append(None)
 
-        commands_local.append("mb_info_scan")
-        names_local.append("원격(Modbus) 정보")
-        types_local.append("mb_info_scan")
+        # (변경) 원격(TFTP+Modbus) 통합 메뉴
+        commands_local.append("remote_update")
+        names_local.append("원격 업데이트")
+        types_local.append("remote_update")
         extras_local.append(None)
 
-        commands_local.append("tftp_scan")
-        names_local.append("원격(TFTP) 업데이트")
-        types_local.append("tftp_scan")
-        extras_local.append(None)
     else:
         commands_local.append(None)
         names_local.append("◀ 이전으로")
