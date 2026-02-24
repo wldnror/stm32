@@ -217,6 +217,18 @@ git_last_check = 0.0
 git_check_interval = 5.0
 GIT_REPO_DIR = "/home/user/stm32"
 
+scan_lock = threading.Lock()
+scan_active = False
+scan_ips = []
+scan_infos = {}
+scan_selected_idx = 0
+scan_last_tick = 0.0
+scan_base_prefix = None
+scan_cursor = 2
+scan_seen = {}
+SCAN_PRUNE_SEC = 3.0
+SCAN_HOSTS_PER_TICK = 8
+
 def kill_openocd():
     subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -790,6 +802,26 @@ def _try_read_some_modbus_info(client: ModbusTcpClient) -> Optional[str]:
     except Exception as e:
         return ("READ ERR:" + str(e))[:18]
 
+def _read_device_info_fast(ip: str) -> Optional[str]:
+    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.35, retries=1, delay=0.0)
+    if c is None:
+        return None
+    try:
+        r = c.read_holding_registers(reg_addr(40001), 4)
+        if _is_modbus_error(r):
+            return None
+        vals = getattr(r, "registers", None)
+        if not vals:
+            return None
+        return "R40001:" + ",".join(str(x) for x in vals[:4])
+    except Exception:
+        return None
+    finally:
+        try:
+            c.close()
+        except Exception:
+            pass
+
 def make_openocd_program_cmd(bin_path: str) -> str:
     return (
         "sudo openocd "
@@ -1014,46 +1046,11 @@ def get_ip_address():
         pass
     return "0.0.0.0"
 
-def scan_modbus_devices_same_subnet(limit=48):
-    my_ip = get_ip_address()
-    if my_ip == "0.0.0.0":
-        return []
-    parts = my_ip.split(".")
+def _scan_compute_prefix(ip: str) -> Optional[str]:
+    parts = (ip or "").split(".")
     if len(parts) != 4:
-        return []
-    base = ".".join(parts[:3]) + "."
-    candidates = []
-    start = 2
-    end = min(254, start + max(8, int(limit)))
-    for host in range(start, end + 1):
-        ip = base + str(host)
-        if ip == my_ip:
-            continue
-        if _quick_modbus_probe(ip):
-            candidates.append(ip)
-    return candidates
-
-def build_remote_ip_menu(ip_list):
-    commands_local = []
-    names_local = []
-    types_local = []
-    extras_local = []
-    for ip in ip_list:
-        commands_local.append("remote_update_ip")
-        names_local.append(f"▶ {ip}")
-        types_local.append("remote_update_ip")
-        extras_local.append(ip)
-    commands_local.append(None)
-    names_local.append("◀ 이전으로")
-    types_local.append("back")
-    extras_local.append(None)
-    return {
-        "dir": "__remote_ips__",
-        "commands": commands_local,
-        "names": names_local,
-        "types": types_local,
-        "extras": extras_local,
-    }
+        return None
+    return ".".join(parts[:3]) + "."
 
 def pick_remote_fw_file_for_device(ip: str) -> str:
     if not os.path.isdir(TFTP_REMOTE_DIR):
@@ -1193,16 +1190,16 @@ def tftp_upgrade_device(ip: str):
         return
 
     try:
-        info = _try_read_some_modbus_info(client)
-        if info:
-            set_ui_text("MODBUS", info[:18], pos=(2, 18), font_size=12)
-            time.sleep(1.0)
-            clear_ui_override()
-    except Exception:
-        pass
+        try:
+            info = _try_read_some_modbus_info(client)
+            if info:
+                set_ui_text("MODBUS", info[:18], pos=(2, 18), font_size=12)
+                time.sleep(0.9)
+                clear_ui_override()
+        except Exception:
+            pass
 
-    ok_final = False
-    try:
+        ok_final = False
         addr_ip1 = reg_addr(40088)
         addr_ctrl = reg_addr(40091)
 
@@ -1236,7 +1233,7 @@ def tftp_upgrade_device(ip: str):
 
         GPIO.output(LED_SUCCESS, True)
         set_ui_progress(100, "전송 완료\n업뎃 진행", pos=(10, 5), font_size=15)
-        time.sleep(1.2)
+        time.sleep(1.1)
         GPIO.output(LED_SUCCESS, False)
 
     finally:
@@ -1246,6 +1243,96 @@ def tftp_upgrade_device(ip: str):
             pass
 
     clear_ui_override()
+
+def build_scan_menu():
+    with scan_lock:
+        ips = list(scan_ips)
+    commands_local, names_local, types_local, extras_local = [], [], [], []
+    for ip in ips:
+        commands_local.append(None)
+        names_local.append(f"▶ {ip}")
+        types_local.append("scan_item")
+        extras_local.append(ip)
+    commands_local.append(None)
+    names_local.append("◀ 이전으로")
+    types_local.append("back_from_scan")
+    extras_local.append(None)
+    return {
+        "dir": "__scan__",
+        "commands": commands_local,
+        "names": names_local,
+        "types": types_local,
+        "extras": extras_local,
+    }
+
+def _scan_reset_from_myip(ip: str):
+    global scan_base_prefix, scan_cursor
+    scan_base_prefix = _scan_compute_prefix(ip)
+    scan_cursor = 2
+
+def modbus_scan_loop():
+    global scan_ips, scan_infos, scan_selected_idx, need_update, scan_last_tick, scan_cursor, scan_base_prefix, scan_seen
+    last_prefix_check = 0.0
+    while not stop_threads:
+        time.sleep(0.2)
+        with scan_lock:
+            active = scan_active
+        if not active:
+            continue
+
+        now = time.time()
+        if now - last_prefix_check > 1.2:
+            last_prefix_check = now
+            ip_now = get_ip_address()
+            pref = _scan_compute_prefix(ip_now) if ip_now != "0.0.0.0" else None
+            with scan_lock:
+                if pref and pref != scan_base_prefix:
+                    _scan_reset_from_myip(ip_now)
+                    scan_seen.clear()
+                    scan_infos.clear()
+
+        with scan_lock:
+            pref = scan_base_prefix
+            cur = scan_cursor
+
+        if not pref:
+            with scan_lock:
+                scan_ips = []
+                scan_last_tick = now
+            need_update = True
+            continue
+
+        found_this_tick = []
+        for _ in range(SCAN_HOSTS_PER_TICK):
+            host = cur
+            cur += 1
+            if cur > 254:
+                cur = 2
+            ip = pref + str(host)
+            if _quick_modbus_probe(ip, timeout=0.18):
+                found_this_tick.append(ip)
+
+        infos_local = {}
+        for ip in found_this_tick:
+            info = _read_device_info_fast(ip)
+            if info:
+                infos_local[ip] = info
+
+        with scan_lock:
+            scan_cursor = cur
+            for ip in found_this_tick:
+                scan_seen[ip] = now
+            for ip, ts in list(scan_seen.items()):
+                if (now - ts) > SCAN_PRUNE_SEC:
+                    scan_seen.pop(ip, None)
+                    scan_infos.pop(ip, None)
+            for k, v in infos_local.items():
+                scan_infos[k] = v
+            scan_ips = sorted(scan_seen.keys(), key=lambda x: tuple(int(p) for p in x.split(".")))
+            if scan_selected_idx >= len(scan_ips):
+                scan_selected_idx = 0
+            scan_last_tick = now
+        need_update = True
 
 def build_menu_for_dir(dir_path, is_root=False):
     entries = []
@@ -1313,9 +1400,9 @@ def build_menu_for_dir(dir_path, is_root=False):
         types_local.append("wifi")
         extras_local.append(None)
 
-        commands_local.append("remote_update")
-        names_local.append("원격 업데이트")
-        types_local.append("remote_update")
+        commands_local.append("device_scan")
+        names_local.append("감지기 연결(스캔)")
+        types_local.append("device_scan")
         extras_local.append(None)
     else:
         commands_local.append(None)
@@ -2262,3 +2349,4 @@ finally:
     except Exception:
         pass
     GPIO.cleanup()
+
