@@ -2799,6 +2799,13 @@ def execute_button_logic():
                 wifi_stage_set(5, "취소 처리중", "잠시만")
                 need_update = True
 
+        if (not wifi_running) and next_is_down and (not next_long_handled) and (next_press_time is not None):
+            if now - next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
+                if current_menu and current_menu.get("dir") == "__scan__":
+                    next_long_handled = True
+                    execute_command(len(command_types) - 1)
+                    need_update = True
+
         if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
             if now - execute_press_time >= LONG_PRESS_THRESHOLD:
                 execute_long_handled = True
