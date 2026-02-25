@@ -2266,31 +2266,51 @@ def _draw_scan_screen(draw):
         idx = scan_selected_idx
         infos = dict(scan_infos)
         done = scan_done
+
     draw.rectangle(device.bounding_box, fill="black")
-    draw_top_status_bar(draw)
+
+    W, H = device.width, device.height
+    now_dt = datetime.now()
+    current_time = now_dt.strftime("%H:%M")
+    draw.text((2, 1), current_time, font=get_font(12), fill=255)
+
+    cx = W // 2 + VISUAL_X_OFFSET
 
     if ips:
         if idx < 0:
             idx = 0
         if idx >= len(ips):
             idx = len(ips) - 1
+
         sel_ip = ips[idx]
         scan_selected_ip = sel_ip
-        title = f"{sel_ip}"
+
+        title_y = 30
+        info_y = H - 12  # 하단에 붙이기(받침 안 잘리게 여유)
+
+        draw_center_text_autofit(draw, sel_ip, cx, title_y, W - 4, 18, min_size=12)
+
         info = infos.get(sel_ip, "")
         if not info:
-            info = "읽는중..."
-        cx = device.width // 2 + VISUAL_X_OFFSET
-        draw_center_text_autofit(draw, title, cx, 28, device.width - 4, 18, min_size=12)
-        draw.text((2, 46), _ellipsis_to_width(draw, (info or ""), get_font(11), device.width - 4), font=get_font(11), fill=255)
-    else:
-        cx = device.width // 2 + VISUAL_X_OFFSET
-        if done:
-            draw_center_text_autofit(draw, "장치 없음", cx, 28, device.width - 4, 18, min_size=12)
-            draw.text((2, 46), _ellipsis_to_width(draw, "◀ 이전으로", get_font(11), device.width - 4), font=get_font(11), fill=255)
+            info = "가스: 읽는중..."
         else:
-            draw_center_text_autofit(draw, "장치 검색중...", cx, 28, device.width - 4, 18, min_size=12)
-            draw.text((2, 46), _ellipsis_to_width(draw, "잠시만...", get_font(11), device.width - 4), font=get_font(11), fill=255)
+            # 기존 R40001:... 형태면 보기 좋게 한 줄로만
+            info = "가스: " + info
+
+        draw.text((2, info_y), _ellipsis_to_width(draw, info, get_font(10), W - 4),
+                  font=get_font(10), fill=255)
+
+    else:
+        title_y = 30
+        info_y = H - 12
+        if done:
+            draw_center_text_autofit(draw, "장치 없음", cx, title_y, W - 4, 18, min_size=12)
+            draw.text((2, info_y), _ellipsis_to_width(draw, "◀ 이전으로", get_font(10), W - 4),
+                      font=get_font(10), fill=255)
+        else:
+            draw_center_text_autofit(draw, "장치 검색중...", cx, title_y, W - 4, 18, min_size=12)
+            draw.text((2, info_y), _ellipsis_to_width(draw, "잠시만...", get_font(10), W - 4),
+                      font=get_font(10), fill=255)
 
 
 def update_oled_display():
