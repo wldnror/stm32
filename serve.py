@@ -1527,13 +1527,17 @@ def _read_device_info_fast(ip: str) -> Optional[str]:
             pass
 
 
+# =========================
+# (수정) 상세 화면: 상단 배터리/시계/와이파이 표시 제거 + 하단 받침 안잘리게
+# =========================
 def draw_scan_detail_screen(draw):
     draw.rectangle(device.bounding_box, fill="black")
-    draw_top_status_bar(draw)
 
     W, H = device.width, device.height
+
+    # 상세 화면에서는 상단 상태바(시계/배터리/와이파이) 안 그림
     TOP_H = 16
-    BOT_H = 12
+    BOT_H = 15  # 12 -> 15로 늘려서 받침 여유
     MID_Y0 = TOP_H
     MID_Y1 = H - BOT_H
     MID_CY = (MID_Y0 + MID_Y1) // 2
@@ -1551,7 +1555,7 @@ def draw_scan_detail_screen(draw):
     start_x = max(0, (W - total_w) // 2)
     x = start_x
     for label, bw, active in boxes:
-        _draw_box_label(draw, x, 0, bw, 15, label, active)
+        _draw_box_label(draw, x, 1, bw, 14, label, active)
         x += bw + gap
 
     gas_txt = _fmt_gas(scan_detail.get("gas", None))
@@ -1566,16 +1570,16 @@ def draw_scan_detail_screen(draw):
     )
 
     err = (scan_detail.get("err") or "").strip()
-    fbot = get_font(10)
+    fbot = get_font(11)  # 10 -> 11 (가독성)
     max_w = W - 4
-    y0 = H - BOT_H
+    y0 = H - BOT_H + 1   # 바닥에서 1px 위로(받침 보호)
 
     if err:
         msg = _ellipsis_to_width(draw, "ERR " + err, fbot, max_w)
-        draw.text((2, y0 + 1), msg, font=fbot, fill=255)
+        draw.text((2, y0), msg, font=fbot, fill=255)
     else:
         msg = _ellipsis_to_width(draw, "NEXT=뒤로  HOLD=업뎃", fbot, max_w)
-        draw.text((2, y0 + 1), msg, font=fbot, fill=255)
+        draw.text((2, y0), msg, font=fbot, fill=255)
 
 
 def modbus_detail_poll_thread():
@@ -2259,6 +2263,9 @@ def ap_client_tick(wifi_running: bool):
 last_oled_update_time = 0.0
 
 
+# =========================
+# (수정) 스캔 화면: IP는 조금 아래(30), info는 하단(받침 여유)
+# =========================
 def _draw_scan_screen(draw):
     global scan_selected_ip
     with scan_lock:
@@ -2286,7 +2293,7 @@ def _draw_scan_screen(draw):
         scan_selected_ip = sel_ip
 
         title_y = 30
-        info_y = H - 12  # 하단에 붙이기(받침 안 잘리게 여유)
+        info_y = H - 12  # 하단 여유
 
         draw_center_text_autofit(draw, sel_ip, cx, title_y, W - 4, 18, min_size=12)
 
@@ -2294,7 +2301,6 @@ def _draw_scan_screen(draw):
         if not info:
             info = "가스: 읽는중..."
         else:
-            # 기존 R40001:... 형태면 보기 좋게 한 줄로만
             info = "가스: " + info
 
         draw.text((2, info_y), _ellipsis_to_width(draw, info, get_font(10), W - 4),
@@ -2336,6 +2342,7 @@ def update_oled_display():
                 if _draw_override(draw):
                     return
 
+                # (중요) 상세/스캔 화면은 헤더(배터리/시계) 그리기 전에 바로 return
                 if current_menu and current_menu.get("dir") == "__scan_detail__":
                     draw_scan_detail_screen(draw)
                     return
