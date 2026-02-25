@@ -1513,14 +1513,20 @@ def draw_scan_detail_screen(draw):
     MID_CY = (MID_Y0 + MID_Y1) // 2
 
     f = scan_detail.get("flags", {}) or {}
-    _draw_box_label(draw, 2, 1, 24, 14, "PWR", bool(f.get("PWR")))
-    _draw_box_label(draw, 28, 1, 20, 14, "A1", bool(f.get("A1")))
-    _draw_box_label(draw, 50, 1, 20, 14, "A2", bool(f.get("A2")))
-    _draw_box_label(draw, 72, 1, 26, 14, "FUT", bool(f.get("FUT")))
 
-    ip_txt = (scan_detail_ip or "").strip()
-    if ip_txt:
-        _right_text(draw, W - 2, 3, ip_txt, get_font(10), fill=255)
+    boxes = [
+        ("PWR", 26, bool(f.get("PWR"))),
+        ("AL1", 24, bool(f.get("A1"))),
+        ("AL2", 24, bool(f.get("A2"))),
+        ("FUT", 26, bool(f.get("FUT"))),
+    ]
+    gap = 2
+    total_w = sum(b[1] for b in boxes) + gap * (len(boxes) - 1)
+    start_x = max(0, (W - total_w) // 2)
+    x = start_x
+    for label, bw, active in boxes:
+        _draw_box_label(draw, x, 1, bw, 14, label, active)
+        x += bw + gap
 
     gas_txt = _fmt_gas(scan_detail.get("gas", None))
     draw_center_text_autofit(
