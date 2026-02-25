@@ -879,6 +879,18 @@ def draw_wifi_bars(draw, x, y, level):
             draw.rectangle([xx, y + max_h - 1, xx + bar_w, y + max_h], fill=255)
 
 
+def draw_top_status_bar(draw):
+    now_dt = datetime.now()
+    current_time = now_dt.strftime("%H시 %M분")
+    draw.text((2, 1), current_time, font=get_font(12), fill=255)
+    draw_wifi_bars(draw, 70, 3, cached_wifi_level)
+    vp = battery_percentage if (battery_percentage is not None and battery_percentage >= 0) else 0
+    battery_icon = select_battery_icon(vp)
+    draw.bitmap((90, -11), battery_icon, fill=255)
+    perc_text = f"{battery_percentage:.0f}%" if (battery_percentage is not None and battery_percentage >= 0) else "--%"
+    draw.text((99, 1), perc_text, font=get_font(11), fill=255)
+
+
 def reg_addr(addr_4xxxx: int) -> int:
     return int(addr_4xxxx) - 40001
 
@@ -959,27 +971,6 @@ def _try_read_some_modbus_info(client: ModbusTcpClient) -> Optional[str]:
         return "R40001:" + ",".join(str(x) for x in vals[:4])
     except Exception as e:
         return ("READ ERR:" + str(e))[:18]
-
-
-def _read_device_info_fast(ip: str) -> Optional[str]:
-    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.8, retries=1, delay=0.0)
-    if c is None:
-        return None
-    try:
-        r = c.read_holding_registers(address=reg_addr(40001), count=4, slave=1)
-        if _is_modbus_error(r):
-            return None
-        vals = getattr(r, "registers", None)
-        if not vals:
-            return None
-        return "R40001:" + ",".join(str(x) for x in vals[:4])
-    except Exception:
-        return None
-    finally:
-        try:
-            c.close()
-        except Exception:
-            pass
 
 
 def _u16(v):
@@ -1434,13 +1425,13 @@ def build_scan_detail_menu(ip: str):
 
 
 def _draw_box_label(draw, x, y, w, h, label, active):
-    f = get_font(11)
+    f = get_font(10)
     if active:
         draw.rectangle([x, y, x + w, y + h], fill=255)
-        draw.text((x + 3, y + 1), label, font=f, fill=0)
+        draw.text((x + 2, y + 2), label, font=f, fill=0)
     else:
         draw.rectangle([x, y, x + w, y + h], outline=255, fill=0)
-        draw.text((x + 3, y + 1), label, font=f, fill=255)
+        draw.text((x + 2, y + 2), label, font=f, fill=255)
 
 
 def _fmt_gas(v):
@@ -1502,8 +1493,43 @@ def read_gas_and_alarm_flags(ip: str):
             pass
 
 
+def _format_scan_summary(gas, flags, err=""):
+    if err:
+        return f"ERR:{err}"
+    if gas is None:
+        return "읽는중..."
+    parts = [f"가스:{_fmt_gas(gas)}"]
+    if flags:
+        if flags.get("PWR"):
+            parts.append("PWR")
+        if flags.get("A1"):
+            parts.append("A1")
+        if flags.get("A2"):
+            parts.append("A2")
+        if flags.get("FUT") and (not (flags.get("PWR") or flags.get("A1") or flags.get("A2"))):
+            parts.append("FUT")
+    return " ".join(parts)
+
+
+def _read_device_info_fast(ip: str) -> Optional[str]:
+    c = _modbus_connect_with_retries(ip, port=MODBUS_PORT, timeout=0.65, retries=1, delay=0.0)
+    if c is None:
+        return None
+    try:
+        gas, flags, err = _read_gas_and_alarm_flags_with_client(c)
+        return _format_scan_summary(gas, flags, err)
+    except Exception:
+        return None
+    finally:
+        try:
+            c.close()
+        except Exception:
+            pass
+
+
 def draw_scan_detail_screen(draw):
     draw.rectangle(device.bounding_box, fill="black")
+    draw_top_status_bar(draw)
 
     W, H = device.width, device.height
     TOP_H = 16
@@ -1525,7 +1551,7 @@ def draw_scan_detail_screen(draw):
     start_x = max(0, (W - total_w) // 2)
     x = start_x
     for label, bw, active in boxes:
-        _draw_box_label(draw, x, 1, bw, 14, label, active)
+        _draw_box_label(draw, x, 0, bw, 15, label, active)
         x += bw + gap
 
     gas_txt = _fmt_gas(scan_detail.get("gas", None))
@@ -1548,7 +1574,7 @@ def draw_scan_detail_screen(draw):
         msg = _ellipsis_to_width(draw, "ERR " + err, fbot, max_w)
         draw.text((2, y0 + 1), msg, font=fbot, fill=255)
     else:
-        msg = _ellipsis_to_width(draw, "NEXT:뒤로  EXEC길게:TFTP", fbot, max_w)
+        msg = _ellipsis_to_width(draw, "NEXT=뒤로  HOLD=업뎃", fbot, max_w)
         draw.text((2, y0 + 1), msg, font=fbot, fill=255)
 
 
@@ -2241,9 +2267,7 @@ def _draw_scan_screen(draw):
         infos = dict(scan_infos)
         done = scan_done
     draw.rectangle(device.bounding_box, fill="black")
-    now_dt = datetime.now()
-    current_time = now_dt.strftime("%H:%M")
-    draw.text((2, 1), current_time, font=get_font(12), fill=255)
+    draw_top_status_bar(draw)
 
     if ips:
         if idx < 0:
