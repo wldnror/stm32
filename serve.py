@@ -1111,7 +1111,7 @@ def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]) -
         return selected_bin_path, "원본"
     want_tftp = flash_kb > FLASH_KB_THRESHOLD
     base_root = TFTP_ROOT if want_tftp else GENERAL_ROOT
-    chosen_kind = "TFTP" if want_tftp else "일반"
+    chosen_kind = "TFTP" if want_tftp else "일반 360V"
     sp = os.path.abspath(selected_bin_path)
     gas_key = _gas_key_from_selected_path(sp)
     is_ir = _is_ir_variant(sp)
