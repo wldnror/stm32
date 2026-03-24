@@ -78,7 +78,7 @@ SOFT_DEBOUNCE_EXEC = 0.05
 LONG_PRESS_THRESHOLD = 0.7
 NEXT_LONG_CANCEL_THRESHOLD = 0.7
 
-POST_FLASH_WAIT_SEC = 1.2
+POST_FLASH_WAIT_SEC = 10.2
 
 FIRMWARE_DIR = "/home/user/stm32/Program"
 OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
@@ -722,7 +722,7 @@ def stm32_poll_thread():
             except Exception:
                 continue
         now = time.time()
-        if now - last_stm32_check_time <= 0.7:
+        if now - last_stm32_check_time <= 0.2:
             continue
         last_stm32_check_time = now
         with stm32_state_lock:
