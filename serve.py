@@ -366,7 +366,7 @@ def set_ui_text(line1, line2="", pos=(0, 0), font_size=15):
         ui_override["percent"] = 0
 
 
-def clear_ui_override():
+def :
     with ui_override_lock:
         ui_override["active"] = False
         ui_override["kind"] = "none"
@@ -2756,7 +2756,8 @@ def execute_command(command_index):
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
         clear_ui_override()
-        refresh_root_menu(reset_index=True)
+        if current_menu and current_menu.get("dir") == FIRMWARE_DIR:
+            refresh_root_menu(reset_index=False)
         need_update = True
         is_executing = False
         is_command_executing = False
