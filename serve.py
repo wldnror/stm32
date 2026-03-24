@@ -1,4 +1,5 @@
 from datetime import datetime
+import csv
 import RPi.GPIO as GPIO
 import time
 import os
@@ -78,10 +79,12 @@ SOFT_DEBOUNCE_EXEC = 0.05
 LONG_PRESS_THRESHOLD = 0.7
 NEXT_LONG_CANCEL_THRESHOLD = 0.7
 
-POST_FLASH_WAIT_SEC = 10.2
+DEFAULT_POST_FLASH_WAIT_SEC = 0.5
+POST_FLASH_WAIT_SEC = DEFAULT_POST_FLASH_WAIT_SEC
 
 FIRMWARE_DIR = "/home/user/stm32/Program"
 OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
+MENU_CONFIG_CSV = "/home/user/stm32/menu_config.csv"
 
 GENERAL_DIRNAME = "1.일반"
 TFTP_DIRNAME = "2.TFTP"
@@ -205,6 +208,43 @@ def logi(msg: str):
         print("[AUTOSEL] " + str(msg), flush=True)
     except Exception:
         pass
+
+
+def ensure_menu_config_csv():
+    try:
+        cfg_dir = os.path.dirname(MENU_CONFIG_CSV)
+        if cfg_dir:
+            os.makedirs(cfg_dir, exist_ok=True)
+        if not os.path.isfile(MENU_CONFIG_CSV):
+            with open(MENU_CONFIG_CSV, "w", encoding="utf-8", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["key", "value"])
+                writer.writerow(["fw_extract_enabled", "0"])
+    except Exception as e:
+        logi(f"menu_config.csv 생성 실패: {e}")
+
+
+def get_csv_flag(key: str, default: int = 0) -> int:
+    try:
+        ensure_menu_config_csv()
+        with open(MENU_CONFIG_CSV, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                k = str(row.get("key", "")).strip()
+                v = str(row.get("value", "")).strip()
+                if k == key:
+                    return 1 if v == "1" else 0
+    except Exception:
+        pass
+    return int(default)
+
+
+def is_fw_extract_mode() -> bool:
+    return get_csv_flag("fw_extract_enabled", 0) == 1
+
+
+def is_memory_lock_enabled() -> bool:
+    return not is_fw_extract_mode()
 
 
 def _portal_set_state_safe(**kwargs):
@@ -1527,17 +1567,12 @@ def _read_device_info_fast(ip: str) -> Optional[str]:
             pass
 
 
-# =========================
-# (수정) 상세 화면: 상단 배터리/시계/와이파이 표시 제거 + 하단 받침 안잘리게
-# =========================
 def draw_scan_detail_screen(draw):
     draw.rectangle(device.bounding_box, fill="black")
 
     W, H = device.width, device.height
-
-    # 상세 화면에서는 상단 상태바(시계/배터리/와이파이) 안 그림
     TOP_H = 16
-    BOT_H = 15  # 12 -> 15로 늘려서 받침 여유
+    BOT_H = 15
     MID_Y0 = TOP_H
     MID_Y1 = H - BOT_H
     MID_CY = (MID_Y0 + MID_Y1) // 2
@@ -1570,9 +1605,9 @@ def draw_scan_detail_screen(draw):
     )
 
     err = (scan_detail.get("err") or "").strip()
-    fbot = get_font(11)  # 10 -> 11 (가독성)
+    fbot = get_font(11)
     max_w = W - 4
-    y0 = H - BOT_H + 1   # 바닥에서 1px 위로(받침 보호)
+    y0 = H - BOT_H + 1
 
     if err:
         msg = _ellipsis_to_width(draw, "ERR " + err, fbot, max_w)
@@ -1795,11 +1830,15 @@ def build_menu_for_dir(dir_path, is_root=False):
 
     if is_root:
         online = cached_online
-        if online:
+        fw_extract_enabled = is_fw_extract_mode()
+
+        if online and fw_extract_enabled:
             commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
             names_local.append("FW 추출(OUT)")
             types_local.append("script")
             extras_local.append(None)
+
+        if online:
             with git_state_lock:
                 has_update = git_has_update_cached
             if has_update:
@@ -1807,10 +1846,12 @@ def build_menu_for_dir(dir_path, is_root=False):
                 names_local.append("시스템 업데이트")
                 types_local.append("system")
                 extras_local.append(None)
+
         commands_local.append("wifi_setup")
         names_local.append("Wi-Fi 설정")
         types_local.append("wifi")
         extras_local.append(None)
+
         commands_local.append("device_scan")
         names_local.append("감지기 연결(스캔)")
         types_local.append("device_scan")
@@ -1833,9 +1874,6 @@ def refresh_root_menu(reset_index=False):
     menu_extras = current_menu["extras"]
     if reset_index or (current_command_index >= len(commands)):
         current_command_index = 0
-
-
-refresh_root_menu(reset_index=True)
 
 
 def git_pull():
@@ -1926,6 +1964,14 @@ def restart_script():
 
 def lock_memory_procedure():
     global need_update
+
+    if not is_memory_lock_enabled():
+        set_ui_text("메모리 잠금", "건너뜀", pos=(18, 18), font_size=15)
+        time.sleep(0.6)
+        clear_ui_override()
+        need_update = True
+        return
+
     set_ui_progress(80, "메모리 잠금 중", pos=(3, 10), font_size=15)
     openocd_command = [
         "sudo",
