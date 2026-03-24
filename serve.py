@@ -247,6 +247,10 @@ def is_memory_lock_enabled() -> bool:
     return not is_fw_extract_mode()
 
 
+def is_root_menu_view() -> bool:
+    return bool(current_menu and current_menu.get("dir") == FIRMWARE_DIR)
+
+
 def _portal_set_state_safe(**kwargs):
     try:
         if hasattr(wifi_portal, "_set_state"):
@@ -366,7 +370,7 @@ def set_ui_text(line1, line2="", pos=(0, 0), font_size=15):
         ui_override["percent"] = 0
 
 
-def :
+def clear_ui_override():
     with ui_override_lock:
         ui_override["active"] = False
         ui_override["kind"] = "none"
@@ -485,7 +489,8 @@ def git_poll_thread():
                 git_has_update_cached = bool(ok)
             if prev is None or prev != ok:
                 prev = ok
-                refresh_root_menu(reset_index=False)
+                if is_root_menu_view():
+                    refresh_root_menu(reset_index=False)
                 need_update = True
             time.sleep(0.15)
         except Exception:
@@ -580,12 +585,12 @@ def wpa_select_saved_ssid(ssid: str) -> bool:
 
 
 def kill_portal_tmp_procs():
-    cmd = r"""sudo bash -lc '
+    cmd = r'''sudo bash -lc '
 pids=$(pgrep -a hostapd | awk "/\/tmp\/hostapd\.conf/{print \$1}" | xargs)
 [ -n "$pids" ] && kill -9 $pids || true
 pids=$(pgrep -a dnsmasq | awk "/\/tmp\/dnsmasq\.conf/{print \$1}" | xargs)
 [ -n "$pids" ] && kill -9 $pids || true
-'"""
+' '''
     run_quiet(cmd, timeout=6.0, shell=True)
 
 
@@ -2702,7 +2707,8 @@ def execute_command(command_index):
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
             clear_ui_override()
-            refresh_root_menu(reset_index=False)
+            if is_root_menu_view():
+                refresh_root_menu(reset_index=False)
             need_update = True
             is_executing = False
             is_command_executing = False
@@ -2756,7 +2762,7 @@ def execute_command(command_index):
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
         clear_ui_override()
-        if current_menu and current_menu.get("dir") == FIRMWARE_DIR:
+        if is_root_menu_view():
             refresh_root_menu(reset_index=False)
         need_update = True
         is_executing = False
@@ -2880,7 +2886,8 @@ def net_poll_thread():
             cached_wifi_level = get_wifi_level() if online_now else 0
             if last_menu_online is None or online_now != last_menu_online:
                 last_menu_online = online_now
-                refresh_root_menu(reset_index=False)
+                if is_root_menu_view():
+                    refresh_root_menu(reset_index=False)
                 need_update = True
             time.sleep(1.5)
         except Exception:
