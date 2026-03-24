@@ -2309,9 +2309,6 @@ def ap_client_tick(wifi_running: bool):
 last_oled_update_time = 0.0
 
 
-# =========================
-# (수정) 스캔 화면: IP는 조금 아래(30), info는 하단(받침 여유)
-# =========================
 def _draw_scan_screen(draw):
     global scan_selected_ip
     with scan_lock:
@@ -2339,7 +2336,7 @@ def _draw_scan_screen(draw):
         scan_selected_ip = sel_ip
 
         title_y = 30
-        info_y = H - 12  # 하단 여유
+        info_y = H - 12
 
         draw_center_text_autofit(draw, sel_ip, cx, title_y, W - 4, 18, min_size=12)
 
@@ -2388,7 +2385,6 @@ def update_oled_display():
                 if _draw_override(draw):
                     return
 
-                # (중요) 상세/스캔 화면은 헤더(배터리/시계) 그리기 전에 바로 return
                 if current_menu and current_menu.get("dir") == "__scan_detail__":
                     draw_scan_detail_screen(draw)
                     return
@@ -2698,6 +2694,20 @@ def execute_command(command_index):
         return
 
     if item_type == "script":
+        if not is_fw_extract_mode():
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            set_ui_text("FW 추출", "비활성화", pos=(15, 18), font_size=15)
+            time.sleep(1.5)
+            GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
+            clear_ui_override()
+            refresh_root_menu(reset_index=False)
+            need_update = True
+            is_executing = False
+            is_command_executing = False
+            return
+
         kill_openocd()
         with stm32_state_lock:
             connection_success = False
@@ -2814,8 +2824,13 @@ def execute_command(command_index):
     result = process.returncode
     if result == 0:
         set_ui_progress(80, f"업데이트 성공!\n{info_line}", pos=(6, 0), font_size=13)
-        time.sleep(POST_FLASH_WAIT_SEC)
-        lock_memory_procedure()
+
+        if is_memory_lock_enabled():
+            time.sleep(POST_FLASH_WAIT_SEC)
+            lock_memory_procedure()
+        else:
+            set_ui_text("업데이트 성공", "잠금 비활성", pos=(10, 18), font_size=14)
+            time.sleep(0.8)
     else:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -2971,7 +2986,10 @@ def execute_button_logic():
         time.sleep(0.02)
 
 
+ensure_menu_config_csv()
 init_ina219()
+
+refresh_root_menu(reset_index=True)
 
 battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
 battery_thread.start()
