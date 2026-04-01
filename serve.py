@@ -61,7 +61,7 @@ ap_state = {
 AP_SSID = getattr(wifi_portal, "AP_SSID", "GDSENG-SETUP")
 AP_PASS = getattr(wifi_portal, "AP_PASS", "12345678")
 AP_IP = getattr(wifi_portal, "AP_IP", "192.168.4.1")
-PORTAL_PORT = 8080
+PORTAL_PORT = 80
 
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
