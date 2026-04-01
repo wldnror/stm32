@@ -79,8 +79,27 @@ SOFT_DEBOUNCE_EXEC = 0.05
 LONG_PRESS_THRESHOLD = 0.7
 NEXT_LONG_CANCEL_THRESHOLD = 0.7
 
-DEFAULT_POST_FLASH_WAIT_SEC = 0.5
+# ===================== 속도 최적화 파라미터 =====================
+STM32_POLL_INTERVAL_SEC = 0.08
+STM32_POLL_LOOP_SLEEP_SEC = 0.02
+
+STM32_CONNECT_TIMEOUT_SEC = 0.55
+STM32_DETECT_TIMEOUT_SEC = 1.8
+STM32_FALLBACK_PROBE_TIMEOUT_SEC = 1.2
+STM32_UNLOCK_TIMEOUT_SEC = 1.4
+STM32_LOCK_TIMEOUT_SEC = 1.4
+
+STM32_DETECT_CACHE_TTL_SEC = 2.5
+STM32_RECENT_UNLOCK_TTL_SEC = 2.2
+
+PROGRAM_PROGRESS_POLL_SEC = 0.10
+PROGRAM_PROGRESS_MAX_DURATION_SEC = 4.0
+
+DEFAULT_POST_FLASH_WAIT_SEC = 0.15
 POST_FLASH_WAIT_SEC = DEFAULT_POST_FLASH_WAIT_SEC
+
+OPENOCD_IFACE = "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg"
+OPENOCD_TARGET = "/usr/local/share/openocd/scripts/target/stm32f1x.cfg"
 
 FIRMWARE_DIR = "/home/user/stm32/Program"
 OUT_SCRIPT_PATH = "/home/user/stm32/out.py"
@@ -195,6 +214,9 @@ scan_detail = {
 
 _detect_cache_lock = threading.Lock()
 _detect_cache = {"ts": 0.0, "flash_kb": None, "dev_id": None}
+
+_unlock_cache_lock = threading.Lock()
+_unlock_cache = {"ts": 0.0, "ok": False}
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
@@ -346,6 +368,31 @@ def run_capture(cmd, timeout=4.0, shell=False):
         return r.returncode, (r.stdout or ""), (r.stderr or "")
     except Exception as e:
         return 999, "", str(e)
+
+
+def run_openocd_capture(commands, timeout):
+    cmd = ["sudo", "openocd", "-f", OPENOCD_IFACE, "-f", OPENOCD_TARGET]
+    for c in commands:
+        cmd.extend(["-c", c])
+    return run_capture(cmd, timeout=timeout)
+
+
+def run_openocd_ok(commands, timeout):
+    rc, _, _ = run_openocd_capture(commands, timeout=timeout)
+    return rc == 0
+
+
+def mark_recent_unlock(ok: bool):
+    with _unlock_cache_lock:
+        _unlock_cache["ts"] = time.time()
+        _unlock_cache["ok"] = bool(ok)
+
+
+def has_recent_unlock(ttl=STM32_RECENT_UNLOCK_TTL_SEC) -> bool:
+    with _unlock_cache_lock:
+        if not _unlock_cache["ok"]:
+            return False
+        return (time.time() - (_unlock_cache["ts"] or 0.0)) < ttl
 
 
 def set_ui_progress(percent, message, pos=(0, 0), font_size=15):
@@ -725,15 +772,8 @@ def check_stm32_connection():
     if is_command_executing:
         return False
     try:
-        command = [
-            "sudo", "openocd",
-            "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-            "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-            "-c", "init",
-            "-c", "exit"
-        ]
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=1.2)
-        ok = (result.returncode == 0)
+        rc, _, _ = run_openocd_capture(["init", "exit"], timeout=STM32_CONNECT_TIMEOUT_SEC)
+        ok = (rc == 0)
         with stm32_state_lock:
             if ok:
                 connection_failed_since_last_success = False
@@ -742,11 +782,6 @@ def check_stm32_connection():
                 connection_failed_since_last_success = True
                 connection_success = False
         return ok
-    except subprocess.TimeoutExpired:
-        with stm32_state_lock:
-            connection_failed_since_last_success = True
-            connection_success = False
-        return False
     except Exception:
         with stm32_state_lock:
             connection_failed_since_last_success = True
@@ -757,7 +792,7 @@ def check_stm32_connection():
 def stm32_poll_thread():
     global last_stm32_check_time, auto_flash_done_connection
     while not stop_threads:
-        time.sleep(0.05)
+        time.sleep(STM32_POLL_LOOP_SLEEP_SEC)
         if is_command_executing:
             continue
         if commands:
@@ -767,7 +802,7 @@ def stm32_poll_thread():
             except Exception:
                 continue
         now = time.time()
-        if now - last_stm32_check_time <= 0.2:
+        if now - last_stm32_check_time <= STM32_POLL_INTERVAL_SEC:
             continue
         last_stm32_check_time = now
         with stm32_state_lock:
@@ -788,6 +823,8 @@ font_st = ImageFont.truetype(font_path, 11)
 font_time = ImageFont.truetype(font_path, 12)
 
 font_cache = {}
+
+
 def get_font(size: int):
     f = font_cache.get(size)
     if f is None:
@@ -795,10 +832,12 @@ def get_font(size: int):
         font_cache[size] = f
     return f
 
+
 low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
 full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+
 
 def select_battery_icon(percentage):
     if percentage < 20:
@@ -1028,8 +1067,8 @@ def _u16(v):
 def make_openocd_program_cmd(bin_path: str) -> str:
     return (
         "sudo openocd "
-        "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-        "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
+        f"-f {OPENOCD_IFACE} "
+        f"-f {OPENOCD_TARGET} "
         f"-c \"program {bin_path} verify reset exit 0x08000000\""
     )
 
@@ -1050,45 +1089,35 @@ def _parse_openocd_flash_kb(text: str) -> Optional[int]:
     return None
 
 
-def _detect_flash_kb_by_probe(timeout=3.5) -> Optional[int]:
-    cmd = [
-        "sudo", "openocd",
-        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", "init",
-        "-c", "reset halt",
-        "-c", "flash probe 0",
-        "-c", "shutdown",
-    ]
-    rc, out, err = run_capture(cmd, timeout=timeout)
+def _detect_flash_kb_by_probe(timeout=STM32_FALLBACK_PROBE_TIMEOUT_SEC) -> Optional[int]:
+    rc, out, err = run_openocd_capture(
+        ["init", "reset halt", "flash probe 0", "shutdown"],
+        timeout=timeout
+    )
     txt = (out or "") + "\n" + (err or "")
     kb = _parse_openocd_flash_kb(txt)
     return kb
 
 
-def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optional[int]]:
+def detect_stm32_flash_kb_with_unlock(timeout=STM32_DETECT_TIMEOUT_SEC) -> Tuple[Optional[int], Optional[int]]:
     now = time.time()
     with _detect_cache_lock:
-        if (_detect_cache["flash_kb"] is not None) and (now - _detect_cache["ts"] < 1.5):
+        if (_detect_cache["flash_kb"] is not None) and (now - _detect_cache["ts"] < STM32_DETECT_CACHE_TTL_SEC):
             return _detect_cache["dev_id"], _detect_cache["flash_kb"]
-    cmd = [
-        "sudo", "openocd",
-        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", "init",
-        "-c", "reset halt",
-        "-c", "stm32f1x unlock 0",
-        "-c", "reset halt",
-        "-c", "mdw 0xE0042000 1",
-        "-c", "mdh 0x1FFFF7E0 1",
-        "-c", "shutdown",
-    ]
-    rc, out, err = run_capture(cmd, timeout=timeout)
+
+    rc, out, err = run_openocd_capture(
+        ["init", "reset halt", "stm32f1x unlock 0", "reset halt", "mdw 0xE0042000 1", "mdh 0x1FFFF7E0 1", "shutdown"],
+        timeout=timeout
+    )
     text = (out or "") + "\n" + (err or "")
     m_id = re.search(r"0xE0042000:\s+(0x[0-9a-fA-F]+)", text, re.IGNORECASE)
     m_fs = re.search(r"0x1FFFF7E0:\s+(0x[0-9a-fA-F]+)", text, re.IGNORECASE)
+
+    if rc == 0:
+        mark_recent_unlock(True)
+
     if (rc != 0) or (not m_id) or (not m_fs):
-        kb = _detect_flash_kb_by_probe(timeout=3.5)
+        kb = _detect_flash_kb_by_probe(timeout=STM32_FALLBACK_PROBE_TIMEOUT_SEC)
         if kb is not None:
             with _detect_cache_lock:
                 _detect_cache["ts"] = time.time()
@@ -1096,6 +1125,7 @@ def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optio
                 _detect_cache["dev_id"] = None
             return None, kb
         return None, None
+
     try:
         id_val = int(m_id.group(1), 16)
         fs_val = int(m_fs.group(1), 16)
@@ -1107,7 +1137,7 @@ def detect_stm32_flash_kb_with_unlock(timeout=4.0) -> Tuple[Optional[int], Optio
             _detect_cache["dev_id"] = dev_id
         return dev_id, flash_kb
     except Exception:
-        kb = _detect_flash_kb_by_probe(timeout=3.5)
+        kb = _detect_flash_kb_by_probe(timeout=STM32_FALLBACK_PROBE_TIMEOUT_SEC)
         if kb is not None:
             with _detect_cache_lock:
                 _detect_cache["ts"] = time.time()
@@ -1289,6 +1319,7 @@ def pick_remote_fw_file_for_device(ip: str) -> str:
         return ""
     if not bins:
         return ""
+
     def _score(path: str):
         base = os.path.basename(path)
         stem = os.path.splitext(base)[0].strip()
@@ -1305,6 +1336,7 @@ def pick_remote_fw_file_for_device(ip: str) -> str:
                 n = -1
             return (2, n, mt)
         return (1, -1, mt)
+
     bins.sort(key=_score, reverse=True)
     return bins[0]
 
@@ -1937,33 +1969,38 @@ def git_pull():
 
 def unlock_memory():
     global need_update
-    set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
-    openocd_command = [
-        "sudo", "openocd",
-        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", "init",
-        "-c", "reset halt",
-        "-c", "stm32f1x unlock 0",
-        "-c", "reset run",
-        "-c", "shutdown"
-    ]
-    result = subprocess.run(openocd_command)
-    if result.returncode == 0:
-        set_ui_progress(30, "메모리 잠금\n 해제 성공!", pos=(20, 0), font_size=15)
-        time.sleep(1)
+
+    if has_recent_unlock():
+        set_ui_progress(30, "메모리 잠금\n 해제 생략", pos=(20, 0), font_size=15)
+        time.sleep(0.15)
         return True
+
+    set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
+
+    ok = run_openocd_ok(
+        ["init", "reset halt", "stm32f1x unlock 0", "reset run", "shutdown"],
+        timeout=STM32_UNLOCK_TIMEOUT_SEC
+    )
+    mark_recent_unlock(ok)
+
+    if ok:
+        set_ui_progress(30, "메모리 잠금\n 해제 성공!", pos=(20, 0), font_size=15)
+        time.sleep(0.3)
+        return True
+
     set_ui_progress(0, "메모리 잠금\n 해제 실패!", pos=(20, 0), font_size=15)
-    time.sleep(1)
+    time.sleep(0.5)
     need_update = True
     return False
 
 
 def restart_script():
     set_ui_progress(25, "재시작 중", pos=(20, 10), font_size=15)
+
     def restart():
         time.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
+
     threading.Thread(target=restart, daemon=True).start()
 
 
@@ -1972,40 +2009,32 @@ def lock_memory_procedure():
 
     if not is_memory_lock_enabled():
         set_ui_text("메모리 잠금", "건너뜀", pos=(18, 18), font_size=15)
-        time.sleep(0.6)
+        time.sleep(0.4)
         clear_ui_override()
         need_update = True
         return
 
     set_ui_progress(80, "메모리 잠금 중", pos=(3, 10), font_size=15)
-    openocd_command = [
-        "sudo",
-        "openocd",
-        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", "init",
-        "-c", "reset halt",
-        "-c", "stm32f1x lock 0",
-        "-c", "reset run",
-        "-c", "shutdown",
-    ]
     try:
-        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode == 0:
+        ok = run_openocd_ok(
+            ["init", "reset halt", "stm32f1x lock 0", "reset run", "shutdown"],
+            timeout=STM32_LOCK_TIMEOUT_SEC
+        )
+        if ok:
             GPIO.output(LED_SUCCESS, True)
             set_ui_progress(100, "메모리 잠금\n    성공", pos=(20, 0), font_size=15)
-            time.sleep(1)
+            time.sleep(0.4)
             GPIO.output(LED_SUCCESS, False)
         else:
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
             set_ui_progress(0, "메모리 잠금\n    실패", pos=(20, 0), font_size=15)
-            time.sleep(1)
+            time.sleep(0.6)
     except Exception:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         set_ui_progress(0, "오류 발생", pos=(20, 10), font_size=15)
-        time.sleep(1)
+        time.sleep(0.6)
     finally:
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
@@ -2779,13 +2808,13 @@ def execute_command(command_index):
     except Exception:
         selected_path = None
 
-    dev_id, flash_kb = detect_stm32_flash_kb_with_unlock(timeout=4.0)
+    dev_id, flash_kb = detect_stm32_flash_kb_with_unlock(timeout=STM32_DETECT_TIMEOUT_SEC)
 
     if not selected_path:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         set_ui_text("BIN 경로", "없음", pos=(20, 12), font_size=15)
-        time.sleep(1.5)
+        time.sleep(1.0)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
@@ -2800,7 +2829,7 @@ def execute_command(command_index):
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         set_ui_text("메모리 잠금", "해제 실패", pos=(20, 12), font_size=15)
-        time.sleep(2)
+        time.sleep(1.0)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
@@ -2818,15 +2847,14 @@ def execute_command(command_index):
     openocd_cmd = make_openocd_program_cmd(resolved_path)
     process = subprocess.Popen(openocd_cmd, shell=True)
     start_time = time.time()
-    max_duration = 6
-    progress_increment = 20 / max_duration
+    progress_increment = 20 / PROGRAM_PROGRESS_MAX_DURATION_SEC
 
     while process.poll() is None:
         elapsed = time.time() - start_time
         current_progress = 30 + (elapsed * progress_increment)
         current_progress = min(current_progress, 80)
         set_ui_progress(current_progress, progress_msg, pos=(6, 0), font_size=13)
-        time.sleep(0.2)
+        time.sleep(PROGRAM_PROGRESS_POLL_SEC)
 
     result = process.returncode
     if result == 0:
@@ -2837,12 +2865,12 @@ def execute_command(command_index):
             lock_memory_procedure()
         else:
             set_ui_text("업데이트 성공", "잠금 비활성", pos=(10, 18), font_size=14)
-            time.sleep(0.8)
+            time.sleep(0.5)
     else:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         set_ui_progress(0, f"업데이트 실패\n{info_line}", pos=(6, 0), font_size=13)
-        time.sleep(1)
+        time.sleep(0.8)
 
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
