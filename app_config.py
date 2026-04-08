@@ -77,3 +77,4 @@ SCAN_DETAIL_POLL_SEC = 0.2
 
 FONT_PATH = "/usr/share/fonts/truetype/malgun/malgunbd.ttf"
 BATTERY_ICON_PATH = "/home/user/stm32/img/bat.png"
+APP_VERSION = "ver 3.72"
