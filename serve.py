@@ -1,6 +1,3 @@
-뭔가 연결하자마자 반응을 안하네.. 아래 옛날코드는 연결하자마자 즉각 oled가 바뀌니깐 실시간으로 느껴졌는데
-
-
 from datetime import datetime
 import RPi.GPIO as GPIO
 import time
