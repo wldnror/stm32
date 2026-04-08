@@ -5,6 +5,7 @@ from ina219 import INA219
 import app_state as st
 from app_config import SHUNT_OHMS, MIN_VOLTAGE, MAX_VOLTAGE
 
+
 def ina_poll_loop(interval=0.35):
     while not st.stop_threads:
         try:
@@ -29,6 +30,7 @@ def ina_poll_loop(interval=0.35):
             pass
         time.sleep(interval)
 
+
 def init_ina219():
     try:
         st.ina = INA219(SHUNT_OHMS)
@@ -40,16 +42,18 @@ def init_ina219():
         st.ina_poll_started = True
         threading.Thread(target=ina_poll_loop, daemon=True).start()
 
-def _ina_get_voltage(max_age=2.0):
+
+def ina_get_voltage(max_age=2.0):
     d = st.ina_last
     ts = d.get("ts", 0.0) or 0.0
     if ts and (time.time() - ts) <= max_age:
         return d.get("v", None)
     return None
 
+
 def read_ina219_percentage():
     try:
-        v = _ina_get_voltage(max_age=2.5)
+        v = ina_get_voltage(max_age=2.5)
         if v is None:
             return -1
         voltage = float(v)
@@ -60,6 +64,7 @@ def read_ina219_percentage():
         return int(((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100)
     except Exception:
         return -1
+
 
 def battery_monitor_thread():
     while not st.stop_threads:
