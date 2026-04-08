@@ -231,7 +231,7 @@ def stm32_poll_thread():
                 st.stm32_disconnected_since = now2
         else:
             if st.stm32_disconnected_since > 0.0:
-                if (now2 - st.stm32_disconnected_since) >= 1.0:
+                if (now2 - st.stm32_disconnected_since) >= 2.0:
                     st.auto_flash_done_connection = False
                 st.stm32_disconnected_since = 0.0
 
