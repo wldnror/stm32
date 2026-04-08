@@ -758,7 +758,7 @@ def realtime_update_display():
             st.last_oled_update_time = now
             st.need_update = False
 
-        time.sleep(0.02)
+        time.sleep(0.005)
 
 
 def get_wifi_level():
