@@ -24,8 +24,6 @@ from power_manager import init_ina219, battery_monitor_thread
 from stm32_manager import (
     kill_openocd,
     run_openocd_ok,
-    detect_stm32_flash_kb_with_unlock,
-    resolve_target_bin_by_gas,
     make_openocd_program_cmd,
     has_recent_unlock,
     mark_recent_unlock,
@@ -80,11 +78,6 @@ def enter_ui_transition(sec: float = 0.10, flush_events: bool = True):
             st.next_pressed_event = False
             st.execute_long_handled = False
             st.next_long_handled = False
-
-
-def show_quick_status(line1: str, line2: str = "", pos=(12, 18), font_size=15):
-    set_ui_text(line1, line2, pos=pos, font_size=font_size)
-    st.need_update = True
 
 
 def portal_set_state_safe(**kwargs):
@@ -871,7 +864,7 @@ def unlock_memory():
         time.sleep(0.15)
         return True
 
-    set_ui_progress(20, "메모리 잠금\n 해제 중", pos=(18, 0), font_size=15)
+    set_ui_progress(0, "메모리 잠금\n 해제 중", pos=(18, 0), font_size=15)
     st.need_update = True
 
     ok = run_openocd_ok(
@@ -889,7 +882,6 @@ def unlock_memory():
     set_ui_progress(0, "메모리 잠금\n 해제 실패!", pos=(20, 0), font_size=15)
     st.need_update = True
     time.sleep(0.5)
-    st.need_update = True
     return False
 
 
@@ -1216,11 +1208,6 @@ def execute_command(command_index):
     except Exception:
         selected_path = None
 
-    set_ui_progress(5, "장치 확인 중", pos=(18, 18), font_size=15)
-    st.need_update = True
-
-    dev_id, flash_kb = detect_stm32_flash_kb_with_unlock(timeout=STM32_DETECT_TIMEOUT_SEC)
-
     if not selected_path:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -1235,10 +1222,9 @@ def execute_command(command_index):
         st.need_update = True
         return
 
-    set_ui_progress(15, "플래시 확인 중", pos=(18, 18), font_size=15)
-    st.need_update = True
-
-    resolved_path, chosen_kind = resolve_target_bin_by_gas(selected_path, flash_kb)
+    # 빠른 버전: flash/dev_id 판별 없이 바로 원본 bin 사용
+    resolved_path = selected_path
+    info_line = "원본"
 
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
@@ -1253,10 +1239,6 @@ def execute_command(command_index):
         st.is_command_executing = False
         st.need_update = True
         return
-
-    info_line = chosen_kind
-    if flash_kb is not None:
-        info_line = f"{chosen_kind} ({flash_kb}KB)"
 
     progress_msg = f"업데이트 중...\n{info_line}"
     set_ui_progress(30, progress_msg, pos=(6, 0), font_size=13)
@@ -1422,8 +1404,6 @@ def execute_button_logic():
                 and cs
                 and (not st.auto_flash_done_connection)
             ):
-                show_quick_status("STM32 감지됨", "업데이트 준비", pos=(10, 18), font_size=15)
-                time.sleep(0.08)
                 execute_command(st.current_command_index)
                 st.auto_flash_done_connection = True
 
