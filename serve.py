@@ -1,375 +1,814 @@
 from datetime import datetime
-import RPi.GPIO as GPIO
-import time
 import os
 import sys
-import socket
-from PIL import Image, ImageDraw, ImageFont
-from luma.core.interface.serial import i2c
-from luma.oled.device import sh1107
-from luma.core.render import canvas
-import subprocess
-from ina219 import INA219, DeviceRangeError
+import time
 import threading
-import re  # ← 번호 파싱용
+import subprocess
+import re
 
-VISUAL_X_OFFSET = 0  # 필요에 따라 -3, -4 등으로 조절
-display_lock = threading.Lock()
+import RPi.GPIO as GPIO
+import wifi_portal
 
-# GPIO 핀 설정
-BUTTON_PIN_NEXT = 27
-BUTTON_PIN_EXECUTE = 17
-LED_SUCCESS = 24
-LED_ERROR = 25
-LED_ERROR1 = 23
+import app_state as st
+from app_config import *
+from app_utils import (
+    ensure_menu_config_csv,
+    is_fw_extract_mode,
+    is_memory_lock_enabled,
+    run_capture,
+    run_quiet,
+    has_real_internet,
+    get_ip_address,
+)
+from power_manager import init_ina219, battery_monitor_thread
+from stm32_manager import (
+    kill_openocd,
+    run_openocd_ok,
+    detect_stm32_flash_kb_with_unlock,
+    resolve_target_bin_by_gas,
+    make_openocd_program_cmd,
+    has_recent_unlock,
+    mark_recent_unlock,
+    check_stm32_connection,
+)
+from modbus_manager import (
+    tftp_upgrade_device,
+    modbus_scan_loop,
+    modbus_detail_poll_thread,
+    scan_compute_prefix,
+)
+from menu_manager import (
+    build_scan_menu,
+    build_scan_detail_menu,
+    build_menu_for_dir,
+    refresh_root_menu,
+    is_root_menu_view,
+)
+from display_manager import (
+    update_oled_display,
+    wifi_stage_set,
+    wifi_stage_clear,
+    wifi_stage_tick,
+    set_ui_progress,
+    set_ui_text,
+    clear_ui_override,
+)
 
-# INA219 설정
-SHUNT_OHMS = 0.1
-MIN_VOLTAGE = 3.1  # 최소 작동 전압
-MAX_VOLTAGE = 4.2  # 최대 전압 (완충 시)
-
-# 자동 모드와 수동 모드 상태를 추적하는 전역 변수
-is_auto_mode = True
-
-# 이 STM32 "연결 세션"에서 자동 업데이트를 이미 1회 했는지 여부
-auto_flash_done_connection = False
-
-# GPIO 핀 번호 모드 설정 및 초기 상태 설정
 GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
 
-# 전역 변수로 마지막으로 눌린 시간을 추적
-last_time_button_next_pressed = 0.0
-last_time_button_execute_pressed = 0.0
-button_press_interval = 0.15  # 두 버튼이 동시에 눌린 것으로 간주되는 최대 시간 차이
-LONG_PRESS_THRESHOLD = 0.7   # EXECUTE 길게 누르는 기준 시간(초)
+button_state_lock = threading.Lock()
+oled_refresh_lock = threading.Lock()
 
-need_update = False
-is_command_executing = False
+if not hasattr(st, "ui_transition_until"):
+    st.ui_transition_until = 0.0
+if not hasattr(st, "stm32_disconnected_since"):
+    st.stm32_disconnected_since = 0.0
+if not hasattr(st, "auto_flash_cooldown_until"):
+    st.auto_flash_cooldown_until = 0.0
+if not hasattr(st, "last_stm32_poll_ok"):
+    st.last_stm32_poll_ok = False
+if not hasattr(st, "physical_disconnect_armed"):
+    st.physical_disconnect_armed = False
 
-# 전역 변수로 마지막 모드 전환 시간을 추적
-last_mode_toggle_time = 0.0
 
-# 모드 토글 요청 플래그 (실제 토글은 메인 루프에서)
-mode_toggle_requested = False
+def now_mono():
+    return time.monotonic()
 
-# EXECUTE 버튼 길게/짧게 판정용
-execute_press_time = None
-execute_is_down = False
-execute_long_handled = False  # ← 이 눌림에서 long press 처리 여부
 
-# NEXT 버튼 눌림 이벤트 플래그 (메인 루프에서 처리)
-next_pressed_event = False
+def in_ui_transition() -> bool:
+    return now_mono() < getattr(st, "ui_transition_until", 0.0)
 
-# 스크립트 시작 부분에 전역 변수 정의
-is_executing = False
 
-# ---------------- 메뉴 스택 관련 전역 ----------------
-# (menu, selected_index) 튜플을 저장
-menu_stack = []  # 이전 디렉토리 메뉴와 그때 선택 인덱스를 쌓아두는 스택
+def enter_ui_transition(sec: float = 0.08, flush_events: bool = True):
+    st.ui_transition_until = now_mono() + max(0.0, float(sec))
+    if flush_events:
+        with button_state_lock:
+            st.execute_short_event = False
+            st.next_pressed_event = False
+            st.execute_long_handled = False
+            st.next_long_handled = False
 
-current_menu = None          # {'dir': ..., 'commands': [...], 'names': [...], 'types': [...], 'extras': [...]}
-commands = []
-command_names = []
-command_types = []           # "bin", "dir", "system", "back"
-menu_extras = []             # type이 "dir"일 때 하위 디렉토리 경로 저장
-current_command_index = 0
 
-status_message = ""
-message_position = (0, 0)
-message_font_size = 17
-
-# ---------------- INA219 / 배터리 전역 ----------------
-ina = None
-battery_percentage = -1  # 배터리 퍼센트 캐시
-
-def init_ina219():
-    global ina
+def force_oled_refresh():
     try:
-        ina = INA219(SHUNT_OHMS)
-        ina.configure()
-        print("INA219 초기화 성공")
-    except Exception as e:
-        print("INA219 초기화 실패:", str(e))
-        ina = None
+        with oled_refresh_lock:
+            update_oled_display()
+            st.last_oled_update_time = time.time()
+            st.need_update = False
+    except Exception:
+        pass
 
-def read_ina219_percentage():
-    """
-    배터리 퍼센트 계산 (실제 I2C 읽기)
-    -> 전용 쓰레드에서만 호출하고,
-       다른 곳에서는 battery_percentage 캐시만 사용하도록 함.
-    """
-    global ina
-    if ina is None:
-        return -1
+
+def progress_stage(pct: int, line1: str, line2: str = "", pos=(8, 6), font_size=14, immediate=True):
+    msg = line1 if not line2 else f"{line1}\n{line2}"
+    set_ui_progress(pct, msg, pos=pos, font_size=font_size)
+    st.need_update = True
+    if immediate:
+        force_oled_refresh()
+
+
+def text_stage(line1: str, line2: str = "", pos=(10, 18), font_size=15, immediate=True):
+    set_ui_text(line1, line2, pos=pos, font_size=font_size)
+    st.need_update = True
+    if immediate:
+        force_oled_refresh()
+
+
+def portal_set_state_safe(**kwargs):
     try:
-        voltage = ina.voltage()
-        if voltage <= MIN_VOLTAGE:
-            return 0
-        elif voltage >= MAX_VOLTAGE:
-            return 100
+        if hasattr(wifi_portal, "_set_state"):
+            wifi_portal._set_state(**kwargs)
+            return
+    except Exception:
+        pass
+    try:
+        state_obj = getattr(wifi_portal, "_state", None)
+        if isinstance(state_obj, dict):
+            state_obj.update(kwargs)
+    except Exception:
+        pass
+    try:
+        if hasattr(wifi_portal, "_write_state_file"):
+            wifi_portal._write_state_file()
+    except Exception:
+        pass
+
+
+def portal_pop_req_safe():
+    try:
+        if hasattr(wifi_portal, "_pop_req_file"):
+            return wifi_portal._pop_req_file()
+    except Exception:
+        pass
+    return None
+
+
+def portal_clear_req_safe():
+    try:
+        state_obj = getattr(wifi_portal, "_state", None)
+        if isinstance(state_obj, dict):
+            state_obj["requested"] = None
+    except Exception:
+        pass
+    portal_set_state_safe(requested=None)
+
+
+def button_next_edge(channel):
+    now = now_mono()
+    with button_state_lock:
+        if (now - st.last_time_button_next_pressed) < SOFT_DEBOUNCE_NEXT:
+            return
+        st.last_time_button_next_pressed = now
+
+        if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
+            st.next_press_time = now
+            st.next_is_down = True
+            st.next_long_handled = False
         else:
-            return int(((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 100)
-    except Exception as e:
-        print("INA219 모듈 읽기 실패:", str(e))
-        return -1
+            if st.next_is_down and (not st.next_long_handled) and (st.next_press_time is not None):
+                dt = now - st.next_press_time
+                if dt < NEXT_LONG_CANCEL_THRESHOLD:
+                    st.next_pressed_event = True
+            st.next_is_down = False
+            st.next_press_time = None
 
-def battery_monitor_thread():
-    """
-    2초마다 배터리 퍼센트를 갱신하는 쓰레드.
-    """
-    global battery_percentage
-    while True:
-        battery_percentage = read_ina219_percentage()
-        time.sleep(2)
 
-# ---------------- 버튼 / 모드 ----------------
+def button_execute_edge(channel):
+    now = now_mono()
+    with button_state_lock:
+        if (now - st.last_time_button_execute_pressed) < SOFT_DEBOUNCE_EXEC:
+            return
+        st.last_time_button_execute_pressed = now
 
-def toggle_mode():
-    """AUTO <-> MANUAL 모드 전환 (실제 토글은 메인 루프에서 수행)"""
-    global is_auto_mode, last_mode_toggle_time, need_update
-    is_auto_mode = not is_auto_mode
-    last_mode_toggle_time = time.time()
-    need_update = True  # OLED는 전용 쓰레드가 그리도록 플래그만 세움
+        if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
+            st.execute_press_time = now
+            st.execute_is_down = True
+            st.execute_long_handled = False
+        else:
+            if st.execute_is_down and (not st.execute_long_handled) and (st.execute_press_time is not None):
+                st.execute_short_event = True
+            st.execute_is_down = False
+            st.execute_press_time = None
 
-def button_next_callback(channel):
-    """
-    콜백에서는 시간/플래그만 기록.
-    실제 메뉴 이동/모드 전환 판단은 메인 루프에서.
-    """
-    global last_time_button_next_pressed, next_pressed_event
-    now = time.time()
-    last_time_button_next_pressed = now
-    next_pressed_event = True  # 메인 루프에서 처리
 
-def button_execute_callback(channel):
-    """
-    콜백에서는 '누르기 시작' 시간만 기록.
-    - 눌린 시각 기록
-    - is_down = True
-    실제 길게/짧게/모드 전환 판단은 메인 루프에서,
-    버튼이 '떨어지는 시점'을 폴링으로 체크.
-    """
-    global last_time_button_execute_pressed, execute_press_time, execute_is_down, execute_long_handled
-    now = time.time()
-    last_time_button_execute_pressed = now
-    execute_press_time = now
-    execute_is_down = True
-    execute_long_handled = False  # 새 눌림 시작 시 long 처리 플래그 리셋
-
-# 자동 모드와 수동 모드 아이콘 대신 문자열 사용
-auto_mode_text = 'A'
-manual_mode_text = 'M'
-
-# GPIO 설정
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.FALLING, callback=button_next_callback, bouncetime=100)
-GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.FALLING, callback=button_execute_callback, bouncetime=100)
+
+GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_next_edge, bouncetime=40)
+GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.BOTH, callback=button_execute_edge, bouncetime=40)
+
 GPIO.setup(LED_SUCCESS, GPIO.OUT)
 GPIO.setup(LED_ERROR, GPIO.OUT)
 GPIO.setup(LED_ERROR1, GPIO.OUT)
 
-# 연결 상태를 추적하기 위한 변수
-connection_success = False
-connection_failed_since_last_success = False
-last_stm32_check_time = 0.0  # STM32 체크 주기 제한용
 
-# ---------------- STM32 / 배터리 ----------------
+def git_head_hash():
+    rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "rev-parse", "HEAD"], timeout=1.2)
+    if rc != 0:
+        return None
+    v = (out or "").strip()
+    return v if v else None
 
-def check_stm32_connection():
-    """
-    STM32 연결 상태 확인.
-    display_lock을 잡지 않고 실행하고,
-    너무 자주 돌지 않도록 메인 루프에서 주기 제한.
-    """
-    global connection_success, connection_failed_since_last_success, is_command_executing
 
-    if is_command_executing:
+def git_branch_name():
+    rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "rev-parse", "--abbrev-ref", "HEAD"], timeout=1.2)
+    if rc != 0:
+        return None
+    v = (out or "").strip()
+    if not v or v == "HEAD":
+        return None
+    return v
+
+
+def git_has_origin():
+    rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "remote"], timeout=1.2)
+    if rc != 0:
+        return False
+    remotes = [x.strip() for x in (out or "").splitlines() if x.strip()]
+    return "origin" in remotes
+
+
+def git_upstream_hash():
+    rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "rev-parse", "@{u}"], timeout=1.2)
+    if rc != 0:
+        return None
+    v = (out or "").strip()
+    return v if v else None
+
+
+def git_has_remote_updates_light(timeout=2.2) -> bool:
+    if not os.path.isdir(GIT_REPO_DIR):
+        return False
+    if not git_has_origin():
         return False
 
-    try:
-        command = [
-            "sudo", "openocd",
-            "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-            "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-            "-c", "init",
-            "-c", "exit"
-        ]
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    b = git_branch_name()
+    lh = git_head_hash()
+    if not b or not lh:
+        return False
 
-        if result.returncode == 0:
-            if connection_failed_since_last_success:
-                print("STM32 재연결 성공")
-                connection_success = True
-                connection_failed_since_last_success = False
+    rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "ls-remote", "origin", f"refs/heads/{b}"], timeout=timeout)
+    if rc == 0:
+        lines = (out or "").strip().splitlines()
+        if lines:
+            rh = (lines[0].split() or [""])[0].strip()
+            if rh:
+                return rh != lh
+
+    run_quiet(["git", "-C", GIT_REPO_DIR, "remote", "update"], timeout=3.8)
+    uh = git_upstream_hash()
+    if not uh:
+        return False
+    return uh != lh
+
+
+def git_poll_thread():
+    prev = None
+    while not st.stop_threads:
+        try:
+            if not st.cached_online:
+                with st.git_state_lock:
+                    st.git_has_update_cached = False
+                time.sleep(0.6)
+                continue
+
+            now = time.time()
+            if now - st.git_last_check < st.git_check_interval:
+                time.sleep(0.15)
+                continue
+
+            st.git_last_check = now
+
+            with st.wifi_action_lock:
+                wifi_running = st.wifi_action_running
+
+            if wifi_running or st.is_executing or st.is_command_executing:
+                time.sleep(0.2)
+                continue
+
+            ok = False
+            try:
+                ok = git_has_remote_updates_light(timeout=2.2)
+            except Exception:
+                ok = False
+
+            with st.git_state_lock:
+                st.git_has_update_cached = bool(ok)
+
+            if prev is None or prev != ok:
+                prev = ok
+                if is_root_menu_view():
+                    refresh_root_menu(reset_index=False)
+                st.need_update = True
+
+            time.sleep(0.15)
+        except Exception:
+            time.sleep(0.5)
+
+
+def nm_is_active():
+    rc, out, _ = run_capture(["systemctl", "is-active", "NetworkManager"], timeout=2.0)
+    return (rc == 0) and ("active" in out.strip())
+
+
+def nm_restart():
+    run_quiet(["sudo", "systemctl", "enable", "--now", "NetworkManager"], timeout=6.0)
+    run_quiet(["sudo", "systemctl", "restart", "NetworkManager"], timeout=6.0)
+
+
+def nm_set_managed(managed: bool):
+    v = "yes" if managed else "no"
+    run_quiet(["sudo", "nmcli", "dev", "set", "wlan0", "managed", v], timeout=4.0)
+
+
+def nm_disconnect_wlan0():
+    run_quiet(["sudo", "nmcli", "dev", "disconnect", "wlan0"], timeout=4.0)
+
+
+def nm_get_active_wifi_profile():
+    rc, out, _ = run_capture(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"], timeout=3.0)
+    if rc != 0:
+        return None
+    for line in out.splitlines():
+        parts = line.strip().split(":")
+        if len(parts) >= 3:
+            name, ctype, dev = parts[0], parts[1], parts[2]
+            if ctype == "wifi" and dev == "wlan0" and name:
+                return name
+    return None
+
+
+def nm_autoconnect(timeout=25):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if has_real_internet():
+            return True
+        time.sleep(0.7)
+    return has_real_internet()
+
+
+def nm_connect(ssid: str, psk: str, timeout=30):
+    run_quiet(["sudo", "nmcli", "dev", "wifi", "rescan", "ifname", "wlan0"], timeout=6.0)
+    if psk:
+        cmd = ["sudo", "nmcli", "--wait", str(int(timeout)), "dev", "wifi", "connect", ssid, "password", psk, "ifname", "wlan0"]
+    else:
+        cmd = ["sudo", "nmcli", "--wait", str(int(timeout)), "dev", "wifi", "connect", ssid, "ifname", "wlan0"]
+    rc, _, _ = run_capture(cmd, timeout=timeout + 5)
+    if rc == 0:
+        return True
+    run_quiet(["sudo", "nmcli", "dev", "wifi", "rescan", "ifname", "wlan0"], timeout=6.0)
+    rc2, _, _ = run_capture(cmd, timeout=timeout + 5)
+    return rc2 == 0
+
+
+def nm_up_profile(nm_id: str, timeout=20) -> bool:
+    if not nm_id:
+        return False
+    rc, _, _ = run_capture(["sudo", "nmcli", "--wait", str(int(timeout)), "connection", "up", "id", nm_id], timeout=timeout + 2)
+    return rc == 0
+
+
+def wpa_select_saved_ssid(ssid: str) -> bool:
+    if not ssid:
+        return False
+    rc, out, _ = run_capture(["sudo", "wpa_cli", "-i", "wlan0", "list_networks"], timeout=4.0)
+    if rc != 0:
+        return False
+
+    net_id = None
+    for line in (out or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("network id"):
+            continue
+        parts = re.split(r"\t+", line)
+        if len(parts) >= 2 and parts[1] == ssid:
+            net_id = parts[0]
+            break
+
+    if net_id is None:
+        return False
+
+    run_quiet(["sudo", "wpa_cli", "-i", "wlan0", "select_network", net_id], timeout=3.0)
+    run_quiet(["sudo", "wpa_cli", "-i", "wlan0", "enable_network", net_id], timeout=3.0)
+    run_quiet(["sudo", "wpa_cli", "-i", "wlan0", "reconfigure"], timeout=4.0)
+    run_quiet(["sudo", "dhclient", "-r", "wlan0"], timeout=6.0)
+    run_quiet(["sudo", "dhclient", "wlan0"], timeout=10.0)
+    return True
+
+
+def kill_portal_tmp_procs():
+    cmd = r"""sudo bash -lc '
+pids=$(pgrep -a hostapd | awk "/\/tmp\/hostapd\.conf/{print \$1}" | xargs)
+[ -n "$pids" ] && kill -9 $pids || true
+pids=$(pgrep -a dnsmasq | awk "/\/tmp\/dnsmasq\.conf/{print \$1}" | xargs)
+[ -n "$pids" ] && kill -9 $pids || true
+' """
+    run_quiet(cmd, timeout=6.0, shell=True)
+
+
+def wlan0_soft_reset():
+    run_quiet(["sudo", "ip", "addr", "flush", "dev", "wlan0"], timeout=3.0)
+    run_quiet(["sudo", "ip", "link", "set", "wlan0", "down"], timeout=3.0)
+    time.sleep(1)
+    run_quiet(["sudo", "ip", "link", "set", "wlan0", "up"], timeout=3.0)
+    time.sleep(1)
+
+
+def request_wifi_setup():
+    with st.wifi_action_lock:
+        st.wifi_action_requested = True
+
+
+def prepare_for_ap_mode():
+    try:
+        prof = nm_get_active_wifi_profile()
+        if prof:
+            st.last_good_wifi_profile = prof
+    except Exception:
+        pass
+
+    if nm_is_active():
+        nm_disconnect_wlan0()
+        nm_set_managed(False)
+        time.sleep(0.3)
+
+
+def restore_after_ap_mode(timeout=25):
+    wifi_stage_set(5, "WiFi 종료 중", "프로세스 정리")
+    kill_portal_tmp_procs()
+    run_quiet(["sudo", "systemctl", "stop", "hostapd"], timeout=3.0)
+    run_quiet(["sudo", "systemctl", "stop", "dnsmasq"], timeout=3.0)
+    wifi_stage_set(25, "WiFi 재시작", "인터페이스 초기화")
+    wlan0_soft_reset()
+    wifi_stage_set(45, "WiFi 재시작", "NetworkManager")
+    nm_set_managed(True)
+    nm_restart()
+    time.sleep(1.2)
+
+    if st.last_good_wifi_profile:
+        wifi_stage_set(60, "재연결 중", st.last_good_wifi_profile[:18])
+        run_quiet(["sudo", "nmcli", "connection", "up", st.last_good_wifi_profile], timeout=12.0)
+
+    wifi_stage_set(75, "인터넷 확인", "")
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if has_real_internet():
+            wifi_stage_set(100, "완료", "")
+            time.sleep(0.4)
+            wifi_stage_clear()
+            return True
+        p = 75 + int(25 * ((time.time() - t0) / max(1.0, timeout)))
+        wifi_stage_set(min(99, p), "인터넷 확인", "")
+        time.sleep(0.35)
+
+    ok = has_real_internet()
+    wifi_stage_set(100 if ok else 0, "완료" if ok else "실패", "")
+    time.sleep(0.6)
+    wifi_stage_clear()
+    return ok
+
+
+def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
+    wifi_stage_set(10, "연결 준비", "AP 종료")
+    portal_set_state_safe(connect_stage="연결 준비 중…", last_error="", last_ok="")
+
+    try:
+        if hasattr(wifi_portal, "stop_ap"):
+            wifi_portal.stop_ap()
+    except Exception:
+        pass
+
+    kill_portal_tmp_procs()
+    run_quiet(["sudo", "systemctl", "stop", "hostapd"], timeout=3.0)
+    run_quiet(["sudo", "systemctl", "stop", "dnsmasq"], timeout=3.0)
+
+    wifi_stage_set(30, "연결 준비", "인터페이스 초기화")
+    portal_set_state_safe(connect_stage="인터페이스 초기화 중…")
+    wlan0_soft_reset()
+
+    wifi_stage_set(50, "연결 준비", "NetworkManager")
+    portal_set_state_safe(connect_stage="NetworkManager 준비 중…")
+    nm_set_managed(True)
+    nm_restart()
+    time.sleep(1.5)
+
+    wifi_stage_set(70, "WiFi 연결 중", ssid[:18])
+    portal_set_state_safe(connect_stage="무선 연결 시도 중…")
+    ok = nm_connect(ssid, psk, timeout=timeout)
+    if not ok:
+        portal_set_state_safe(last_error="연결 실패", connect_stage="")
+        wifi_stage_set(0, "연결 실패", "")
+        time.sleep(0.8)
+        wifi_stage_clear()
+        return False
+
+    wifi_stage_set(85, "인터넷 확인", "")
+    portal_set_state_safe(connect_stage="인터넷 확인 중…")
+    ok2 = nm_autoconnect(timeout=20)
+
+    if ok2:
+        portal_set_state_safe(last_ok="연결 완료", last_error="", connect_stage="연결 완료")
+    else:
+        portal_set_state_safe(last_error="인터넷 확인 실패", connect_stage="")
+
+    wifi_stage_set(100 if ok2 else 0, "완료" if ok2 else "실패", "")
+    time.sleep(0.6)
+    wifi_stage_clear()
+    return ok2
+
+
+def portal_loop_until_connected_or_cancel():
+    prepare_for_ap_mode()
+    wifi_stage_clear()
+    portal_set_state_safe(last_error="", last_ok="", connect_stage="설정 모드 시작", running=True, done=False)
+    wifi_portal.start_ap()
+
+    try:
+        state_obj = getattr(wifi_portal, "_state", {})
+        if isinstance(state_obj, dict) and (not state_obj.get("server_started", False)):
+            wifi_portal.run_portal(block=False)
+            state_obj["server_started"] = True
+            portal_set_state_safe(server_started=True)
+    except Exception:
+        try:
+            wifi_portal.run_portal(block=False)
+        except Exception:
+            pass
+
+    t0 = time.time()
+    while True:
+        if st.wifi_cancel_requested:
+            portal_set_state_safe(connect_stage="취소 처리 중…")
+            try:
+                if hasattr(wifi_portal, "stop_ap"):
+                    wifi_portal.stop_ap()
+            except Exception:
+                pass
+            return "cancel"
+
+        req = None
+        try:
+            state_obj = getattr(wifi_portal, "_state", {})
+            if isinstance(state_obj, dict):
+                req = state_obj.get("requested")
+        except Exception:
+            req = None
+
+        if not req:
+            req = portal_pop_req_safe()
+            if req and isinstance(getattr(wifi_portal, "_state", None), dict):
+                try:
+                    wifi_portal._state["requested"] = req
+                except Exception:
+                    pass
+
+        if req:
+            portal_clear_req_safe()
+
+            mode = (req.get("mode") or "new").strip().lower()
+            src = (req.get("src") or "").strip().lower()
+            ssid = (req.get("ssid") or "").strip()
+            psk = (req.get("psk") or "").strip()
+            nm_id = (req.get("nm_id") or "").strip()
+
+            ok = False
+            if mode == "saved":
+                wifi_stage_set(60, "저장된 WiFi", "연결 시도")
+                portal_set_state_safe(connect_stage="저장된 설정으로 연결 중…", last_error="", last_ok="")
+                if src == "nm" and nm_id:
+                    wlan0_soft_reset()
+                    nm_set_managed(True)
+                    nm_restart()
+                    time.sleep(1.0)
+                    portal_set_state_safe(connect_stage="NetworkManager 연결 시도 중…")
+                    ok = nm_up_profile(nm_id, timeout=20) and nm_autoconnect(timeout=20)
+                elif src == "wpa" and ssid:
+                    wlan0_soft_reset()
+                    portal_set_state_safe(connect_stage="wpa_supplicant 연결 시도 중…")
+                    ok = wpa_select_saved_ssid(ssid) and nm_autoconnect(timeout=20)
+                else:
+                    ok = False
             else:
-                print("STM32 연결 성공")
-                connection_success = True
-        else:
-            print("STM32 연결 실패:", result.stderr)
-            connection_failed_since_last_success = True
-            connection_success = False
+                if ssid:
+                    ok = connect_from_portal_nm(ssid, psk, timeout=35)
 
-        return connection_success
+            if ok:
+                portal_set_state_safe(last_ok="연결 완료", last_error="", connect_stage="연결 완료", running=False, done=True)
+                return True
 
-    except Exception as e:
-        print(f"STM32 연결 체크 중 오류 발생: {e}")
-        connection_failed_since_last_success = True
-        connection_success = False
-        return False
+            portal_set_state_safe(last_error="연결 실패", connect_stage="", running=True, done=False)
+            prepare_for_ap_mode()
+            wifi_stage_clear()
+            wifi_portal.start_ap()
 
-# ---------------- OLED / 폰트 ----------------
+        if time.time() - t0 > 600:
+            portal_set_state_safe(last_error="시간 초과", connect_stage="", running=False)
+            return False
 
-serial = i2c(port=1, address=0x3C)
-device = sh1107(serial, rotate=1)
+        time.sleep(0.2)
 
-font_path = '/usr/share/fonts/truetype/malgun/malgunbd.ttf'
-font_big = ImageFont.truetype(font_path, 12)
-font_s = ImageFont.truetype(font_path, 13)
-font_st = ImageFont.truetype(font_path, 11)
-font = ImageFont.truetype(font_path, 17)
-font_status = ImageFont.truetype(font_path, 13)
-font_1 = ImageFont.truetype(font_path, 21)   # 일반 메뉴(펌웨어 .bin)용
-font_sysupdate = ImageFont.truetype(font_path, 17)  # 시스템 업데이트 전용 더 작은 폰트
-font_time = ImageFont.truetype(font_path, 12)
 
-# 배터리 아이콘 로드 (지금은 모두 같은 이미지 사용)
-low_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-medium_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-high_battery_icon = Image.open("/home/user/stm32/img/bat.png")
-full_battery_icon = Image.open("/home/user/stm32/img/bat.png")
+def wifi_worker_thread():
+    while not st.stop_threads:
+        do = False
+        with st.wifi_action_lock:
+            if st.wifi_action_requested and (not st.wifi_action_running):
+                st.wifi_action_requested = False
+                st.wifi_action_running = True
+                do = True
 
-def select_battery_icon(percentage):
-    if percentage < 20:
-        return low_battery_icon
-    elif percentage < 60:
-        return medium_battery_icon
-    elif percentage < 100:
-        return high_battery_icon
-    else:
-        return full_battery_icon
+        if do:
+            try:
+                st.wifi_cancel_requested = False
+                wifi_stage_clear()
+                with st.ap_state_lock:
+                    st.ap_state["last_clients"] = 0
+                    st.ap_state["flash_until"] = 0.0
+                    st.ap_state["poll_next"] = 0.0
+                    st.ap_state["spinner"] = 0
 
-# -------------------------------
-#  펌웨어 폴더 자동 스캔 + 폴더 메뉴
-# -------------------------------
-FIRMWARE_DIR = "/home/user/stm32/Program"
+                portal_set_state_safe(last_error="", last_ok="", connect_stage="설정 시작 준비…", running=True, done=False)
 
-def parse_order_and_name(name: str, is_dir: bool):
-    """
-    '1.부트로더.bin' / '1.ORG.bin' / '2.HMDS' (폴더) 같은 이름에서
-    앞의 숫자와 표시 이름을 분리해준다.
+                r1 = subprocess.run(["which", "hostapd"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                r2 = subprocess.run(["which", "dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-    - 파일(bin)  : 확장자(.bin) 제거 후 번호/이름 파싱
-    - 폴더(dir)  : 전체 이름 그대로 번호/이름 파싱
-    숫자가 없으면 order=9999로 뒤에 정렬.
-    """
-    if is_dir:
-        raw = name          # 예: '2.HMDS' 그대로 사용
-    else:
-        raw = os.path.splitext(name)[0]  # 파일은 확장자 제거 ('1.ORG.bin' → '1.ORG')
+                if (r1.returncode != 0) or (r2.returncode != 0):
+                    st.status_message = "AP 구성 불가"
+                    st.message_position = (12, 10)
+                    st.message_font_size = 15
+                    st.need_update = True
+                    portal_set_state_safe(last_error="hostapd/dnsmasq 없음", connect_stage="", running=False)
+                    time.sleep(2.0)
+                else:
+                    st.status_message = ""
+                    st.need_update = True
 
-    m = re.match(r'^(\d+)\.(.*)$', raw)
-    if m:
-        order = int(m.group(1))
-        display = m.group(2).lstrip()
-    else:
-        order = 9999
-        display = raw
-    return order, display
+                    result = portal_loop_until_connected_or_cancel()
+                    refresh_root_menu(reset_index=True)
+                    enter_ui_transition(0.10)
+                    st.need_update = True
 
-def build_menu_for_dir(dir_path, is_root=False):
-   
-    entries = []  # (order, type_pri, display, type, extra)
+                    if result == "cancel":
+                        wifi_stage_set(10, "취소 처리중", "재연결 준비")
+                        portal_set_state_safe(connect_stage="취소 처리 중…", last_error="취소됨", last_ok="")
+                        ok_restore = restore_after_ap_mode(timeout=25)
+                        text_stage("재연결 완료" if ok_restore else "재연결 실패", "")
+                        time.sleep(1.0)
+                        clear_ui_override()
+                        wifi_stage_clear()
+                        portal_set_state_safe(connect_stage="", running=False)
+                    elif result is True:
+                        text_stage("WiFi 연결 완료", "")
+                        time.sleep(1.1)
+                        clear_ui_override()
+                        wifi_stage_clear()
+                        portal_set_state_safe(last_ok="연결 완료", last_error="", connect_stage="연결 완료", running=False, done=True)
+                    else:
+                        text_stage("WiFi 연결 실패", "")
+                        time.sleep(1.1)
+                        clear_ui_override()
+                        wifi_stage_clear()
+                        portal_set_state_safe(last_error="연결 실패", connect_stage="", running=False)
 
+                st.status_message = ""
+                st.need_update = True
+            finally:
+                with st.wifi_action_lock:
+                    st.wifi_action_running = False
+
+        time.sleep(0.05)
+
+
+def get_ap_station_count():
     try:
-        for fname in os.listdir(dir_path):
-            full_path = os.path.join(dir_path, fname)
+        r = subprocess.run(["iw", "dev", "wlan0", "station", "dump"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.7)
+        if r.returncode != 0:
+            return 0
+        return sum(1 for line in (r.stdout or "").splitlines() if line.strip().startswith("Station "))
+    except Exception:
+        return 0
 
-            # 1) 디렉토리인 경우
-            if os.path.isdir(full_path):
-                order, display_name = parse_order_and_name(fname, is_dir=True)
-                # 폴더 표시: ► 폴더명
-                display_name = "▶ " + display_name
-                entries.append((order, 0, display_name, "dir", full_path))
 
-            # 2) .bin 파일인 경우
-            elif fname.lower().endswith(".bin"):
-                order, display_name = parse_order_and_name(fname, is_dir=False)
-                openocd_cmd = (
-                    "sudo openocd "
-                    "-f /usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg "
-                    "-f /usr/local/share/openocd/scripts/target/stm32f1x.cfg "
-                    f"-c \"program {full_path} verify reset exit 0x08000000\""
-                )
-                entries.append((order, 1, display_name, "bin", openocd_cmd))
+def ap_client_tick(wifi_running: bool):
+    now = time.time()
+    with st.ap_state_lock:
+        st.ap_state["spinner"] = (st.ap_state["spinner"] + 1) % 4
+        if not wifi_running:
+            st.ap_state["last_clients"] = 0
+            st.ap_state["flash_until"] = 0.0
+            st.ap_state["poll_next"] = 0.0
+            return
+        if now < st.ap_state["poll_next"]:
+            return
+        st.ap_state["poll_next"] = now + 0.8
+        prev = st.ap_state["last_clients"]
 
-    except FileNotFoundError:
-        print("펌웨어 폴더를 찾을 수 없습니다:", dir_path)
-        entries = []
+    cnt = get_ap_station_count()
 
-    # 정렬: 번호(order) → 타입(폴더/파일) → 이름
-    entries.sort(key=lambda x: (x[0], x[1], x[2]))
+    with st.ap_state_lock:
+        st.ap_state["last_clients"] = cnt
+        if cnt > 0 and prev == 0:
+            st.ap_state["flash_until"] = now + 1.3
 
-    commands_local = []
-    names_local = []
-    types_local = []
-    extras_local = []
 
-    for order, type_pri, display_name, item_type, extra in entries:
-        if item_type == "dir":
-            commands_local.append(None)         # 폴더는 실제 실행 명령 없음
-            names_local.append(display_name)
-            types_local.append("dir")
-            extras_local.append(extra)         # extra 에 하위 디렉토리 경로 저장
-        elif item_type == "bin":
-            commands_local.append(extra)       # openocd_cmd
-            names_local.append(display_name)
-            types_local.append("bin")
-            extras_local.append(None)
+def realtime_update_display():
+    while not st.stop_threads:
+        with st.wifi_action_lock:
+            wifi_running = st.wifi_action_running
 
-    # 루트 / 서브에 따라 마지막 항목 추가
-    if is_root:
-        commands_local.append("git_pull")
-        names_local.append("시스템 업데이트")
-        types_local.append("system")
-        extras_local.append(None)
-    else:
-        commands_local.append(None)
-        names_local.append("◀ 이전으로")
-        types_local.append("back")
-        extras_local.append(None)
+        wifi_stage_tick()
+        ap_client_tick(wifi_running)
 
-    menu = {
-        "dir": dir_path,
-        "commands": commands_local,
-        "names": names_local,
-        "types": types_local,
-        "extras": extras_local,
-    }
+        now = time.time()
 
-    print(f"로딩된 메뉴 ({dir_path}):", names_local)
-    return menu
+        with button_state_lock:
+            next_is_down_now = st.next_is_down
+            execute_is_down_now = st.execute_is_down
 
-# 초기 메뉴 로딩 (루트)
-current_menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
-commands = current_menu["commands"]
-command_names = current_menu["names"]
-command_types = current_menu["types"]
-menu_extras = current_menu["extras"]
-current_command_index = 0
+        if st.scan_menu_dirty and st.current_menu and st.current_menu.get("dir") == "__scan__":
+            if (not next_is_down_now) and (not execute_is_down_now):
+                if now - st.scan_menu_rebuild_last >= SCAN_MENU_REBUILD_MIN_SEC:
+                    st.scan_menu_rebuild_last = now
+                    with st.scan_lock:
+                        st.scan_menu_dirty = False
+                        ips_now = list(st.scan_ips)
+                        sel_ip = st.scan_selected_ip
 
-# ---------------- git pull / 진행바 ----------------
+                    nm = build_scan_menu()
+                    st.current_menu = nm
+                    st.commands = nm["commands"]
+                    st.command_names = nm["names"]
+                    st.command_types = nm["types"]
+                    st.menu_extras = nm["extras"]
 
-def display_progress_and_message(percentage, message, message_position=(0, 0), font_size=17):
-    with canvas(device) as draw:
-        draw.text(message_position, message, font=font, fill=255)
-        draw.rectangle([(10, 50), (110, 60)], outline="white", fill="black")
-        draw.rectangle([(10, 50), (10 + percentage, 60)], outline="white", fill="white")
+                    if sel_ip and (sel_ip in ips_now):
+                        new_idx = ips_now.index(sel_ip)
+                        st.current_command_index = new_idx
+                        with st.scan_lock:
+                            st.scan_selected_idx = new_idx
+                    else:
+                        if st.current_command_index >= len(st.commands):
+                            st.current_command_index = max(0, len(st.commands) - 1)
+
+                    enter_ui_transition(0.05)
+                    st.need_update = True
+
+        if st.need_update or (now - st.last_oled_update_time >= 0.05):
+            with oled_refresh_lock:
+                update_oled_display()
+                st.last_oled_update_time = now
+                st.need_update = False
+
+        time.sleep(0.005)
+
+
+def get_wifi_level():
+    try:
+        rc, out, _ = run_capture(["iw", "dev", "wlan0", "link"], timeout=0.6)
+        if rc != 0 or "Not connected" in out:
+            return 0
+        r = subprocess.run(["iwconfig", "wlan0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.6)
+        m = re.search(r"Signal level=(-?\d+)\s*dBm", r.stdout)
+        if not m:
+            return 0
+        dbm = int(m.group(1))
+        if dbm >= -55:
+            return 4
+        if dbm >= -65:
+            return 3
+        if dbm >= -75:
+            return 2
+        if dbm >= -85:
+            return 1
+        return 0
+    except Exception:
+        return 0
+
+
+def net_poll_thread():
+    while not st.stop_threads:
+        try:
+            st.cached_ip = get_ip_address()
+            online_now = has_real_internet()
+            st.cached_online = online_now
+            st.cached_wifi_level = get_wifi_level() if online_now else 0
+
+            if st.last_menu_online is None or online_now != st.last_menu_online:
+                st.last_menu_online = online_now
+                if is_root_menu_view():
+                    refresh_root_menu(reset_index=False)
+                st.need_update = True
+
+            time.sleep(1.5)
+        except Exception:
+            time.sleep(0.8)
+
 
 def git_pull():
-    shell_script_path = '/home/user/stm32/git-pull.sh'
+    shell_script_path = "/home/user/stm32/git-pull.sh"
     if not os.path.isfile(shell_script_path):
-        with open(shell_script_path, 'w') as script_file:
+        with open(shell_script_path, "w") as script_file:
             script_file.write("#!/bin/bash\n")
             script_file.write("cd /home/user/stm32\n")
             script_file.write("git remote update\n")
@@ -384,80 +823,71 @@ def git_pull():
             os.fsync(script_file.fileno())
 
     os.chmod(shell_script_path, 0o755)
-
-    with canvas(device) as draw:
-        draw.text((36, 8), "시스템", font=font, fill=255)
-        draw.text((17, 27), "업데이트 중", font=font, fill=255)
+    text_stage("시스템", "업데이트 중", pos=(20, 10))
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
 
         if result.returncode == 0:
-            if "이미 최신 상태" in result.stdout:
-                display_progress_and_message(100, "이미 최신 상태", message_position=(10, 10), font_size=15)
-                time.sleep(1)
+            if "이미 최신 상태" in (result.stdout or ""):
+                text_stage("이미 최신 상태", "")
+                time.sleep(1.0)
             else:
-                print("업데이트 성공!")
                 GPIO.output(LED_SUCCESS, True)
-                display_progress_and_message(100, "업데이트 성공!", message_position=(10, 10), font_size=15)
-                time.sleep(1)
+                text_stage("업데이트 성공!", "")
+                time.sleep(1.0)
                 GPIO.output(LED_SUCCESS, False)
                 restart_script()
         else:
-            print("GitHub 업데이트 실패. 오류 코드:", resultreturncode)
-            print("오류 메시지:", result.stderr)
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(0, 10), font_size=15)
-            time.sleep(1)
-    except Exception as e:
-        print("명령 실행 중 오류 발생:", str(e))
+            text_stage("업데이트 실패", "")
+            time.sleep(1.2)
+    except Exception:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        display_progress_and_message(0, "명령 실행 중 오류 발생", message_position=(0, 10), font_size=15)
-        time.sleep(1)
+        text_stage("오류 발생", "")
+        time.sleep(1.2)
     finally:
+        with st.git_state_lock:
+            st.git_has_update_cached = False
+        st.git_last_check = 0.0
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
 
-# ---------------- 메모리 잠금/해제 ----------------
 
 def unlock_memory():
-    with display_lock:
-        print("메모리 해제 시도...")
-
-    display_progress_and_message(0, "메모리 잠금\n   해제 중", message_position=(18, 0), font_size=15)
-
-    openocd_command = [
-        "sudo", "openocd",
-        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", "init",
-        "-c", "reset halt",
-        "-c", "stm32f1x unlock 0",
-        "-c", "reset run",
-        "-c", "shutdown"
-    ]
-    result = subprocess.run(openocd_command)
-
-    if result.returncode == 0:
-        display_progress_and_message(30, "메모리 잠금\n 해제 성공!", message_position=(20, 0), font_size=15)
-        time.sleep(1)
+    if has_recent_unlock():
+        progress_stage(32, "업데이트 진행 중", "잠금 해제 생략")
+        time.sleep(0.10)
         return True
-    else:
-        display_progress_and_message(0, "메모리 잠금\n 해제 실패!", message_position=(20, 0), font_size=15)
-        time.sleep(1)
-        global need_update
-        need_update = True
-        return False
+
+    progress_stage(32, "업데이트 진행 중", "잠금 해제 중")
+
+    ok = run_openocd_ok(
+        ["init", "reset halt", "stm32f1x unlock 0", "reset run", "shutdown"],
+        timeout=STM32_UNLOCK_TIMEOUT_SEC,
+    )
+    mark_recent_unlock(ok)
+
+    if ok:
+        progress_stage(40, "업데이트 진행 중", "잠금 해제 완료")
+        time.sleep(0.15)
+        return True
+
+    progress_stage(0, "업데이트 실패", "잠금 해제 실패")
+    time.sleep(0.35)
+    return False
+
 
 def restart_script():
-    print("스크립트를 재시작합니다.")
-    display_progress_and_message(25, "재시작 중", message_position=(20, 10), font_size=15)
+    progress_stage(25, "재시작 중", "")
 
     def restart():
         time.sleep(1)
@@ -465,395 +895,589 @@ def restart_script():
 
     threading.Thread(target=restart, daemon=True).start()
 
+
 def lock_memory_procedure():
-    global need_update
-    display_progress_and_message(80, "메모리 잠금 중", message_position=(3, 10), font_size=15)
-    openocd_command = [
-        "sudo",
-        "openocd",
-        "-f", "/usr/local/share/openocd/scripts/interface/raspberrypi-native.cfg",
-        "-f", "/usr/local/share/openocd/scripts/target/stm32f1x.cfg",
-        "-c", "init",
-        "-c", "reset halt",
-        "-c", "stm32f1x lock 0",
-        "-c", "reset run",
-        "-c", "shutdown",
-    ]
+    if not is_memory_lock_enabled():
+        text_stage("메모리 잠금", "건너뜀", pos=(18, 18))
+        time.sleep(0.30)
+        clear_ui_override()
+        st.need_update = True
+        return
+
+    progress_stage(88, "업데이트 진행 중", "마무리 중")
     try:
-        result = subprocess.run(openocd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode == 0:
-            print("성공적으로 메모리를 잠갔습니다.")
+        ok = run_openocd_ok(
+            ["init", "reset halt", "stm32f1x lock 0", "reset run", "shutdown"],
+            timeout=STM32_LOCK_TIMEOUT_SEC,
+        )
+        if ok:
             GPIO.output(LED_SUCCESS, True)
-            display_progress_and_message(100, "메모리 잠금\n    성공", message_position=(20, 0), font_size=15)
-            time.sleep(1)
+            progress_stage(100, "업데이트 완료", "")
+            time.sleep(0.35)
             GPIO.output(LED_SUCCESS, False)
         else:
-            print("메모리 잠금에 실패했습니다. 오류 코드:", resultreturncode)
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            display_progress_and_message(0, "메모리 잠금\n    실패", message_position=(20, 0), font_size=15)
-            time.sleep(1)
-            GPIO.output(LED_ERROR, False)
-            GPIO.output(LED_ERROR1, False)
-    except Exception as e:
-        print("명령 실행 중 오류 발생:", str(e))
+            progress_stage(0, "업데이트 실패", "잠금 실패")
+            time.sleep(0.45)
+    except Exception:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        display_progress_and_message(0, "오류 발생")
-        time.sleep(1)
+        progress_stage(0, "오류 발생", "")
+        time.sleep(0.45)
+    finally:
+        GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
-    finally:
-        need_update = True
+        st.need_update = True
 
-# ---------------- 메뉴 실행 ----------------
+
+def shutdown_system():
+    text_stage("배터리 부족", "시스템 종료 중...", pos=(10, 18))
+    time.sleep(2)
+    try:
+        os.system("sudo shutdown -h now")
+    except Exception:
+        pass
+
 
 def execute_command(command_index):
-    global is_executing, is_command_executing
-    global current_menu, commands, command_names, command_types, menu_extras
-    global current_command_index, menu_stack, need_update
-
-    is_executing = True
-    is_command_executing = True
-
-    if not commands:
-        is_executing = False
-        is_command_executing = False
+    if not st.command_types or command_index < 0 or command_index >= len(st.command_types):
         return
 
-    item_type = command_types[command_index]
-    print("[EXECUTE] index:", command_index, "type:", item_type,
-          "name:", command_names[command_index])
+    item_type = st.command_types[command_index]
 
-    # 1) 폴더 진입
+    if item_type == "wifi":
+        request_wifi_setup()
+        enter_ui_transition(0.08)
+        st.need_update = True
+        return
+
+    st.is_executing = True
+    st.is_command_executing = True
+
+    if not st.commands:
+        st.is_executing = False
+        st.is_command_executing = False
+        return
+
+    if item_type == "device_scan":
+        myip = get_ip_address()
+        with st.scan_lock:
+            st.scan_active = True
+            st.scan_done = False
+            st.scan_selected_idx = 0
+            st.scan_selected_ip = None
+            st.scan_infos.clear()
+            st.scan_seen.clear()
+            st.scan_ips = []
+            st.scan_base_prefix = scan_compute_prefix(myip)
+            st.scan_menu_dirty = True
+            st.scan_menu_dirty_ts = time.time()
+        with st.scan_detail_lock:
+            st.scan_detail_active = False
+            st.scan_detail_ip = None
+
+        st.menu_stack.append((st.current_menu, st.current_command_index))
+        st.current_menu = build_scan_menu()
+        st.commands = st.current_menu["commands"]
+        st.command_names = st.current_menu["names"]
+        st.command_types = st.current_menu["types"]
+        st.menu_extras = st.current_menu["extras"]
+        st.current_command_index = 0
+        enter_ui_transition(0.08)
+        clear_ui_override()
+        st.need_update = True
+        st.is_executing = False
+        st.is_command_executing = False
+        return
+
+    if item_type == "back_from_scan":
+        with st.scan_lock:
+            st.scan_active = False
+            st.scan_done = True
+            st.scan_selected_ip = None
+        with st.scan_detail_lock:
+            st.scan_detail_active = False
+            st.scan_detail_ip = None
+
+        if st.menu_stack:
+            prev_menu, prev_index = st.menu_stack.pop()
+            st.current_menu = prev_menu
+            st.commands = st.current_menu["commands"]
+            st.command_names = st.current_menu["names"]
+            st.command_types = st.current_menu["types"]
+            st.menu_extras = st.current_menu["extras"]
+            st.current_command_index = prev_index if (0 <= prev_index < len(st.commands)) else 0
+
+        enter_ui_transition(0.08)
+        clear_ui_override()
+        st.need_update = True
+        st.is_executing = False
+        st.is_command_executing = False
+        return
+
+    if item_type == "scan_item":
+        target_ip = st.menu_extras[command_index]
+        if not target_ip:
+            st.is_executing = False
+            st.is_command_executing = False
+            return
+
+        clear_ui_override()
+        with st.scan_lock:
+            st.scan_active = False
+            st.scan_done = True
+        with st.scan_detail_lock:
+            st.scan_detail_active = True
+            st.scan_detail_ip = target_ip
+
+        st.scan_detail["gas"] = None
+        st.scan_detail["flags"] = {"PWR": False, "A1": False, "A2": False, "FUT": False}
+        st.scan_detail["err"] = ""
+        st.scan_detail["ts"] = time.time()
+
+        st.menu_stack.append((st.current_menu, st.current_command_index))
+        st.current_menu = build_scan_detail_menu(target_ip)
+        st.commands = st.current_menu["commands"]
+        st.command_names = st.current_menu["names"]
+        st.command_types = st.current_menu["types"]
+        st.menu_extras = st.current_menu["extras"]
+        st.current_command_index = 0
+
+        enter_ui_transition(0.08)
+        st.need_update = True
+        st.is_executing = False
+        st.is_command_executing = False
+        return
+
+    if item_type == "scan_detail":
+        ip = None
+        try:
+            ip = st.menu_extras[command_index]
+        except Exception:
+            ip = None
+        if not ip:
+            st.is_executing = False
+            st.is_command_executing = False
+            return
+
+        clear_ui_override()
+        tftp_upgrade_device(ip)
+        with st.scan_lock:
+            st.scan_active = False
+            st.scan_done = True
+        with st.scan_detail_lock:
+            st.scan_detail_active = True
+            st.scan_detail_ip = ip
+
+        st.need_update = True
+        st.is_executing = False
+        st.is_command_executing = False
+        return
+
     if item_type == "dir":
-        subdir = menu_extras[command_index]
+        subdir = st.menu_extras[command_index]
         if subdir and os.path.isdir(subdir):
-            # 현재 메뉴와 선택 인덱스를 함께 스택에 저장
-            menu_stack.append((current_menu, current_command_index))
-
-            current_menu = build_menu_for_dir(subdir, is_root=False)
-            commands = current_menu["commands"]
-            command_names = current_menu["names"]
-            command_types = current_menu["types"]
-            menu_extras = current_menu["extras"]
-            # 서브 폴더 안에서는 맨 위부터 시작
-            current_command_index = 0
-            need_update = True
-
-        is_executing = False
-        is_command_executing = False
+            st.menu_stack.append((st.current_menu, st.current_command_index))
+            st.current_menu = build_menu_for_dir(subdir, is_root=False)
+            st.commands = st.current_menu["commands"]
+            st.command_names = st.current_menu["names"]
+            st.command_types = st.current_menu["types"]
+            st.menu_extras = st.current_menu["extras"]
+            st.current_command_index = 0
+            enter_ui_transition(0.08)
+            st.need_update = True
+        st.is_executing = False
+        st.is_command_executing = False
         return
 
-    # 2) 이전으로 (back)
     if item_type == "back":
-        if menu_stack:
-            # 저장해 둔 (메뉴, 인덱스) 튜플을 꺼냄
-            prev_menu, prev_index = menu_stack.pop()
-
-            current_menu = prev_menu
-            commands = current_menu["commands"]
-            command_names = current_menu["names"]
-            command_types = current_menu["types"]
-            menu_extras = current_menu["extras"]
-
-            # 원래 선택하던 인덱스로 복원 (범위 체크 포함)
-            if 0 <= prev_index < len(commands):
-                current_command_index = prev_index
-            else:
-                current_command_index = 0
-
-            need_update = True
-
-        is_executing = False
-        is_command_executing = False
+        if st.menu_stack:
+            prev_menu, prev_index = st.menu_stack.pop()
+            st.current_menu = prev_menu
+            st.commands = st.current_menu["commands"]
+            st.command_names = st.current_menu["names"]
+            st.command_types = st.current_menu["types"]
+            st.menu_extras = st.current_menu["extras"]
+            st.current_command_index = prev_index if (0 <= prev_index < len(st.commands)) else 0
+            enter_ui_transition(0.08)
+            st.need_update = True
+        st.is_executing = False
+        st.is_command_executing = False
         return
 
-    # 3) 시스템 업데이트
     if item_type == "system":
+        kill_openocd()
+        with st.stm32_state_lock:
+            st.connection_success = False
+            st.connection_failed_since_last_success = False
         git_pull()
-        need_update = True
-        is_executing = False
-        is_command_executing = False
+        refresh_root_menu(reset_index=True)
+        enter_ui_transition(0.08)
+        st.need_update = True
+        st.is_executing = False
+        st.is_command_executing = False
         return
 
-    # 4) 일반 bin 실행
-    print("업데이트 시도...")
+    if item_type == "script":
+        if not is_fw_extract_mode():
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            text_stage("FW 추출", "비활성화", pos=(15, 18))
+            time.sleep(1.0)
+            GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
+            clear_ui_override()
+            if is_root_menu_view():
+                refresh_root_menu(reset_index=False)
+            st.need_update = True
+            st.is_executing = False
+            st.is_command_executing = False
+            return
+
+        kill_openocd()
+        with st.stm32_state_lock:
+            st.connection_success = False
+            st.connection_failed_since_last_success = False
+
+        GPIO.output(LED_SUCCESS, False)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+
+        if not os.path.isfile(OUT_SCRIPT_PATH):
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            text_stage("out.py 없음", "")
+            time.sleep(1.0)
+            GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
+            clear_ui_override()
+            st.need_update = True
+            st.is_executing = False
+            st.is_command_executing = False
+            return
+
+        progress_stage(10, "실행 중", "")
+        try:
+            result = subprocess.run(st.commands[command_index], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode == 0:
+                GPIO.output(LED_SUCCESS, True)
+                progress_stage(100, "완료", "")
+                time.sleep(0.8)
+                GPIO.output(LED_SUCCESS, False)
+            else:
+                GPIO.output(LED_ERROR, True)
+                GPIO.output(LED_ERROR1, True)
+                progress_stage(0, "실패", "")
+                time.sleep(1.0)
+                GPIO.output(LED_ERROR, False)
+                GPIO.output(LED_ERROR1, False)
+        except Exception:
+            GPIO.output(LED_ERROR, True)
+            GPIO.output(LED_ERROR1, True)
+            progress_stage(0, "오류 발생", "")
+            time.sleep(1.0)
+            GPIO.output(LED_ERROR, False)
+            GPIO.output(LED_ERROR1, False)
+
+        clear_ui_override()
+        if is_root_menu_view():
+            refresh_root_menu(reset_index=False)
+
+        st.need_update = True
+        st.is_executing = False
+        st.is_command_executing = False
+        return
+
     GPIO.output(LED_SUCCESS, False)
     GPIO.output(LED_ERROR, False)
     GPIO.output(LED_ERROR1, False)
 
+    selected_path = None
+    try:
+        selected_path = st.menu_extras[command_index]
+    except Exception:
+        selected_path = None
+
+    if not selected_path:
+        GPIO.output(LED_ERROR, True)
+        GPIO.output(LED_ERROR1, True)
+        text_stage("BIN 경로", "없음", pos=(20, 12))
+        time.sleep(0.8)
+        GPIO.output(LED_ERROR, False)
+        GPIO.output(LED_ERROR1, False)
+        clear_ui_override()
+        st.auto_flash_cooldown_until = time.time() + 4.0
+        st.is_executing = False
+        st.is_command_executing = False
+        st.need_update = True
+        return
+
+    progress_stage(2, "업데이트 진행 중", "장치 확인 중")
+    progress_stage(8, "업데이트 진행 중", "용량 확인 중")
+    dev_id, flash_kb = detect_stm32_flash_kb_with_unlock(timeout=STM32_DETECT_TIMEOUT_SEC)
+
+    progress_stage(18, "업데이트 진행 중", "파일 선택 중")
+    resolved_path, chosen_kind = resolve_target_bin_by_gas(selected_path, flash_kb)
+
+    progress_stage(30, "업데이트 진행 중", "잠금 해제 준비")
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        with canvas(device) as draw:
-            draw.text((20, 8), "메모리 잠금", font=font, fill=255)
-            draw.text((28, 27), "해제 실패", font=font, fill=255)
-        time.sleep(2)
+        text_stage("메모리 잠금", "해제 실패", pos=(20, 12))
+        time.sleep(0.8)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
-        is_executing = False
-        is_command_executing = False
-        need_update = True
+        clear_ui_override()
+        st.auto_flash_cooldown_until = time.time() + 4.0
+        st.is_executing = False
+        st.is_command_executing = False
+        st.need_update = True
         return
 
-    display_progress_and_message(30, "업데이트 중...", message_position=(12, 10), font_size=15)
-    process = subprocess.Popen(commands[command_index], shell=True)
+    info_line = chosen_kind
+    if flash_kb is not None:
+        info_line = f"{chosen_kind} ({flash_kb}KB)"
 
+    progress_msg = f"업데이트 진행 중\n{info_line}"
+    set_ui_progress(45, progress_msg, pos=(6, 0), font_size=13)
+    st.need_update = True
+    force_oled_refresh()
+
+    openocd_cmd = make_openocd_program_cmd(resolved_path)
+    process = subprocess.Popen(openocd_cmd, shell=True)
     start_time = time.time()
-    max_duration = 6
-    progress_increment = 20 / max_duration
+    progress_increment = 35 / PROGRAM_PROGRESS_MAX_DURATION_SEC
 
     while process.poll() is None:
         elapsed = time.time() - start_time
-        current_progress = 30 + (elapsed * progress_increment)
+        current_progress = 45 + (elapsed * progress_increment)
         current_progress = min(current_progress, 80)
-        display_progress_and_message(current_progress, "업데이트 중...", message_position=(12, 10), font_size=15)
-        time.sleep(0.5)
+        set_ui_progress(current_progress, progress_msg, pos=(6, 0), font_size=13)
+        st.need_update = True
+        force_oled_refresh()
+        time.sleep(PROGRAM_PROGRESS_POLL_SEC)
 
     result = process.returncode
     if result == 0:
-        print(f"'{commands[command_index]}' 업데이트 성공!")
-        display_progress_and_message(80, "업데이트 성공!", message_position=(7, 10), font_size=15)
-        time.sleep(0.5)
-        lock_memory_procedure()
+        set_ui_progress(82, f"업데이트 진행 중\n{info_line}", pos=(6, 0), font_size=13)
+        st.need_update = True
+        force_oled_refresh()
+        st.auto_flash_cooldown_until = time.time() + 4.0
+        st.auto_flash_done_connection = True
+        if is_memory_lock_enabled():
+            time.sleep(POST_FLASH_WAIT_SEC)
+            lock_memory_procedure()
+        else:
+            progress_stage(100, "업데이트 완료", "")
+            time.sleep(0.4)
     else:
-        print(f"'{commands[command_index]}' 업데이트 실패!")
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        display_progress_and_message(0, "업데이트 실패", message_position=(7, 10), font_size=15)
-        time.sleep(1)
-        GPIO.output(LED_ERROR, False)
-        GPIO.output(LED_ERROR1, False)
+        st.auto_flash_cooldown_until = time.time() + 4.0
+        st.auto_flash_done_connection = True
+        progress_stage(0, "업데이트 실패", "")
+        time.sleep(0.6)
 
-    need_update = True
-    is_executing = False
-    is_command_executing = False
+    GPIO.output(LED_SUCCESS, False)
+    GPIO.output(LED_ERROR, False)
+    GPIO.output(LED_ERROR1, False)
+    clear_ui_override()
+    st.need_update = True
+    st.is_executing = False
+    st.is_command_executing = False
 
-# ---------------- IP / OLED 출력 ----------------
 
-def get_ip_address():
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(0.5)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "0.0.0.0"
+def execute_button_logic():
+    while not st.stop_threads:
+        now = now_mono()
 
-def update_oled_display():
-    global current_command_index, status_message, message_position, message_font_size
-    with display_lock:
-        if not commands:
-            return
+        if st.battery_percentage == 0:
+            shutdown_system()
 
-        ip_address = get_ip_address()
-        now = datetime.now()
-        current_time = now.strftime('%H시 %M분')
+        if in_ui_transition():
+            time.sleep(0.01)
+            continue
 
-        # 배터리 퍼센트는 모니터 쓰레드에서 갱신된 캐시 사용
-        voltage_percentage = battery_percentage
+        with st.wifi_action_lock:
+            wifi_running = st.wifi_action_running
 
-        with canvas(device) as draw:
-            item_type = command_types[current_command_index]
-            title = command_names[current_command_index]
+        with button_state_lock:
+            next_is_down = st.next_is_down
+            next_long_handled = st.next_long_handled
+            next_press_time = st.next_press_time
 
-            # 모드 표시 (시스템 업데이트 메뉴가 아닐 때만)
-            if item_type != "system":
-                mode_char = 'A' if is_auto_mode else 'M'
-                outer_ellipse_box = (2, 0, 22, 20)
-                text_position = {'A': (8, -3), 'M': (5, -3)}
-                draw.ellipse(outer_ellipse_box, outline="white", fill=None)
-                draw.text(text_position[mode_char], mode_char, font=font, fill=255)
+            execute_is_down = st.execute_is_down
+            execute_long_handled = st.execute_long_handled
+            execute_press_time = st.execute_press_time
 
-            # 상단 정보 (배터리/시간 or IP/버전)
-            if item_type != "system":
-                battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
-                draw.bitmap((90, -9), battery_icon, fill=255)
-                # 퍼센티지 표시 (음수면 오류이므로 '--%')
-                if voltage_percentage is not None and voltage_percentage >= 0:
-                    perc_text = f"{voltage_percentage:.0f}%"
+            execute_short_event = st.execute_short_event
+            next_pressed_event = st.next_pressed_event
+
+        if wifi_running and next_is_down and (not next_long_handled) and (next_press_time is not None):
+            if now - next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
+                with button_state_lock:
+                    st.next_long_handled = True
+                st.wifi_cancel_requested = True
+                wifi_stage_set(5, "취소 처리중", "잠시만")
+                st.need_update = True
+
+        if (not wifi_running) and next_is_down and (not next_long_handled) and (next_press_time is not None):
+            if now - next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
+                if st.current_menu and st.current_menu.get("dir") == "__scan__":
+                    with button_state_lock:
+                        st.next_long_handled = True
+                    execute_command(len(st.command_types) - 1)
+                    st.need_update = True
+
+        if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
+            if now - execute_press_time >= LONG_PRESS_THRESHOLD:
+                with button_state_lock:
+                    st.execute_long_handled = True
+                    st.execute_short_event = False
+                if st.commands and (not st.is_executing):
+                    item_type = st.command_types[st.current_command_index]
+                    if item_type in ("system", "dir", "back", "script", "wifi", "bin", "device_scan", "scan_item", "back_from_scan", "scan_detail"):
+                        execute_command(st.current_command_index)
+                        st.need_update = True
+
+        if execute_short_event:
+            with button_state_lock:
+                st.execute_short_event = False
+
+            with button_state_lock:
+                long_handled_after = st.execute_long_handled
+
+            if not long_handled_after:
+                if st.commands and (not st.is_executing):
+                    st.current_command_index = (st.current_command_index - 1) % len(st.commands)
+                    if st.current_menu and st.current_menu.get("dir") == "__scan__":
+                        with st.scan_lock:
+                            if st.scan_ips and st.command_types[st.current_command_index] == "scan_item":
+                                st.scan_selected_idx = min(st.current_command_index, len(st.scan_ips) - 1)
+                                st.scan_selected_ip = st.scan_ips[st.scan_selected_idx]
+                    st.need_update = True
+
+            with button_state_lock:
+                st.execute_long_handled = False
+
+        if next_pressed_event:
+            if (st.current_menu and st.current_menu.get("dir") == "__scan_detail__") and (not st.is_executing):
+                with st.scan_detail_lock:
+                    st.scan_detail_active = False
+                    st.scan_detail_ip = None
+                if st.menu_stack:
+                    prev_menu, prev_index = st.menu_stack.pop()
+                    st.current_menu = prev_menu
+                    st.commands = st.current_menu["commands"]
+                    st.command_names = st.current_menu["names"]
+                    st.command_types = st.current_menu["types"]
+                    st.menu_extras = st.current_menu["extras"]
+                    st.current_command_index = prev_index if (0 <= prev_index < len(st.commands)) else 0
+                enter_ui_transition(0.08)
+                clear_ui_override()
+                st.need_update = True
+                with button_state_lock:
+                    st.next_pressed_event = False
+                time.sleep(0.01)
+                continue
+
+            with button_state_lock:
+                exec_down_now = st.execute_is_down
+
+            if (not exec_down_now) and (not st.is_executing):
+                if st.commands:
+                    st.current_command_index = (st.current_command_index + 1) % len(st.commands)
+                    if st.current_menu and st.current_menu.get("dir") == "__scan__":
+                        with st.scan_lock:
+                            if st.scan_ips and st.command_types[st.current_command_index] == "scan_item":
+                                st.scan_selected_idx = min(st.current_command_index, len(st.scan_ips) - 1)
+                                st.scan_selected_ip = st.scan_ips[st.scan_selected_idx]
+                    st.need_update = True
+
+            with button_state_lock:
+                st.next_pressed_event = False
+
+        # 과거 코드 스타일: 업데이트 중에는 연결 판정 무시
+        if (not st.is_executing) and (not st.is_command_executing):
+            now_wall = time.time()
+            if now_wall - st.last_stm32_check_time >= STM32_POLL_INTERVAL_SEC:
+                st.last_stm32_check_time = now_wall
+
+                prev_ok = st.last_stm32_poll_ok
+                cur_ok = check_stm32_connection()
+                st.last_stm32_poll_ok = cur_ok
+
+                if not cur_ok:
+                    if st.stm32_disconnected_since == 0.0:
+                        st.stm32_disconnected_since = now_wall
+                    elif (now_wall - st.stm32_disconnected_since) >= 2.0:
+                        st.physical_disconnect_armed = True
                 else:
-                    perc_text = "--%"
-                draw.text((99, 3), perc_text, font=font_st, fill=255)
-                draw.text((27, 1), current_time, font=font_time, fill=255)
-            else:
-                if ip_address == "0.0.0.0":
-                    ip_display = "연결 없음"
-                else:
-                    ip_display = ip_address
-                draw.text((0, 51), ip_display, font=font_big, fill=255)
-                draw.text((80, -3), 'GDSENG', font=font_big, fill=255)
-                draw.text((83, 50), 'ver 3.71', font=font_big, fill=255)
-                draw.text((0, -3), current_time, font=font_time, fill=255)
+                    # 실제로 2초 이상 분리되었다가 다시 연결된 경우만 재허용
+                    if (not prev_ok) and st.physical_disconnect_armed:
+                        st.auto_flash_done_connection = False
+                        st.physical_disconnect_armed = False
 
-            # 상태 메시지가 있을 때 전체 메시지 화면
-            if status_message:
-                draw.rectangle(device.bounding_box, outline="white", fill="black")
-                font_custom = ImageFont.truetype(font_path, message_font_size)
-                draw.text(message_position, status_message, font=font_custom, fill=255)
-            else:
-                center_x = device.width // 2 + VISUAL_X_OFFSET
+                    # 계속 연결 유지 중이면 아무 것도 하지 않음
+                    st.stm32_disconnected_since = 0.0
 
-                if item_type == "system":
-                    center_y = 33
-                    use_font = font_sysupdate
-                else:
-                    center_y = 42
-                    use_font = font_1
+                with st.stm32_state_lock:
+                    cs = st.connection_success
 
-                try:
-                    draw.text((center_x, center_y), title, font=use_font, fill=255, anchor="mm")
-                except TypeError:
-                    try:
-                        w, h = draw.textsize(title, font=use_font)
-                    except Exception:
-                        w, h = (len(title) * 8, 16)
-                    x = int(center_x - w / 2)
-                    y = int(center_y - h / 2)
-                    draw.text((x, y), title, font=use_font, fill=255)
+                if st.commands:
+                    if (
+                        cs
+                        and (not st.auto_flash_done_connection)
+                        and (time.time() >= getattr(st, "auto_flash_cooldown_until", 0.0))
+                        and st.command_types[st.current_command_index] == "bin"
+                    ):
+                        st.auto_flash_done_connection = True
+                        st.stm32_disconnected_since = 0.0
+                        st.physical_disconnect_armed = False
+                        st.auto_flash_cooldown_until = time.time() + 4.0
+                        progress_stage(1, "업데이트 진행 중", "장치 확인 중")
+                        execute_command(st.current_command_index)
 
-# ---------------- 실시간 업데이트 스레드 ----------------
+        time.sleep(0.01)
 
-last_oled_update_time = 0.0
 
-def realtime_update_display():
-
-    global is_command_executing, need_update, last_oled_update_time
-    while True:
-        if not is_command_executing:
-            now = time.time()
-            if need_update or (now - last_oled_update_time >= 1.0):
-                update_oled_display()
-                last_oled_update_time = now
-                need_update = False
-        time.sleep(0.05)
-
-# ---------------- 종료 처리 / 메인 루프 ----------------
-
-def shutdown_system():
-    try:
-        with canvas(device) as draw:
-            draw.text((20, 25), "배터리 부족", font=font, fill=255)
-            draw.text((25, 50), "시스템 종료 중...", font=font_st, fill=255)
-        time.sleep(5)
-        os.system('sudo shutdown -h now')
-    except Exception as e:
-        print("시스템 종료 중 오류 발생:", str(e))
-
-# 초기 INA219 셋업 & 배터리 모니터 시작
+ensure_menu_config_csv()
 init_ina219()
+refresh_root_menu(reset_index=True)
+
 battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
 battery_thread.start()
 
-# OLED 갱신 스레드 시작
 realtime_update_thread = threading.Thread(target=realtime_update_display, daemon=True)
 realtime_update_thread.start()
 
-# 초기 화면
-need_update = True
+wifi_thread = threading.Thread(target=wifi_worker_thread, daemon=True)
+wifi_thread.start()
+
+net_thread = threading.Thread(target=net_poll_thread, daemon=True)
+net_thread.start()
+
+git_thread = threading.Thread(target=git_poll_thread, daemon=True)
+git_thread.start()
+
+scan_thread = threading.Thread(target=modbus_scan_loop, daemon=True)
+scan_thread.start()
+
+detail_thread = threading.Thread(target=modbus_detail_poll_thread, daemon=True)
+detail_thread.start()
+
+st.need_update = True
 
 try:
-    while True:
-        now = time.time()
-
-        # 1) 배터리 부족 종료
-        if battery_percentage == 0:
-            print("배터리 수준이 0%입니다. 시스템을 종료합니다.")
-            shutdown_system()
-
-        # 2-0) EXECUTE 길게 누르는 중인지 감시 (버튼이 아직 내려가 있는 상태에서 long 처리)
-        if execute_is_down and not execute_long_handled and execute_press_time is not None:
-            if now - execute_press_time >= LONG_PRESS_THRESHOLD:
-                execute_long_handled = True
-                if is_auto_mode and commands and not is_executing:
-                    item_type = command_types[current_command_index]
-                    print(f"[AUTO] EXECUTE long press detected (hold), type={item_type}")
-                    if item_type in ("system", "dir", "back"):
-                        execute_command(current_command_index)
-                        need_update = True
-                # MANUAL 모드는 길이 구분 없이 release에서만 실행 처리
-
-        # 2) EXECUTE 버튼 릴리즈 감지 (길게/짧게/모드 전환 판단)
-        if execute_is_down and GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.HIGH:
-            # 버튼이 올라감 → 눌렀던 시간으로 동작 판단 (단, long은 위에서 이미 처리될 수 있음)
-            duration = now - execute_press_time if execute_press_time else 0
-            execute_is_down = False
-
-            # 두 버튼 동시에 눌린 경우 → 모드 전환
-            if abs(last_time_button_next_pressed - last_time_button_execute_pressed) < button_press_interval:
-                mode_toggle_requested = True
-                # 이 경우 NEXT 이벤트는 취소
-                next_pressed_event = False
-
-            else:
-                # AUTO / MANUAL 모드별 동작
-                if is_auto_mode:
-                    if execute_long_handled:
-                        # 이미 long press 로직 처리됨 → 여기서는 아무 것도 하지 않음
-                        print(f"[AUTO] EXECUTE release after long press ({duration:.3f}s)")
-                    else:
-                        # long 처리 안 됐으면 무조건 short로 처리
-                        if commands and not is_executing:
-                            print(f"[AUTO] EXECUTE short press ({duration:.3f}s)")
-                            current_command_index = (current_command_index - 1) % len(commands)
-                            need_update = True
-                else:
-                    # MANUAL 모드: 길이 상관 없이 실행
-                    if commands and not is_executing:
-                        print("[MANUAL] EXECUTE pressed, run command")
-                        execute_command(current_command_index)
-                        need_update = True
-
-            # 이 눌림에 대한 상태 리셋
-            execute_press_time = None
-            execute_long_handled = False
-
-        # 3) NEXT 버튼 단독 이벤트 처리 (모드 전환 조합이 아닌 경우)
-        if next_pressed_event:
-            # EXECUTE를 함께 누른 케이스는 위에서 처리
-            if not execute_is_down and (now - last_time_button_next_pressed) >= 0:
-                # 모드 전환 직후 10초 동안은 입력 무시 (기존 로직 유지)
-                if not is_executing and (now - last_mode_toggle_time >= 1):
-                    if commands:
-                        current_command_index = (current_command_index + 1) % len(commands)
-                        need_update = True
-                next_pressed_event = False
-
-        # 4) 모드 토글 요청 처리
-        if mode_toggle_requested:
-            # 모드 전환 직후 0.5초 동안은 중복 전환 방지
-            if now - last_mode_toggle_time >= 0.5:
-                toggle_mode()
-            mode_toggle_requested = False
-
-        # 4.5) STM32 연결 상태 주기적 확인 (3초마다)
-        if now - last_stm32_check_time > 0.7:
-            last_stm32_check_time = now
-            prev_state = connection_success
-            check_stm32_connection()
-            if connection_success and not prev_state:
-                print("=> 새 STM32 연결 감지: 자동 업데이트 1회 허용 상태로 리셋")
-                auto_flash_done_connection = False
-            elif (not connection_success) and prev_state:
-                print("=> STM32 케이블 제거 감지")
-
-        # 5) 자동 모드에서 bin 타입 자동 실행 (연결당 1회)
-        if commands:
-            if (
-                is_auto_mode
-                and command_types[current_command_index] == "bin"
-                and not is_executing
-                and connection_success             # 실제 STM32가 연결돼 있을 때만
-                and not auto_flash_done_connection # 이 연결 세션에서 아직 자동 업데이트 안 했을 때만
-            ):
-                print("[AUTO] STM32 연결 상태에서 자동 업데이트 1회 실행")
-                execute_command(current_command_index)
-                auto_flash_done_connection = True
-
-        time.sleep(0.03)
-
+    execute_button_logic()
 except KeyboardInterrupt:
+    pass
+finally:
+    st.stop_threads = True
+    try:
+        kill_openocd()
+    except Exception:
+        pass
     GPIO.cleanup()
