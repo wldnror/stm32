@@ -862,11 +862,11 @@ def git_pull():
 
 def unlock_memory():
     if has_recent_unlock():
-        progress_stage(35, "업데이트 진행 중", "잠금 해제 생략")
-        time.sleep(0.12)
+        progress_stage(32, "업데이트 진행 중", "잠금 해제 생략")
+        time.sleep(0.10)
         return True
 
-    progress_stage(35, "업데이트 진행 중", "잠금 해제 중")
+    progress_stage(32, "업데이트 진행 중", "잠금 해제 중")
 
     ok = run_openocd_ok(
         ["init", "reset halt", "stm32f1x unlock 0", "reset run", "shutdown"],
@@ -876,11 +876,11 @@ def unlock_memory():
 
     if ok:
         progress_stage(40, "업데이트 진행 중", "잠금 해제 완료")
-        time.sleep(0.18)
+        time.sleep(0.15)
         return True
 
     progress_stage(0, "업데이트 실패", "잠금 해제 실패")
-    time.sleep(0.4)
+    time.sleep(0.35)
     return False
 
 
@@ -897,12 +897,12 @@ def restart_script():
 def lock_memory_procedure():
     if not is_memory_lock_enabled():
         text_stage("메모리 잠금", "건너뜀", pos=(18, 18))
-        time.sleep(0.35)
+        time.sleep(0.30)
         clear_ui_override()
         st.need_update = True
         return
 
-    progress_stage(85, "업데이트 진행 중", "마무리 중")
+    progress_stage(88, "업데이트 진행 중", "마무리 중")
     try:
         ok = run_openocd_ok(
             ["init", "reset halt", "stm32f1x lock 0", "reset run", "shutdown"],
@@ -917,12 +917,12 @@ def lock_memory_procedure():
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
             progress_stage(0, "업데이트 실패", "잠금 실패")
-            time.sleep(0.5)
+            time.sleep(0.45)
     except Exception:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
         progress_stage(0, "오류 발생", "")
-        time.sleep(0.5)
+        time.sleep(0.45)
     finally:
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
@@ -1125,7 +1125,7 @@ def execute_command(command_index):
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
             text_stage("FW 추출", "비활성화", pos=(15, 18))
-            time.sleep(1.2)
+            time.sleep(1.0)
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
             clear_ui_override()
@@ -1149,7 +1149,7 @@ def execute_command(command_index):
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
             text_stage("out.py 없음", "")
-            time.sleep(1.2)
+            time.sleep(1.0)
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
             clear_ui_override()
@@ -1214,12 +1214,14 @@ def execute_command(command_index):
         st.need_update = True
         return
 
-    progress_stage(5, "업데이트 진행 중", "대상 확인")
+    progress_stage(2, "업데이트 진행 중", "장치 확인 중")
+    progress_stage(8, "업데이트 진행 중", "용량 확인 중")
     dev_id, flash_kb = detect_stm32_flash_kb_with_unlock(timeout=STM32_DETECT_TIMEOUT_SEC)
 
-    progress_stage(20, "업데이트 진행 중", "파일 선택")
+    progress_stage(18, "업데이트 진행 중", "파일 선택 중")
     resolved_path, chosen_kind = resolve_target_bin_by_gas(selected_path, flash_kb)
 
+    progress_stage(30, "업데이트 진행 중", "잠금 해제 준비")
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -1259,7 +1261,7 @@ def execute_command(command_index):
 
     result = process.returncode
     if result == 0:
-        set_ui_progress(80, f"업데이트 진행 중\n{info_line}", pos=(6, 0), font_size=13)
+        set_ui_progress(82, f"업데이트 진행 중\n{info_line}", pos=(6, 0), font_size=13)
         st.need_update = True
         force_oled_refresh()
         st.auto_flash_cooldown_until = time.time() + 4.0
@@ -1395,7 +1397,6 @@ def execute_button_logic():
             with button_state_lock:
                 st.next_pressed_event = False
 
-        # 옛날 방식처럼 메인 루프에서 직접 STM32 연결 감지 + 자동실행
         if (not st.is_executing) and (not st.is_command_executing):
             now_wall = time.time()
             if now_wall - st.last_stm32_check_time >= STM32_POLL_INTERVAL_SEC:
@@ -1413,10 +1414,8 @@ def execute_button_logic():
 
                     if not prev_ok:
                         if st.stm32_disconnected_since == 0.0:
-                            # 첫 연결 또는 부팅 직후 연결
                             new_attach = True
                         else:
-                            # 실제 분리 후 재연결
                             if (now_wall - st.stm32_disconnected_since) >= 2.0:
                                 new_attach = True
 
@@ -1438,7 +1437,9 @@ def execute_button_logic():
                         st.auto_flash_done_connection = True
                         st.stm32_disconnected_since = 0.0
                         st.auto_flash_cooldown_until = time.time() + 4.0
-                        progress_stage(1, "업데이트 진행 중", "시작 준비")
+
+                        # 연결 직후 바로 반응하게 먼저 표시
+                        progress_stage(1, "업데이트 진행 중", "장치 확인 중")
                         execute_command(st.current_command_index)
 
         time.sleep(0.01)
