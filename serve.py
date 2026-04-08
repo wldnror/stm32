@@ -216,9 +216,6 @@ def stm32_poll_thread():
             continue
         st.last_stm32_check_time = now
 
-        with st.stm32_state_lock:
-            prev_state = st.connection_success
-
         check_stm32_connection()
 
         with st.stm32_state_lock:
@@ -1434,9 +1431,9 @@ def execute_button_logic():
                 and cs
                 and (not st.auto_flash_done_connection)
             ):
+                st.auto_flash_done_connection = True
                 progress_stage(1, "업데이트 진행 중", "시작 준비")
                 execute_command(st.current_command_index)
-                st.auto_flash_done_connection = True
 
         time.sleep(0.02)
 
