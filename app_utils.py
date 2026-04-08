@@ -3,7 +3,9 @@ import os
 import re
 import socket
 import subprocess
+
 from app_config import MENU_CONFIG_CSV
+
 
 def logi(msg: str):
     try:
@@ -11,19 +13,35 @@ def logi(msg: str):
     except Exception:
         pass
 
+
 def run_quiet(cmd, timeout=3.0, shell=False):
     try:
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout, shell=shell)
+        subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+            shell=shell,
+        )
         return True
     except Exception:
         return False
 
+
 def run_capture(cmd, timeout=4.0, shell=False):
     try:
-        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout, shell=shell)
+        r = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+            shell=shell,
+        )
         return r.returncode, (r.stdout or ""), (r.stderr or "")
     except Exception as e:
         return 999, "", str(e)
+
 
 def ensure_menu_config_csv():
     try:
@@ -37,6 +55,7 @@ def ensure_menu_config_csv():
                 writer.writerow(["fw_extract_enabled", "0"])
     except Exception as e:
         logi(f"menu_config.csv 생성 실패: {e}")
+
 
 def get_csv_flag(key: str, default: int = 0) -> int:
     try:
@@ -52,20 +71,49 @@ def get_csv_flag(key: str, default: int = 0) -> int:
         pass
     return int(default)
 
+
 def is_fw_extract_mode() -> bool:
     return get_csv_flag("fw_extract_enabled", 0) == 1
+
 
 def is_memory_lock_enabled() -> bool:
     return not is_fw_extract_mode()
 
-def _iface_exists(name: str) -> bool:
+
+def iface_exists(name: str) -> bool:
     try:
         return os.path.isdir(f"/sys/class/net/{name}")
     except Exception:
         return False
 
-def _ip_from_ip_cmd(ifname: str) -> str:
-    rc, out, _ = run_capture(["bash", "-lc", f"ip -4 addr show {ifname} | awk '/inet /{{print $2}}' | head -n1"], timeout=0.9)
+
+def has_real_internet(timeout=1.5):
+    try:
+        targets = ["8.8.8.8", "1.1.1.1"]
+        iface = "wlan0" if iface_exists("wlan0") else ("eth0" if iface_exists("eth0") else None)
+        for t in targets:
+            if iface:
+                cmd = ["ping", "-I", iface, "-c", "1", "-W", "1", t]
+            else:
+                cmd = ["ping", "-c", "1", "-W", "1", t]
+            r = subprocess.run(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=timeout,
+            )
+            if r.returncode == 0:
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def ip_from_ip_cmd(ifname: str) -> str:
+    rc, out, _ = run_capture(
+        ["bash", "-lc", f"ip -4 addr show {ifname} | awk '/inet /{{print $2}}' | head -n1"],
+        timeout=0.9,
+    )
     if rc != 0:
         return "0.0.0.0"
     v = (out or "").strip()
@@ -73,6 +121,7 @@ def _ip_from_ip_cmd(ifname: str) -> str:
         return "0.0.0.0"
     ip = v.split("/")[0].strip()
     return ip if ip else "0.0.0.0"
+
 
 def get_ip_address():
     try:
@@ -85,13 +134,17 @@ def get_ip_address():
             return ip
     except Exception:
         pass
+
     try:
         for ifn in ["wlan0", "eth0"]:
-            if _iface_exists(ifn):
-                ip2 = _ip_from_ip_cmd(ifn)
+            if iface_exists(ifn):
+                ip2 = ip_from_ip_cmd(ifn)
                 if ip2 != "0.0.0.0" and not ip2.startswith("127."):
                     return ip2
-        rc, out, _ = run_capture(["bash", "-lc", "ip -4 addr show | awk '/inet /{print $2}' | head -n1"], timeout=0.9)
+        rc, out, _ = run_capture(
+            ["bash", "-lc", "ip -4 addr show | awk '/inet /{print $2}' | head -n1"],
+            timeout=0.9,
+        )
         if rc == 0:
             v = (out or "").strip()
             if v:
@@ -100,23 +153,9 @@ def get_ip_address():
                     return ip3
     except Exception:
         pass
+
     return "0.0.0.0"
 
-def has_real_internet(timeout=1.5):
-    try:
-        targets = ["8.8.8.8", "1.1.1.1"]
-        iface = "wlan0" if _iface_exists("wlan0") else ("eth0" if _iface_exists("eth0") else None)
-        for t in targets:
-            if iface:
-                cmd = ["ping", "-I", iface, "-c", "1", "-W", "1", t]
-            else:
-                cmd = ["ping", "-c", "1", "-W", "1", t]
-            r = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
-            if r.returncode == 0:
-                return True
-        return False
-    except Exception:
-        return False
 
 def parse_order_and_name(name: str, is_dir: bool):
     raw = name if is_dir else os.path.splitext(name)[0]
@@ -129,12 +168,14 @@ def parse_order_and_name(name: str, is_dir: bool):
         display = raw
     return order, display
 
+
 def strip_order_prefix(name: str) -> str:
     s = (name or "").strip()
     m = re.match(r"^\d+\.(.*)$", s)
     if m:
         s = (m.group(1) or "").strip()
     return s
+
 
 def canon_name(name: str) -> str:
     return strip_order_prefix(name).strip().lower()
