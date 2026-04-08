@@ -58,6 +58,29 @@ from display_manager import (
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
+button_state_lock = threading.Lock()
+
+if not hasattr(st, "ui_transition_until"):
+    st.ui_transition_until = 0.0
+
+
+def now_mono():
+    return time.monotonic()
+
+
+def in_ui_transition() -> bool:
+    return now_mono() < getattr(st, "ui_transition_until", 0.0)
+
+
+def enter_ui_transition(sec: float = 0.20, flush_events: bool = True):
+    st.ui_transition_until = now_mono() + max(0.0, float(sec))
+    if flush_events:
+        with button_state_lock:
+            st.execute_short_event = False
+            st.next_pressed_event = False
+            st.execute_long_handled = False
+            st.next_long_handled = False
+
 
 def portal_set_state_safe(**kwargs):
     try:
@@ -99,40 +122,42 @@ def portal_clear_req_safe():
 
 
 def button_next_edge(channel):
-    now = time.time()
-    if (now - st.last_time_button_next_pressed) < SOFT_DEBOUNCE_NEXT:
-        return
-    st.last_time_button_next_pressed = now
+    now = now_mono()
+    with button_state_lock:
+        if (now - st.last_time_button_next_pressed) < SOFT_DEBOUNCE_NEXT:
+            return
+        st.last_time_button_next_pressed = now
 
-    if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
-        st.next_press_time = now
-        st.next_is_down = True
-        st.next_long_handled = False
-    else:
-        if st.next_is_down and (not st.next_long_handled) and (st.next_press_time is not None):
-            dt = now - st.next_press_time
-            if dt < NEXT_LONG_CANCEL_THRESHOLD:
-                st.next_pressed_event = True
-        st.next_is_down = False
-        st.next_press_time = None
+        if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
+            st.next_press_time = now
+            st.next_is_down = True
+            st.next_long_handled = False
+        else:
+            if st.next_is_down and (not st.next_long_handled) and (st.next_press_time is not None):
+                dt = now - st.next_press_time
+                if dt < NEXT_LONG_CANCEL_THRESHOLD:
+                    st.next_pressed_event = True
+            st.next_is_down = False
+            st.next_press_time = None
 
 
 def button_execute_edge(channel):
-    now = time.time()
-    if (now - st.last_time_button_execute_pressed) < SOFT_DEBOUNCE_EXEC:
-        return
-    st.last_time_button_execute_pressed = now
+    now = now_mono()
+    with button_state_lock:
+        if (now - st.last_time_button_execute_pressed) < SOFT_DEBOUNCE_EXEC:
+            return
+        st.last_time_button_execute_pressed = now
 
-    if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
-        st.execute_press_time = now
-        st.execute_is_down = True
-        st.execute_long_handled = False
-    else:
-        if st.execute_is_down and (not st.execute_long_handled) and (st.execute_press_time is not None):
-            st.execute_short_event = True
-        st.execute_is_down = False
-        st.execute_press_time = None
-        st.execute_long_handled = False
+        if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
+            st.execute_press_time = now
+            st.execute_is_down = True
+            st.execute_long_handled = False
+        else:
+            if st.execute_is_down and (not st.execute_long_handled) and (st.execute_press_time is not None):
+                st.execute_short_event = True
+            st.execute_is_down = False
+            st.execute_press_time = None
+            # 여기서 st.execute_long_handled = False 를 지우는 게 포인트
 
 
 GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -620,6 +645,7 @@ def wifi_worker_thread():
 
                     result = portal_loop_until_connected_or_cancel()
                     refresh_root_menu(reset_index=True)
+                    enter_ui_transition(0.25)
                     st.need_update = True
 
                     if result == "cancel":
@@ -695,8 +721,12 @@ def realtime_update_display():
 
         now = time.time()
 
+        with button_state_lock:
+            next_is_down_now = st.next_is_down
+            execute_is_down_now = st.execute_is_down
+
         if st.scan_menu_dirty and st.current_menu and st.current_menu.get("dir") == "__scan__":
-            if (not st.next_is_down) and (not st.execute_is_down):
+            if (not next_is_down_now) and (not execute_is_down_now):
                 if now - st.scan_menu_rebuild_last >= SCAN_MENU_REBUILD_MIN_SEC:
                     st.scan_menu_rebuild_last = now
                     with st.scan_lock:
@@ -720,6 +750,7 @@ def realtime_update_display():
                         if st.current_command_index >= len(st.commands):
                             st.current_command_index = max(0, len(st.commands) - 1)
 
+                    enter_ui_transition(0.12)
                     st.need_update = True
 
         if st.need_update or (now - st.last_oled_update_time >= 0.22):
@@ -917,6 +948,7 @@ def execute_command(command_index):
 
     if item_type == "wifi":
         request_wifi_setup()
+        enter_ui_transition(0.25)
         st.need_update = True
         return
 
@@ -952,6 +984,7 @@ def execute_command(command_index):
         st.command_types = st.current_menu["types"]
         st.menu_extras = st.current_menu["extras"]
         st.current_command_index = 0
+        enter_ui_transition(0.25)
         clear_ui_override()
         st.need_update = True
         st.is_executing = False
@@ -976,6 +1009,7 @@ def execute_command(command_index):
             st.menu_extras = st.current_menu["extras"]
             st.current_command_index = prev_index if (0 <= prev_index < len(st.commands)) else 0
 
+        enter_ui_transition(0.25)
         clear_ui_override()
         st.need_update = True
         st.is_executing = False
@@ -1010,6 +1044,7 @@ def execute_command(command_index):
         st.menu_extras = st.current_menu["extras"]
         st.current_command_index = 0
 
+        enter_ui_transition(0.25)
         st.need_update = True
         st.is_executing = False
         st.is_command_executing = False
@@ -1050,6 +1085,7 @@ def execute_command(command_index):
             st.command_types = st.current_menu["types"]
             st.menu_extras = st.current_menu["extras"]
             st.current_command_index = 0
+            enter_ui_transition(0.25)
             st.need_update = True
         st.is_executing = False
         st.is_command_executing = False
@@ -1064,6 +1100,7 @@ def execute_command(command_index):
             st.command_types = st.current_menu["types"]
             st.menu_extras = st.current_menu["extras"]
             st.current_command_index = prev_index if (0 <= prev_index < len(st.commands)) else 0
+            enter_ui_transition(0.25)
             st.need_update = True
         st.is_executing = False
         st.is_command_executing = False
@@ -1076,6 +1113,7 @@ def execute_command(command_index):
             st.connection_failed_since_last_success = False
         git_pull()
         refresh_root_menu(reset_index=True)
+        enter_ui_transition(0.25)
         st.need_update = True
         st.is_executing = False
         st.is_command_executing = False
@@ -1237,40 +1275,65 @@ def execute_command(command_index):
 
 def execute_button_logic():
     while not st.stop_threads:
-        now = time.time()
+        now = now_mono()
 
         if st.battery_percentage == 0:
             shutdown_system()
 
+        if in_ui_transition():
+            time.sleep(0.02)
+            continue
+
         with st.wifi_action_lock:
             wifi_running = st.wifi_action_running
 
-        if wifi_running and st.next_is_down and (not st.next_long_handled) and (st.next_press_time is not None):
-            if now - st.next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
-                st.next_long_handled = True
+        with button_state_lock:
+            next_is_down = st.next_is_down
+            next_long_handled = st.next_long_handled
+            next_press_time = st.next_press_time
+
+            execute_is_down = st.execute_is_down
+            execute_long_handled = st.execute_long_handled
+            execute_press_time = st.execute_press_time
+
+            execute_short_event = st.execute_short_event
+            next_pressed_event = st.next_pressed_event
+
+        if wifi_running and next_is_down and (not next_long_handled) and (next_press_time is not None):
+            if now - next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
+                with button_state_lock:
+                    st.next_long_handled = True
                 st.wifi_cancel_requested = True
                 wifi_stage_set(5, "취소 처리중", "잠시만")
                 st.need_update = True
 
-        if (not wifi_running) and st.next_is_down and (not st.next_long_handled) and (st.next_press_time is not None):
-            if now - st.next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
+        if (not wifi_running) and next_is_down and (not next_long_handled) and (next_press_time is not None):
+            if now - next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
                 if st.current_menu and st.current_menu.get("dir") == "__scan__":
-                    st.next_long_handled = True
+                    with button_state_lock:
+                        st.next_long_handled = True
                     execute_command(len(st.command_types) - 1)
                     st.need_update = True
 
-        if st.execute_is_down and (not st.execute_long_handled) and (st.execute_press_time is not None):
-            if now - st.execute_press_time >= LONG_PRESS_THRESHOLD:
-                st.execute_long_handled = True
+        if execute_is_down and (not execute_long_handled) and (execute_press_time is not None):
+            if now - execute_press_time >= LONG_PRESS_THRESHOLD:
+                with button_state_lock:
+                    st.execute_long_handled = True
+                    st.execute_short_event = False
                 if st.commands and (not st.is_executing):
                     item_type = st.command_types[st.current_command_index]
                     if item_type in ("system", "dir", "back", "script", "wifi", "bin", "device_scan", "scan_item", "back_from_scan", "scan_detail"):
                         execute_command(st.current_command_index)
                         st.need_update = True
 
-        if st.execute_short_event:
-            st.execute_short_event = False
-            if not st.execute_long_handled:
+        if execute_short_event:
+            with button_state_lock:
+                st.execute_short_event = False
+
+            with button_state_lock:
+                long_handled_after = st.execute_long_handled
+
+            if not long_handled_after:
                 if st.commands and (not st.is_executing):
                     st.current_command_index = (st.current_command_index - 1) % len(st.commands)
                     if st.current_menu and st.current_menu.get("dir") == "__scan__":
@@ -1279,9 +1342,11 @@ def execute_button_logic():
                                 st.scan_selected_idx = min(st.current_command_index, len(st.scan_ips) - 1)
                                 st.scan_selected_ip = st.scan_ips[st.scan_selected_idx]
                     st.need_update = True
-            st.execute_long_handled = False
 
-        if st.next_pressed_event:
+            with button_state_lock:
+                st.execute_long_handled = False
+
+        if next_pressed_event:
             if (st.current_menu and st.current_menu.get("dir") == "__scan_detail__") and (not st.is_executing):
                 with st.scan_detail_lock:
                     st.scan_detail_active = False
@@ -1294,13 +1359,18 @@ def execute_button_logic():
                     st.command_types = st.current_menu["types"]
                     st.menu_extras = st.current_menu["extras"]
                     st.current_command_index = prev_index if (0 <= prev_index < len(st.commands)) else 0
+                enter_ui_transition(0.25)
                 clear_ui_override()
                 st.need_update = True
-                st.next_pressed_event = False
+                with button_state_lock:
+                    st.next_pressed_event = False
                 time.sleep(0.02)
                 continue
 
-            if (not st.execute_is_down) and (not st.is_executing):
+            with button_state_lock:
+                exec_down_now = st.execute_is_down
+
+            if (not exec_down_now) and (not st.is_executing):
                 if st.commands:
                     st.current_command_index = (st.current_command_index + 1) % len(st.commands)
                     if st.current_menu and st.current_menu.get("dir") == "__scan__":
@@ -1310,7 +1380,8 @@ def execute_button_logic():
                                 st.scan_selected_ip = st.scan_ips[st.scan_selected_idx]
                     st.need_update = True
 
-            st.next_pressed_event = False
+            with button_state_lock:
+                st.next_pressed_event = False
 
         with st.stm32_state_lock:
             cs = st.connection_success
