@@ -66,6 +66,8 @@ if not hasattr(st, "stm32_disconnected_since"):
     st.stm32_disconnected_since = 0.0
 if not hasattr(st, "auto_flash_cooldown_until"):
     st.auto_flash_cooldown_until = 0.0
+if not hasattr(st, "auto_flash_request"):
+    st.auto_flash_request = False
 
 
 def now_mono():
@@ -218,6 +220,9 @@ def stm32_poll_thread():
             continue
         st.last_stm32_check_time = now
 
+        with st.stm32_state_lock:
+            prev_state = st.connection_success
+
         check_stm32_connection()
 
         with st.stm32_state_lock:
@@ -229,9 +234,19 @@ def stm32_poll_thread():
             if st.stm32_disconnected_since == 0.0:
                 st.stm32_disconnected_since = now2
         else:
-            if st.stm32_disconnected_since > 0.0:
-                if (now2 - st.stm32_disconnected_since) >= 2.0:
+            if not prev_state:
+                disconnected_for = 0.0
+                if st.stm32_disconnected_since > 0.0:
+                    disconnected_for = now2 - st.stm32_disconnected_since
+
+                is_first_attach = (st.stm32_disconnected_since == 0.0)
+                is_real_reconnect = disconnected_for >= 2.0
+
+                if is_first_attach or is_real_reconnect:
                     st.auto_flash_done_connection = False
+                    if now2 >= getattr(st, "auto_flash_cooldown_until", 0.0):
+                        st.auto_flash_request = True
+
                 st.stm32_disconnected_since = 0.0
 
 
@@ -1242,6 +1257,7 @@ def execute_command(command_index):
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
+        st.auto_flash_cooldown_until = time.time() + 4.0
         st.is_executing = False
         st.is_command_executing = False
         st.need_update = True
@@ -1433,12 +1449,13 @@ def execute_button_logic():
 
         if st.commands:
             if (
-                st.command_types[st.current_command_index] == "bin"
+                getattr(st, "auto_flash_request", False)
                 and (not st.is_executing)
                 and cs
-                and (not st.auto_flash_done_connection)
+                and st.command_types[st.current_command_index] == "bin"
                 and (time.time() >= getattr(st, "auto_flash_cooldown_until", 0.0))
             ):
+                st.auto_flash_request = False
                 st.auto_flash_done_connection = True
                 st.stm32_disconnected_since = 0.0
                 st.auto_flash_cooldown_until = time.time() + 4.0
