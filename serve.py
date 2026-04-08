@@ -72,7 +72,7 @@ def in_ui_transition() -> bool:
     return now_mono() < getattr(st, "ui_transition_until", 0.0)
 
 
-def enter_ui_transition(sec: float = 0.20, flush_events: bool = True):
+def enter_ui_transition(sec: float = 0.10, flush_events: bool = True):
     st.ui_transition_until = now_mono() + max(0.0, float(sec))
     if flush_events:
         with button_state_lock:
@@ -80,6 +80,11 @@ def enter_ui_transition(sec: float = 0.20, flush_events: bool = True):
             st.next_pressed_event = False
             st.execute_long_handled = False
             st.next_long_handled = False
+
+
+def show_quick_status(line1: str, line2: str = "", pos=(12, 18), font_size=15):
+    set_ui_text(line1, line2, pos=pos, font_size=font_size)
+    st.need_update = True
 
 
 def portal_set_state_safe(**kwargs):
@@ -644,7 +649,7 @@ def wifi_worker_thread():
 
                     result = portal_loop_until_connected_or_cancel()
                     refresh_root_menu(reset_index=True)
-                    enter_ui_transition(0.25)
+                    enter_ui_transition(0.10)
                     st.need_update = True
 
                     if result == "cancel":
@@ -749,7 +754,7 @@ def realtime_update_display():
                         if st.current_command_index >= len(st.commands):
                             st.current_command_index = max(0, len(st.commands) - 1)
 
-                    enter_ui_transition(0.12)
+                    enter_ui_transition(0.05)
                     st.need_update = True
 
         if st.need_update or (now - st.last_oled_update_time >= 0.05):
@@ -862,10 +867,11 @@ def git_pull():
 def unlock_memory():
     if has_recent_unlock():
         set_ui_progress(30, "메모리 잠금\n 해제 생략", pos=(20, 0), font_size=15)
+        st.need_update = True
         time.sleep(0.15)
         return True
 
-    set_ui_progress(0, "메모리 잠금\n   해제 중", pos=(18, 0), font_size=15)
+    set_ui_progress(20, "메모리 잠금\n 해제 중", pos=(18, 0), font_size=15)
     st.need_update = True
 
     ok = run_openocd_ok(
@@ -954,7 +960,7 @@ def execute_command(command_index):
 
     if item_type == "wifi":
         request_wifi_setup()
-        enter_ui_transition(0.25)
+        enter_ui_transition(0.10)
         st.need_update = True
         return
 
@@ -990,7 +996,7 @@ def execute_command(command_index):
         st.command_types = st.current_menu["types"]
         st.menu_extras = st.current_menu["extras"]
         st.current_command_index = 0
-        enter_ui_transition(0.25)
+        enter_ui_transition(0.10)
         clear_ui_override()
         st.need_update = True
         st.is_executing = False
@@ -1015,7 +1021,7 @@ def execute_command(command_index):
             st.menu_extras = st.current_menu["extras"]
             st.current_command_index = prev_index if (0 <= prev_index < len(st.commands)) else 0
 
-        enter_ui_transition(0.25)
+        enter_ui_transition(0.10)
         clear_ui_override()
         st.need_update = True
         st.is_executing = False
@@ -1050,7 +1056,7 @@ def execute_command(command_index):
         st.menu_extras = st.current_menu["extras"]
         st.current_command_index = 0
 
-        enter_ui_transition(0.25)
+        enter_ui_transition(0.10)
         st.need_update = True
         st.is_executing = False
         st.is_command_executing = False
@@ -1091,7 +1097,7 @@ def execute_command(command_index):
             st.command_types = st.current_menu["types"]
             st.menu_extras = st.current_menu["extras"]
             st.current_command_index = 0
-            enter_ui_transition(0.25)
+            enter_ui_transition(0.10)
             st.need_update = True
         st.is_executing = False
         st.is_command_executing = False
@@ -1106,7 +1112,7 @@ def execute_command(command_index):
             st.command_types = st.current_menu["types"]
             st.menu_extras = st.current_menu["extras"]
             st.current_command_index = prev_index if (0 <= prev_index < len(st.commands)) else 0
-            enter_ui_transition(0.25)
+            enter_ui_transition(0.10)
             st.need_update = True
         st.is_executing = False
         st.is_command_executing = False
@@ -1119,7 +1125,7 @@ def execute_command(command_index):
             st.connection_failed_since_last_success = False
         git_pull()
         refresh_root_menu(reset_index=True)
-        enter_ui_transition(0.25)
+        enter_ui_transition(0.10)
         st.need_update = True
         st.is_executing = False
         st.is_command_executing = False
@@ -1382,7 +1388,7 @@ def execute_button_logic():
                     st.command_types = st.current_menu["types"]
                     st.menu_extras = st.current_menu["extras"]
                     st.current_command_index = prev_index if (0 <= prev_index < len(st.commands)) else 0
-                enter_ui_transition(0.25)
+                enter_ui_transition(0.10)
                 clear_ui_override()
                 st.need_update = True
                 with button_state_lock:
@@ -1416,6 +1422,8 @@ def execute_button_logic():
                 and cs
                 and (not st.auto_flash_done_connection)
             ):
+                show_quick_status("STM32 감지됨", "업데이트 준비", pos=(10, 18), font_size=15)
+                time.sleep(0.08)
                 execute_command(st.current_command_index)
                 st.auto_flash_done_connection = True
 
