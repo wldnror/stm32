@@ -22,8 +22,21 @@ from app_config import (
 from app_utils import run_capture, strip_order_prefix, canon_name
 
 
+# =========================
+# 내부 연결 체크 캐시
+# =========================
+_last_conn_check_ts = 0.0
+_last_conn_ok = False
+_last_conn_fail_ts = 0.0
+_last_conn_proc_busy_until = 0.0
+
+
 def kill_openocd():
-    subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(
+        ["sudo", "pkill", "-f", "openocd"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def run_openocd_capture(commands, timeout):
@@ -67,12 +80,14 @@ def parse_openocd_flash_kb(text: str) -> Optional[int]:
             return int(m.group(1))
         except Exception:
             return None
+
     m2 = re.search(r"flash size\s*=\s*(\d+)\s*kB", text, re.IGNORECASE)
     if m2:
         try:
             return int(m2.group(1))
         except Exception:
             return None
+
     return None
 
 
@@ -87,15 +102,28 @@ def detect_flash_kb_by_probe(timeout=STM32_FALLBACK_PROBE_TIMEOUT_SEC) -> Option
 
 def detect_stm32_flash_kb_with_unlock(timeout=STM32_DETECT_TIMEOUT_SEC) -> Tuple[Optional[int], Optional[int]]:
     now = time.time()
+
     with st._detect_cache_lock:
-        if (st._detect_cache["flash_kb"] is not None) and (now - st._detect_cache["ts"] < STM32_DETECT_CACHE_TTL_SEC):
+        if (
+            st._detect_cache["flash_kb"] is not None
+            and (now - st._detect_cache["ts"] < STM32_DETECT_CACHE_TTL_SEC)
+        ):
             return st._detect_cache["dev_id"], st._detect_cache["flash_kb"]
 
     rc, out, err = run_openocd_capture(
-        ["init", "reset halt", "stm32f1x unlock 0", "reset halt", "mdw 0xE0042000 1", "mdh 0x1FFFF7E0 1", "shutdown"],
+        [
+            "init",
+            "reset halt",
+            "stm32f1x unlock 0",
+            "reset halt",
+            "mdw 0xE0042000 1",
+            "mdh 0x1FFFF7E0 1",
+            "shutdown",
+        ],
         timeout=timeout,
     )
     text = (out or "") + "\n" + (err or "")
+
     m_id = re.search(r"0xE0042000:\s+(0x[0-9a-fA-F]+)", text, re.IGNORECASE)
     m_fs = re.search(r"0x1FFFF7E0:\s+(0x[0-9a-fA-F]+)", text, re.IGNORECASE)
 
@@ -117,11 +145,14 @@ def detect_stm32_flash_kb_with_unlock(timeout=STM32_DETECT_TIMEOUT_SEC) -> Tuple
         fs_val = int(m_fs.group(1), 16)
         dev_id = id_val % 4096
         flash_kb = fs_val
+
         with st._detect_cache_lock:
             st._detect_cache["ts"] = time.time()
             st._detect_cache["flash_kb"] = flash_kb
             st._detect_cache["dev_id"] = dev_id
+
         return dev_id, flash_kb
+
     except Exception:
         kb = detect_flash_kb_by_probe()
         if kb is not None:
@@ -143,10 +174,12 @@ def key_from_filename(path_or_name: str) -> str:
     m = re.match(r"^\s*\d+\.\s*([^.]+)\.bin\s*$", base, re.IGNORECASE)
     if m:
         return (m.group(1) or "").strip()
+
     stem = os.path.splitext(base)[0]
     m2 = re.match(r"^\s*\d+\.\s*(.+)\s*$", stem)
     if m2:
         return (m2.group(1) or "").strip()
+
     return strip_order_prefix(stem).strip()
 
 
@@ -169,9 +202,11 @@ def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]):
     parent_stripped = strip_order_prefix(parent).strip()
 
     candidates = []
+
     if want_tftp:
         if stem_base:
             candidates.append(os.path.join(base_root, f"{stem_base}.bin"))
+
         if is_ir:
             candidates += [
                 os.path.join(base_root, f"IR_{gas_key}.bin"),
@@ -179,11 +214,13 @@ def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]):
                 os.path.join(base_root, f"{gas_key}_IR.bin"),
                 os.path.join(base_root, f"{gas_key}.bin"),
             ]
+
         candidates += [
             os.path.join(base_root, f"{gas_key}.bin"),
             os.path.join(base_root, fname_no_order),
             os.path.join(base_root, fname),
         ]
+
         if canon_name(parent) not in (canon_name(GENERAL_DIRNAME), canon_name(TFTP_DIRNAME)):
             candidates += [
                 os.path.join(base_root, parent, fname),
@@ -213,11 +250,50 @@ def resolve_target_bin_by_gas(selected_bin_path: str, flash_kb: Optional[int]):
 
 
 def check_stm32_connection():
+    global _last_conn_check_ts, _last_conn_ok, _last_conn_fail_ts, _last_conn_proc_busy_until
+
     if st.is_command_executing:
         return False
+
+    now = time.monotonic()
+
+    # 최근 실패 직후에는 너무 빠르게 다시 두드리지 않음
+    if (not _last_conn_ok) and ((now - _last_conn_fail_ts) < 0.20):
+        with st.stm32_state_lock:
+            st.connection_success = False
+            st.connection_failed_since_last_success = True
+        return False
+
+    # 너무 짧은 간격의 중복 체크는 캐시 반환
+    if (now - _last_conn_check_ts) < 0.10:
+        with st.stm32_state_lock:
+            st.connection_success = _last_conn_ok
+            st.connection_failed_since_last_success = (not _last_conn_ok)
+        return _last_conn_ok
+
+    # openocd 실행 직후 겹침 방지
+    if now < _last_conn_proc_busy_until:
+        with st.stm32_state_lock:
+            st.connection_success = _last_conn_ok
+            st.connection_failed_since_last_success = (not _last_conn_ok)
+        return _last_conn_ok
+
+    _last_conn_check_ts = now
+    _last_conn_proc_busy_until = now + max(0.35, STM32_CONNECT_TIMEOUT_SEC + 0.08)
+
     try:
-        rc, _, _ = run_openocd_capture(["init", "exit"], timeout=STM32_CONNECT_TIMEOUT_SEC)
-        ok = (rc == 0)
+        rc, out, err = run_openocd_capture(
+            ["init", "targets", "exit"],
+            timeout=STM32_CONNECT_TIMEOUT_SEC,
+        )
+
+        text = ((out or "") + "\n" + (err or "")).lower()
+        ok = (rc == 0) and ("error" not in text)
+
+        _last_conn_ok = ok
+        if not ok:
+            _last_conn_fail_ts = time.monotonic()
+
         with st.stm32_state_lock:
             if ok:
                 st.connection_failed_since_last_success = False
@@ -225,8 +301,12 @@ def check_stm32_connection():
             else:
                 st.connection_failed_since_last_success = True
                 st.connection_success = False
+
         return ok
+
     except Exception:
+        _last_conn_ok = False
+        _last_conn_fail_ts = time.monotonic()
         with st.stm32_state_lock:
             st.connection_failed_since_last_success = True
             st.connection_success = False
