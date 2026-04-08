@@ -58,6 +58,7 @@ GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
 button_state_lock = threading.Lock()
+oled_refresh_lock = threading.Lock()
 
 if not hasattr(st, "ui_transition_until"):
     st.ui_transition_until = 0.0
@@ -81,10 +82,29 @@ def enter_ui_transition(sec: float = 0.10, flush_events: bool = True):
             st.next_long_handled = False
 
 
-def progress_stage(pct: int, line1: str, line2: str = "", pos=(8, 6), font_size=14):
+def force_oled_refresh():
+    try:
+        with oled_refresh_lock:
+            update_oled_display()
+            st.last_oled_update_time = time.time()
+            st.need_update = False
+    except Exception:
+        pass
+
+
+def progress_stage(pct: int, line1: str, line2: str = "", pos=(8, 6), font_size=14, immediate=True):
     msg = line1 if not line2 else f"{line1}\n{line2}"
     set_ui_progress(pct, msg, pos=pos, font_size=font_size)
     st.need_update = True
+    if immediate:
+        force_oled_refresh()
+
+
+def text_stage(line1: str, line2: str = "", pos=(10, 18), font_size=15, immediate=True):
+    set_ui_text(line1, line2, pos=pos, font_size=font_size)
+    st.need_update = True
+    if immediate:
+        force_oled_refresh()
 
 
 def portal_set_state_safe(**kwargs):
@@ -656,19 +676,19 @@ def wifi_worker_thread():
                         wifi_stage_set(10, "취소 처리중", "재연결 준비")
                         portal_set_state_safe(connect_stage="취소 처리 중…", last_error="취소됨", last_ok="")
                         ok_restore = restore_after_ap_mode(timeout=25)
-                        set_ui_text("재연결 완료" if ok_restore else "재연결 실패", "", pos=(15, 18), font_size=15)
+                        text_stage("재연결 완료" if ok_restore else "재연결 실패", "")
                         time.sleep(1.0)
                         clear_ui_override()
                         wifi_stage_clear()
                         portal_set_state_safe(connect_stage="", running=False)
                     elif result is True:
-                        set_ui_text("WiFi 연결 완료", "", pos=(12, 18), font_size=15)
+                        text_stage("WiFi 연결 완료", "")
                         time.sleep(1.1)
                         clear_ui_override()
                         wifi_stage_clear()
                         portal_set_state_safe(last_ok="연결 완료", last_error="", connect_stage="연결 완료", running=False, done=True)
                     else:
-                        set_ui_text("WiFi 연결 실패", "", pos=(12, 18), font_size=15)
+                        text_stage("WiFi 연결 실패", "")
                         time.sleep(1.1)
                         clear_ui_override()
                         wifi_stage_clear()
@@ -758,9 +778,10 @@ def realtime_update_display():
                     st.need_update = True
 
         if st.need_update or (now - st.last_oled_update_time >= 0.05):
-            update_oled_display()
-            st.last_oled_update_time = now
-            st.need_update = False
+            with oled_refresh_lock:
+                update_oled_display()
+                st.last_oled_update_time = now
+                st.need_update = False
 
         time.sleep(0.005)
 
@@ -825,7 +846,7 @@ def git_pull():
             os.fsync(script_file.fileno())
 
     os.chmod(shell_script_path, 0o755)
-    set_ui_text("시스템", "업데이트 중", pos=(20, 10), font_size=15)
+    text_stage("시스템", "업데이트 중", pos=(20, 10))
 
     try:
         result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -836,23 +857,23 @@ def git_pull():
 
         if result.returncode == 0:
             if "이미 최신 상태" in (result.stdout or ""):
-                set_ui_text("이미 최신 상태", "", pos=(10, 18), font_size=15)
+                text_stage("이미 최신 상태", "")
                 time.sleep(1.0)
             else:
                 GPIO.output(LED_SUCCESS, True)
-                set_ui_text("업데이트 성공!", "", pos=(10, 18), font_size=15)
+                text_stage("업데이트 성공!", "")
                 time.sleep(1.0)
                 GPIO.output(LED_SUCCESS, False)
                 restart_script()
         else:
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            set_ui_text("업데이트 실패", "", pos=(10, 18), font_size=15)
+            text_stage("업데이트 실패", "")
             time.sleep(1.2)
     except Exception:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        set_ui_text("오류 발생", "", pos=(20, 18), font_size=15)
+        text_stage("오류 발생", "")
         time.sleep(1.2)
     finally:
         with st.git_state_lock:
@@ -889,7 +910,7 @@ def unlock_memory():
 
 
 def restart_script():
-    set_ui_progress(25, "재시작 중", pos=(20, 10), font_size=15)
+    progress_stage(25, "재시작 중", "")
 
     def restart():
         time.sleep(1)
@@ -900,7 +921,7 @@ def restart_script():
 
 def lock_memory_procedure():
     if not is_memory_lock_enabled():
-        set_ui_text("메모리 잠금", "건너뜀", pos=(18, 18), font_size=15)
+        text_stage("메모리 잠금", "건너뜀", pos=(18, 18))
         time.sleep(0.4)
         clear_ui_override()
         st.need_update = True
@@ -935,7 +956,7 @@ def lock_memory_procedure():
 
 
 def shutdown_system():
-    set_ui_text("배터리 부족", "시스템 종료 중...", pos=(10, 18), font_size=15)
+    text_stage("배터리 부족", "시스템 종료 중...", pos=(10, 18))
     time.sleep(2)
     try:
         os.system("sudo shutdown -h now")
@@ -1126,7 +1147,7 @@ def execute_command(command_index):
         if not is_fw_extract_mode():
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            set_ui_text("FW 추출", "비활성화", pos=(15, 18), font_size=15)
+            text_stage("FW 추출", "비활성화", pos=(15, 18))
             time.sleep(1.5)
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
@@ -1150,7 +1171,7 @@ def execute_command(command_index):
         if not os.path.isfile(OUT_SCRIPT_PATH):
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            set_ui_text("out.py 없음", "", pos=(15, 18), font_size=15)
+            text_stage("out.py 없음", "")
             time.sleep(1.5)
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
@@ -1205,8 +1226,7 @@ def execute_command(command_index):
     if not selected_path:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        set_ui_text("BIN 경로", "없음", pos=(20, 12), font_size=15)
-        st.need_update = True
+        text_stage("BIN 경로", "없음", pos=(20, 12))
         time.sleep(1.0)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
@@ -1216,7 +1236,6 @@ def execute_command(command_index):
         st.need_update = True
         return
 
-    # 느린 detect/resolve 구간도 진행바에 포함
     progress_stage(5, "업데이트 진행 중", "대상 확인")
     dev_id, flash_kb = detect_stm32_flash_kb_with_unlock(timeout=STM32_DETECT_TIMEOUT_SEC)
 
@@ -1226,8 +1245,7 @@ def execute_command(command_index):
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        set_ui_text("메모리 잠금", "해제 실패", pos=(20, 12), font_size=15)
-        st.need_update = True
+        text_stage("메모리 잠금", "해제 실패", pos=(20, 12))
         time.sleep(1.0)
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
@@ -1244,6 +1262,7 @@ def execute_command(command_index):
     progress_msg = f"업데이트 진행 중\n{info_line}"
     set_ui_progress(45, progress_msg, pos=(6, 0), font_size=13)
     st.need_update = True
+    force_oled_refresh()
 
     openocd_cmd = make_openocd_program_cmd(resolved_path)
     process = subprocess.Popen(openocd_cmd, shell=True)
@@ -1256,12 +1275,14 @@ def execute_command(command_index):
         current_progress = min(current_progress, 80)
         set_ui_progress(current_progress, progress_msg, pos=(6, 0), font_size=13)
         st.need_update = True
+        force_oled_refresh()
         time.sleep(PROGRAM_PROGRESS_POLL_SEC)
 
     result = process.returncode
     if result == 0:
         set_ui_progress(80, f"업데이트 진행 중\n{info_line}", pos=(6, 0), font_size=13)
         st.need_update = True
+        force_oled_refresh()
         if is_memory_lock_enabled():
             time.sleep(POST_FLASH_WAIT_SEC)
             lock_memory_procedure()
@@ -1403,6 +1424,7 @@ def execute_button_logic():
                 and cs
                 and (not st.auto_flash_done_connection)
             ):
+                progress_stage(1, "업데이트 진행 중", "시작 준비")
                 execute_command(st.current_command_index)
                 st.auto_flash_done_connection = True
 
