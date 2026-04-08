@@ -62,6 +62,8 @@ oled_refresh_lock = threading.Lock()
 
 if not hasattr(st, "ui_transition_until"):
     st.ui_transition_until = 0.0
+if not hasattr(st, "stm32_disconnected_since"):
+    st.stm32_disconnected_since = 0.0
 
 
 def now_mono():
@@ -222,8 +224,16 @@ def stm32_poll_thread():
         with st.stm32_state_lock:
             cur_state = st.connection_success
 
-        if cur_state and (not prev_state):
-            st.auto_flash_done_connection = False
+        now2 = time.time()
+
+        if not cur_state:
+            if st.stm32_disconnected_since == 0.0:
+                st.stm32_disconnected_since = now2
+        else:
+            if st.stm32_disconnected_since > 0.0:
+                if (now2 - st.stm32_disconnected_since) >= 1.0:
+                    st.auto_flash_done_connection = False
+                st.stm32_disconnected_since = 0.0
 
 
 def git_head_hash():
