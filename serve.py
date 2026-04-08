@@ -64,6 +64,8 @@ if not hasattr(st, "ui_transition_until"):
     st.ui_transition_until = 0.0
 if not hasattr(st, "stm32_disconnected_since"):
     st.stm32_disconnected_since = 0.0
+if not hasattr(st, "auto_flash_cooldown_until"):
+    st.auto_flash_cooldown_until = 0.0
 
 
 def now_mono():
@@ -975,6 +977,8 @@ def execute_command(command_index):
     if not st.command_types or command_index < 0 or command_index >= len(st.command_types):
         return
 
+    st.stm32_disconnected_since = 0.0
+
     item_type = st.command_types[command_index]
 
     if item_type == "wifi":
@@ -1257,6 +1261,7 @@ def execute_command(command_index):
         GPIO.output(LED_ERROR, False)
         GPIO.output(LED_ERROR1, False)
         clear_ui_override()
+        st.auto_flash_cooldown_until = time.time() + 4.0
         st.is_executing = False
         st.is_command_executing = False
         st.need_update = True
@@ -1290,6 +1295,7 @@ def execute_command(command_index):
         set_ui_progress(80, f"업데이트 진행 중\n{info_line}", pos=(6, 0), font_size=13)
         st.need_update = True
         force_oled_refresh()
+        st.auto_flash_cooldown_until = time.time() + 4.0
         if is_memory_lock_enabled():
             time.sleep(POST_FLASH_WAIT_SEC)
             lock_memory_procedure()
@@ -1299,6 +1305,7 @@ def execute_command(command_index):
     else:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
+        st.auto_flash_cooldown_until = time.time() + 4.0
         progress_stage(0, "업데이트 실패", "")
         time.sleep(0.8)
 
@@ -1430,8 +1437,11 @@ def execute_button_logic():
                 and (not st.is_executing)
                 and cs
                 and (not st.auto_flash_done_connection)
+                and (time.time() >= getattr(st, "auto_flash_cooldown_until", 0.0))
             ):
                 st.auto_flash_done_connection = True
+                st.stm32_disconnected_since = 0.0
+                st.auto_flash_cooldown_until = time.time() + 4.0
                 progress_stage(1, "업데이트 진행 중", "시작 준비")
                 execute_command(st.current_command_index)
 
