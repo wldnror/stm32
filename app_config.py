@@ -1,5 +1,5 @@
 import os
-import wifi_portal
+import ㅁㄴㄹㅇwifi_portal
 
 VISUAL_X_OFFSET = 0
 
