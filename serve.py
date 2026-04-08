@@ -753,7 +753,7 @@ def realtime_update_display():
                     enter_ui_transition(0.12)
                     st.need_update = True
 
-        if st.need_update or (now - st.last_oled_update_time >= 0.22):
+        if st.need_update or (now - st.last_oled_update_time >= 0.05):
             update_oled_display()
             st.last_oled_update_time = now
             st.need_update = False
