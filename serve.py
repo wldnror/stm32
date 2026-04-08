@@ -24,6 +24,8 @@ from power_manager import init_ina219, battery_monitor_thread
 from stm32_manager import (
     kill_openocd,
     run_openocd_ok,
+    detect_stm32_flash_kb_with_unlock,
+    resolve_target_bin_by_gas,
     make_openocd_program_cmd,
     has_recent_unlock,
     mark_recent_unlock,
@@ -52,7 +54,6 @@ from display_manager import (
     clear_ui_override,
 )
 
-
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
@@ -78,6 +79,12 @@ def enter_ui_transition(sec: float = 0.10, flush_events: bool = True):
             st.next_pressed_event = False
             st.execute_long_handled = False
             st.next_long_handled = False
+
+
+def progress_stage(pct: int, line1: str, line2: str = "", pos=(8, 6), font_size=14):
+    msg = line1 if not line2 else f"{line1}\n{line2}"
+    set_ui_progress(pct, msg, pos=pos, font_size=font_size)
+    st.need_update = True
 
 
 def portal_set_state_safe(**kwargs):
@@ -859,13 +866,11 @@ def git_pull():
 
 def unlock_memory():
     if has_recent_unlock():
-        set_ui_progress(30, "메모리 잠금\n 해제 생략", pos=(20, 0), font_size=15)
-        st.need_update = True
+        progress_stage(35, "업데이트 진행 중", "잠금 해제 생략")
         time.sleep(0.15)
         return True
 
-    set_ui_progress(0, "메모리 잠금\n 해제 중", pos=(18, 0), font_size=15)
-    st.need_update = True
+    progress_stage(35, "업데이트 진행 중", "잠금 해제 중")
 
     ok = run_openocd_ok(
         ["init", "reset halt", "stm32f1x unlock 0", "reset run", "shutdown"],
@@ -874,13 +879,11 @@ def unlock_memory():
     mark_recent_unlock(ok)
 
     if ok:
-        set_ui_progress(30, "메모리 잠금\n 해제 성공!", pos=(20, 0), font_size=15)
-        st.need_update = True
-        time.sleep(0.3)
+        progress_stage(40, "업데이트 진행 중", "잠금 해제 완료")
+        time.sleep(0.2)
         return True
 
-    set_ui_progress(0, "메모리 잠금\n 해제 실패!", pos=(20, 0), font_size=15)
-    st.need_update = True
+    progress_stage(0, "업데이트 실패", "잠금 해제 실패")
     time.sleep(0.5)
     return False
 
@@ -903,8 +906,7 @@ def lock_memory_procedure():
         st.need_update = True
         return
 
-    set_ui_progress(80, "메모리 잠금 중", pos=(3, 10), font_size=15)
-    st.need_update = True
+    progress_stage(85, "업데이트 진행 중", "마무리 중")
     try:
         ok = run_openocd_ok(
             ["init", "reset halt", "stm32f1x lock 0", "reset run", "shutdown"],
@@ -912,21 +914,18 @@ def lock_memory_procedure():
         )
         if ok:
             GPIO.output(LED_SUCCESS, True)
-            set_ui_progress(100, "메모리 잠금\n    성공", pos=(20, 0), font_size=15)
-            st.need_update = True
+            progress_stage(100, "업데이트 완료", "")
             time.sleep(0.4)
             GPIO.output(LED_SUCCESS, False)
         else:
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            set_ui_progress(0, "메모리 잠금\n    실패", pos=(20, 0), font_size=15)
-            st.need_update = True
+            progress_stage(0, "업데이트 실패", "잠금 실패")
             time.sleep(0.6)
     except Exception:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        set_ui_progress(0, "오류 발생", pos=(20, 10), font_size=15)
-        st.need_update = True
+        progress_stage(0, "오류 발생", "")
         time.sleep(0.6)
     finally:
         GPIO.output(LED_SUCCESS, False)
@@ -1161,30 +1160,25 @@ def execute_command(command_index):
             st.is_command_executing = False
             return
 
-        set_ui_progress(10, "추출/업로드\n 실행 중...", pos=(10, 5), font_size=15)
-        st.need_update = True
-
+        progress_stage(10, "실행 중", "")
         try:
             result = subprocess.run(st.commands[command_index], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             if result.returncode == 0:
                 GPIO.output(LED_SUCCESS, True)
-                set_ui_progress(100, "완료!", pos=(35, 10), font_size=15)
-                st.need_update = True
+                progress_stage(100, "완료", "")
                 time.sleep(1)
                 GPIO.output(LED_SUCCESS, False)
             else:
                 GPIO.output(LED_ERROR, True)
                 GPIO.output(LED_ERROR1, True)
-                set_ui_progress(0, "실패!", pos=(35, 10), font_size=15)
-                st.need_update = True
+                progress_stage(0, "실패", "")
                 time.sleep(1.2)
                 GPIO.output(LED_ERROR, False)
                 GPIO.output(LED_ERROR1, False)
         except Exception:
             GPIO.output(LED_ERROR, True)
             GPIO.output(LED_ERROR1, True)
-            set_ui_progress(0, "오류 발생", pos=(25, 10), font_size=15)
-            st.need_update = True
+            progress_stage(0, "오류 발생", "")
             time.sleep(1.2)
             GPIO.output(LED_ERROR, False)
             GPIO.output(LED_ERROR1, False)
@@ -1222,9 +1216,12 @@ def execute_command(command_index):
         st.need_update = True
         return
 
-    # 빠른 버전: flash/dev_id 판별 없이 바로 원본 bin 사용
-    resolved_path = selected_path
-    info_line = "원본"
+    # 느린 detect/resolve 구간도 진행바에 포함
+    progress_stage(5, "업데이트 진행 중", "대상 확인")
+    dev_id, flash_kb = detect_stm32_flash_kb_with_unlock(timeout=STM32_DETECT_TIMEOUT_SEC)
+
+    progress_stage(20, "업데이트 진행 중", "파일 선택")
+    resolved_path, chosen_kind = resolve_target_bin_by_gas(selected_path, flash_kb)
 
     if not unlock_memory():
         GPIO.output(LED_ERROR, True)
@@ -1240,18 +1237,22 @@ def execute_command(command_index):
         st.need_update = True
         return
 
-    progress_msg = f"업데이트 중...\n{info_line}"
-    set_ui_progress(30, progress_msg, pos=(6, 0), font_size=13)
+    info_line = chosen_kind
+    if flash_kb is not None:
+        info_line = f"{chosen_kind} ({flash_kb}KB)"
+
+    progress_msg = f"업데이트 진행 중\n{info_line}"
+    set_ui_progress(45, progress_msg, pos=(6, 0), font_size=13)
     st.need_update = True
 
     openocd_cmd = make_openocd_program_cmd(resolved_path)
     process = subprocess.Popen(openocd_cmd, shell=True)
     start_time = time.time()
-    progress_increment = 20 / PROGRAM_PROGRESS_MAX_DURATION_SEC
+    progress_increment = 35 / PROGRAM_PROGRESS_MAX_DURATION_SEC
 
     while process.poll() is None:
         elapsed = time.time() - start_time
-        current_progress = 30 + (elapsed * progress_increment)
+        current_progress = 45 + (elapsed * progress_increment)
         current_progress = min(current_progress, 80)
         set_ui_progress(current_progress, progress_msg, pos=(6, 0), font_size=13)
         st.need_update = True
@@ -1259,20 +1260,18 @@ def execute_command(command_index):
 
     result = process.returncode
     if result == 0:
-        set_ui_progress(80, f"업데이트 성공!\n{info_line}", pos=(6, 0), font_size=13)
+        set_ui_progress(80, f"업데이트 진행 중\n{info_line}", pos=(6, 0), font_size=13)
         st.need_update = True
         if is_memory_lock_enabled():
             time.sleep(POST_FLASH_WAIT_SEC)
             lock_memory_procedure()
         else:
-            set_ui_text("업데이트 성공", "잠금 비활성", pos=(10, 18), font_size=14)
-            st.need_update = True
+            progress_stage(100, "업데이트 완료", "")
             time.sleep(0.5)
     else:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
-        set_ui_progress(0, f"업데이트 실패\n{info_line}", pos=(6, 0), font_size=13)
-        st.need_update = True
+        progress_stage(0, "업데이트 실패", "")
         time.sleep(0.8)
 
     GPIO.output(LED_SUCCESS, False)
