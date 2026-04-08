@@ -4,6 +4,7 @@ import app_state as st
 from app_config import FIRMWARE_DIR, GENERAL_ROOT, TFTP_ROOT, OUT_SCRIPT_PATH
 from app_utils import parse_order_and_name, is_fw_extract_mode
 
+
 def build_scan_menu():
     with st.scan_lock:
         ips = list(st.scan_ips)
@@ -20,22 +21,12 @@ def build_scan_menu():
     types_local.append("back_from_scan")
     extras_local.append(None)
 
-    return {
-        "dir": "__scan__",
-        "commands": commands_local,
-        "names": names_local,
-        "types": types_local,
-        "extras": extras_local,
-    }
+    return {"dir": "__scan__", "commands": commands_local, "names": names_local, "types": types_local, "extras": extras_local}
+
 
 def build_scan_detail_menu(ip: str):
-    return {
-        "dir": "__scan_detail__",
-        "commands": [None],
-        "names": [f"{ip}"],
-        "types": ["scan_detail"],
-        "extras": [ip],
-    }
+    return {"dir": "__scan_detail__", "commands": [None], "names": [f"{ip}"], "types": ["scan_detail"], "extras": [ip]}
+
 
 def build_menu_for_dir(dir_path, is_root=False):
     entries = []
@@ -43,7 +34,6 @@ def build_menu_for_dir(dir_path, is_root=False):
         if is_root:
             gas_dirs = {}
             root_bins = {}
-
             for base_root in (TFTP_ROOT, GENERAL_ROOT):
                 if not os.path.isdir(base_root):
                     continue
@@ -54,11 +44,9 @@ def build_menu_for_dir(dir_path, is_root=False):
                         continue
                     if name.lower().endswith(".bin"):
                         root_bins[name] = full
-
             for dname in sorted(gas_dirs.keys()):
                 order, display_name = parse_order_and_name(dname, is_dir=True)
                 entries.append((order, 0, "▶ " + display_name, "dir", gas_dirs[dname]))
-
             for bname in sorted(root_bins.keys()):
                 order, display_name = parse_order_and_name(bname, is_dir=False)
                 entries.append((order, 1, display_name, "bin", root_bins[bname]))
@@ -88,13 +76,16 @@ def build_menu_for_dir(dir_path, is_root=False):
         extras_local.append(extra)
 
     if is_root:
-        if st.cached_online and is_fw_extract_mode():
+        online = st.cached_online
+        fw_extract_enabled = is_fw_extract_mode()
+
+        if online and fw_extract_enabled:
             commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
             names_local.append("FW 추출(OUT)")
             types_local.append("script")
             extras_local.append(None)
 
-        if st.cached_online:
+        if online:
             with st.git_state_lock:
                 has_update = st.git_has_update_cached
             if has_update:
@@ -118,13 +109,8 @@ def build_menu_for_dir(dir_path, is_root=False):
         types_local.append("back")
         extras_local.append(None)
 
-    return {
-        "dir": dir_path,
-        "commands": commands_local,
-        "names": names_local,
-        "types": types_local,
-        "extras": extras_local,
-    }
+    return {"dir": dir_path, "commands": commands_local, "names": names_local, "types": types_local, "extras": extras_local}
+
 
 def refresh_root_menu(reset_index=False):
     st.current_menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
@@ -132,9 +118,9 @@ def refresh_root_menu(reset_index=False):
     st.command_names = st.current_menu["names"]
     st.command_types = st.current_menu["types"]
     st.menu_extras = st.current_menu["extras"]
-
     if reset_index or (st.current_command_index >= len(st.commands)):
         st.current_command_index = 0
+
 
 def is_root_menu_view() -> bool:
     return bool(st.current_menu and st.current_menu.get("dir") == FIRMWARE_DIR)
