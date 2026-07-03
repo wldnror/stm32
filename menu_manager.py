@@ -1,8 +1,21 @@
 import os
+import unicodedata
 
 import app_state as st
 from app_config import FIRMWARE_DIR, GENERAL_ROOT, TFTP_ROOT, OUT_SCRIPT_PATH
 from app_utils import parse_order_and_name, is_fw_extract_mode
+
+
+def nfc_text(s: str) -> str:
+    """
+    OLED 표시용 한글 자모 분리 방지.
+    실제 파일 경로는 원본 이름을 그대로 쓰고,
+    화면 표시 이름만 NFC로 정규화한다.
+    """
+    try:
+        return unicodedata.normalize("NFC", s or "")
+    except Exception:
+        return s or ""
 
 
 def build_scan_menu():
@@ -10,6 +23,7 @@ def build_scan_menu():
         ips = list(st.scan_ips)
 
     commands_local, names_local, types_local, extras_local = [], [], [], []
+
     for ip in ips:
         commands_local.append(None)
         names_local.append(f"▶ {ip}")
@@ -21,48 +35,76 @@ def build_scan_menu():
     types_local.append("back_from_scan")
     extras_local.append(None)
 
-    return {"dir": "__scan__", "commands": commands_local, "names": names_local, "types": types_local, "extras": extras_local}
+    return {
+        "dir": "__scan__",
+        "commands": commands_local,
+        "names": names_local,
+        "types": types_local,
+        "extras": extras_local,
+    }
 
 
 def build_scan_detail_menu(ip: str):
-    return {"dir": "__scan_detail__", "commands": [None], "names": [f"{ip}"], "types": ["scan_detail"], "extras": [ip]}
+    return {
+        "dir": "__scan_detail__",
+        "commands": [None],
+        "names": [f"{ip}"],
+        "types": ["scan_detail"],
+        "extras": [ip],
+    }
 
 
 def build_menu_for_dir(dir_path, is_root=False):
     entries = []
+
     try:
         if is_root:
             gas_dirs = {}
             root_bins = {}
+
             for base_root in (TFTP_ROOT, GENERAL_ROOT):
                 if not os.path.isdir(base_root):
                     continue
+
                 for name in os.listdir(base_root):
+                    # 중요:
+                    # full 경로는 원본 name 그대로 사용.
+                    # 표시용 이름만 parse_order_and_name()에서 NFC 변환.
                     full = os.path.join(base_root, name)
+
                     if os.path.isdir(full):
                         gas_dirs[name] = full
                         continue
+
                     if name.lower().endswith(".bin"):
                         root_bins[name] = full
-            for dname in sorted(gas_dirs.keys()):
+
+            for dname in sorted(gas_dirs.keys(), key=lambda x: nfc_text(x)):
                 order, display_name = parse_order_and_name(dname, is_dir=True)
                 entries.append((order, 0, "▶ " + display_name, "dir", gas_dirs[dname]))
-            for bname in sorted(root_bins.keys()):
+
+            for bname in sorted(root_bins.keys(), key=lambda x: nfc_text(x)):
                 order, display_name = parse_order_and_name(bname, is_dir=False)
                 entries.append((order, 1, display_name, "bin", root_bins[bname]))
+
         else:
             for fname in os.listdir(dir_path):
+                # 중요:
+                # full_path는 원본 fname 그대로 사용해야 실제 파일 접근이 안전함.
                 full_path = os.path.join(dir_path, fname)
+
                 if os.path.isdir(full_path):
                     order, display_name = parse_order_and_name(fname, is_dir=True)
                     entries.append((order, 0, "▶ " + display_name, "dir", full_path))
+
                 elif fname.lower().endswith(".bin"):
                     order, display_name = parse_order_and_name(fname, is_dir=False)
                     entries.append((order, 1, display_name, "bin", full_path))
+
     except FileNotFoundError:
         entries = []
 
-    entries.sort(key=lambda x: (x[0], x[1], x[2]))
+    entries.sort(key=lambda x: (x[0], x[1], nfc_text(x[2])))
 
     commands_local = []
     names_local = []
@@ -71,7 +113,7 @@ def build_menu_for_dir(dir_path, is_root=False):
 
     for order, type_pri, display_name, item_type, extra in entries:
         commands_local.append(None)
-        names_local.append(display_name)
+        names_local.append(nfc_text(display_name))
         types_local.append(item_type)
         extras_local.append(extra)
 
@@ -88,6 +130,7 @@ def build_menu_for_dir(dir_path, is_root=False):
         if online:
             with st.git_state_lock:
                 has_update = st.git_has_update_cached
+
             if has_update:
                 commands_local.append("git_pull")
                 names_local.append("시스템 업데이트")
@@ -103,13 +146,20 @@ def build_menu_for_dir(dir_path, is_root=False):
         names_local.append("감지기 연결(스캔)")
         types_local.append("device_scan")
         extras_local.append(None)
+
     else:
         commands_local.append(None)
         names_local.append("◀ 이전으로")
         types_local.append("back")
         extras_local.append(None)
 
-    return {"dir": dir_path, "commands": commands_local, "names": names_local, "types": types_local, "extras": extras_local}
+    return {
+        "dir": dir_path,
+        "commands": commands_local,
+        "names": names_local,
+        "types": types_local,
+        "extras": extras_local,
+    }
 
 
 def refresh_root_menu(reset_index=False):
@@ -118,6 +168,7 @@ def refresh_root_menu(reset_index=False):
     st.command_names = st.current_menu["names"]
     st.command_types = st.current_menu["types"]
     st.menu_extras = st.current_menu["extras"]
+
     if reset_index or (st.current_command_index >= len(st.commands)):
         st.current_command_index = 0
 
