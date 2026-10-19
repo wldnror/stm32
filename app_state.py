@@ -54,6 +54,7 @@ next_pressed_event = False
 menu_stack = []
 root_menu_pending_lock = threading.Lock()
 root_menu_pending = None
+root_menu_generation = 0
 current_menu = None
 commands = []
 command_names = []
