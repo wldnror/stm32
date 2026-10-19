@@ -181,14 +181,21 @@ def install_root_menu(menu, reset_index=False):
 
 
 def refresh_root_menu(reset_index=False):
-    install_root_menu(build_menu_for_dir(FIRMWARE_DIR, is_root=True), reset_index)
+    menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
+    with st.root_menu_pending_lock:
+        st.root_menu_generation += 1
+        st.root_menu_pending = None
+    install_root_menu(menu, reset_index)
 
 
 def queue_root_menu_refresh():
     # Background I/O must not overwrite a button selection or a new submenu.
+    with st.root_menu_pending_lock:
+        generation = st.root_menu_generation
     menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
     with st.root_menu_pending_lock:
-        st.root_menu_pending = menu
+        if generation == st.root_menu_generation:
+            st.root_menu_pending = menu
 
 
 def apply_pending_root_menu():

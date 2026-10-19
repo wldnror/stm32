@@ -62,7 +62,7 @@ class MenuPublicationTests(unittest.TestCase):
         return SimpleNamespace(current_menu=old, commands=old["commands"],
             command_names=old["names"], command_types=old["types"], menu_extras=old["extras"],
             current_command_index=0, root_menu_pending_lock=threading.Lock(),
-            root_menu_pending=None, need_update=False)
+            root_menu_pending=None, root_menu_generation=0, need_update=False)
 
     def test_button_selection_during_background_build_is_preserved(self):
         import menu_manager as menu
@@ -95,6 +95,23 @@ class MenuPublicationTests(unittest.TestCase):
         with patch.object(menu, "st", state):
             menu.install_root_menu(self.menu(["A"]))
         self.assertEqual(state.current_command_index, 0)
+
+    def test_explicit_refresh_invalidates_queued_and_inflight_old_results(self):
+        import menu_manager as menu
+        state = self.state()
+        newest = self.menu(["new firmware"])
+        stale = self.menu(["old firmware"])
+        state.root_menu_pending = stale
+        def build(*args, **kwargs):
+            # A manual refresh finishes while this background build is running.
+            with patch.object(menu, "build_menu_for_dir", return_value=newest):
+                menu.refresh_root_menu()
+            return stale
+        with patch.object(menu, "st", state), patch.object(menu, "build_menu_for_dir", side_effect=build):
+            menu.queue_root_menu_refresh()
+            menu.apply_pending_root_menu()
+        self.assertIs(state.current_menu, newest)
+        self.assertIsNone(state.root_menu_pending)
 
 
 class BackgroundNetworkTests(unittest.TestCase):
