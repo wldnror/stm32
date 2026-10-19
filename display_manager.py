@@ -50,7 +50,7 @@ def oled_canvas(render_key=None):
         _last_render_key = render_key
 
 
-def draw_fit_line(draw, text, x, y, width, start_size=12, min_size=8):
+def draw_fit_line(draw, text, x, y, width, start_size=12, min_size=8, align="left"):
     text = str(text or "")
     for size in range(start_size, min_size - 1, -1):
         font = get_font(size)
@@ -59,19 +59,38 @@ def draw_fit_line(draw, text, x, y, width, start_size=12, min_size=8):
     text = ellipsis_to_width(draw, text, font, width)
     # Anchor at the actual top-left ink edge, not the font's ascender offset.
     box = draw.textbbox((0, 0), text, font=font)
+    ink_width = box[2] - box[0]
+    if align == "center":
+        x += (width - ink_width) // 2
+    elif align == "right":
+        x += width - ink_width
     draw.text((x - box[0], y - box[1]), text, font=font, fill=255)
     return draw.textbbox((x - box[0], y - box[1]), text, font=font)
 
 
-def draw_system_header_footer(draw, ip, current_time, connected):
+def draw_system_header_footer(draw, ip, current_time, connected, wifi_level=0):
     width, height = device.width, device.height
-    draw_fit_line(draw, current_time, 1, 1, 76, 12)
-    draw_fit_line(draw, "GDSENG", 80, 1, width - 81, 12)
-    draw_fit_line(draw, "WiFi" if connected else "WiFi 미연결", 1, 16, 75, 10)
-    draw_fit_line(draw, APP_VERSION, 82, 16, width - 83, 10)
-    # Full-width IP row: the version never shares this row.
-    return draw_fit_line(draw, ip if ip != "0.0.0.0" else "연결 없음",
-                         1, height - 13, width - 2, 12)
+    # One status row, one menu area, one full-width address row.
+    # Align the status text on the same baseline and reserve clear margins.
+    draw_fit_line(draw, current_time, 3, 4, 34, 11, min_size=10)
+    for index in range(4):
+        x = 43 + index * 3
+        bar_height = 2 + index * 2
+        lit = connected and wifi_level >= index + 1
+        if lit:
+            draw.rectangle((x, 12 - bar_height, x + 1, 11), fill=255)
+        else:
+            draw.point((x, 11), fill=255)
+    if not connected:
+        draw.line((44, 4, 52, 12), fill=255)
+        draw.line((52, 4, 44, 12), fill=255)
+    version = APP_VERSION.replace("ver ", "v")
+    draw_fit_line(draw, "GDSENG " + version, 60, 5, width - 63,
+                  9, min_size=9, align="right")
+    draw.line((3, 16, width - 4, 16), fill=255)
+    draw.line((3, height - 16, width - 4, height - 16), fill=255)
+    return draw_fit_line(draw, ip if ip != "0.0.0.0" else "Wi-Fi 미연결",
+                         3, height - 11, width - 6, 10, min_size=9, align="center")
 
 
 
@@ -130,23 +149,17 @@ def ellipsis_to_width(draw, text, font, max_w):
 
 
 def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_size, min_size=10):
-    size = start_size
-    while size >= min_size:
-        f = get_font(size)
-        w, _ = text_size(draw, text, f)
-        if w <= max_width:
-            try:
-                draw.text((center_x, center_y), text, font=f, fill=255, anchor="mm")
-            except TypeError:
-                draw.text((center_x, center_y), text, font=f, fill=255)
-            return
-        size -= 1
-    f = get_font(min_size)
-    text = ellipsis_to_width(draw, text, f, max_width)
-    try:
-        draw.text((center_x, center_y), text, font=f, fill=255, anchor="mm")
-    except TypeError:
-        draw.text((center_x, center_y), text, font=f, fill=255)
+    for size in range(start_size, min_size - 1, -1):
+        font = get_font(size)
+        if text_size(draw, text, font)[0] <= max_width:
+            break
+    text = ellipsis_to_width(draw, text, font, max_width)
+    # Center visible pixels. This font's advance width differs from its ink
+    # bounds, so Pillow's "mm" anchor can leave Korean labels off-center.
+    box = draw.textbbox((0, 0), text, font=font)
+    x = round(center_x - (box[0] + box[2]) / 2)
+    y = round(center_y - (box[1] + box[3]) / 2)
+    draw.text((x, y), text, font=font, fill=255)
 
 
 def draw_wifi_bars(draw, x, y, level):
@@ -424,7 +437,7 @@ def update_oled_display():
             wifi_running = st.wifi_action_running
 
         now_dt = datetime.now()
-        current_time = now_dt.strftime("%H시 %M분")
+        current_time = now_dt.strftime("%H:%M")
         voltage_percentage = st.battery_percentage
         ip_address = st.cached_ip
         wifi_level = st.cached_wifi_level
@@ -529,7 +542,7 @@ def update_oled_display():
             title, item_type = names[index], types[index]
 
             if item_type in ("system", "wifi"):
-                draw_system_header_footer(draw, ip_address, current_time, st.cached_wifi_connected)
+                draw_system_header_footer(draw, ip_address, current_time, st.cached_wifi_connected, wifi_level)
             else:
                 battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
                 draw.bitmap((90, -11), battery_icon, fill=255)

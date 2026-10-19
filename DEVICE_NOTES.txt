@@ -1,4 +1,4 @@
-STM32 debug appliance 3.73
+STM32 debug appliance 3.74
 
 Entry: main.py -> serve.py. systemd owns restart/recovery.
 UI: display_manager.py (128x64 OLED), menu_manager.py, app_state.py.
