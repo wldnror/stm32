@@ -6,6 +6,7 @@ from datetime import datetime
 from PIL import Image, ImageFont, ImageDraw
 from luma.core.interface.serial import i2c
 from luma.oled.device import sh1107
+from oled_frames import display_rotated_frame
 
 import app_state as st
 from app_config import (
@@ -24,13 +25,21 @@ serial = None
 device = None
 
 
+class MenuDisplay(sh1107):
+    def display(self, image):
+        if self.rotate == 1 and self.size == (128, 64):
+            display_rotated_frame(self, image)
+        else:
+            super().display(image)
+
+
 def initialize_display():
     global serial, device
     if device is None:
         from boot_status import claim_display
         claim_display()
         serial = i2c(port=1, address=0x3C)
-        device = sh1107(serial, rotate=1)
+        device = MenuDisplay(serial, rotate=1)
         device.persist = True
 
 

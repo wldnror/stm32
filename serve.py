@@ -10,7 +10,7 @@ import logging
 from boot_status import publish, menu_ready
 from button_input import ButtonInputs
 from process_utils import run_command
-from network_utils import wifi_link, internet_available
+from network_utils import wifi_link
 import wifi_backend
 
 import RPi.GPIO as GPIO
@@ -23,7 +23,6 @@ from app_utils import (
     is_memory_lock_enabled,
     run_capture,
     run_quiet,
-    has_real_internet,
     get_ip_address,
 )
 from power_manager import init_ina219, battery_monitor_thread
@@ -48,6 +47,8 @@ from menu_manager import (
     build_scan_detail_menu,
     build_menu_for_dir,
     refresh_root_menu,
+    queue_root_menu_refresh,
+    apply_pending_root_menu,
     is_root_menu_view,
 )
 from display_manager import (
@@ -106,9 +107,9 @@ def enter_ui_transition(sec: float = 0.08, flush_events: bool = True):
 def force_oled_refresh():
     try:
         with oled_refresh_lock:
+            st.need_update = False
             update_oled_display()
             st.last_oled_update_time = time.time()
-            st.need_update = False
     except Exception:
         pass
 
@@ -264,7 +265,7 @@ def git_has_remote_updates_light(timeout=10.0) -> bool:
     if not b or not lh:
         return False
 
-    rc, out, _ = run_capture(["git", "-C", GIT_REPO_DIR, "ls-remote", "origin", f"refs/heads/{b}"], timeout=timeout)
+    rc, out, _ = run_capture(["nice", "-n", "10", "git", "-C", GIT_REPO_DIR, "ls-remote", "origin", f"refs/heads/{b}"], timeout=timeout)
     if rc == 0:
         lines = (out or "").strip().splitlines()
         if lines:
@@ -311,7 +312,7 @@ def git_poll_thread():
             if prev is None or prev != ok:
                 prev = ok
                 if is_root_menu_view():
-                    refresh_root_menu(reset_index=False)
+                    queue_root_menu_refresh()
                 st.need_update = True
 
             time.sleep(0.15)
@@ -410,7 +411,7 @@ def wifi_worker_thread():
                 with st.wifi_action_lock:
                     st.wifi_action_running = False
                 if is_root_menu_view():
-                    refresh_root_menu(reset_index=False)
+                    queue_root_menu_refresh()
                 st.need_update = True
         time.sleep(0.1)
 
@@ -453,7 +454,6 @@ def realtime_update_display():
             wifi_running = st.wifi_action_running
 
         wifi_stage_tick()
-        ap_client_tick(wifi_running)
 
         now = time.time()
 
@@ -489,28 +489,36 @@ def realtime_update_display():
                     enter_ui_transition(0.05)
                     st.need_update = True
 
-        if now - st.last_oled_update_time >= (0.10 if wifi_running or st.is_executing else 0.20):
+        if st.need_update or now - st.last_oled_update_time >= (0.10 if wifi_running or st.is_executing else 0.20):
             with oled_refresh_lock:
-                update_oled_display()
-                st.last_oled_update_time = now
+                # Clear before drawing: a new request during the write survives.
                 st.need_update = False
+                update_oled_display()
+                st.last_oled_update_time = time.time()
 
         time.sleep(0.02)
+
+
+def ap_client_poll_thread():
+    while not st.stop_threads:
+        with st.wifi_action_lock:
+            wifi_running = st.wifi_action_running
+        ap_client_tick(wifi_running)
+        time.sleep(0.2)
 
 
 def net_poll_thread():
     while not st.stop_threads:
         try:
             link = wifi_link()
+            was_connected = st.cached_wifi_connected
             st.cached_ip = link["ip"]
             st.cached_wifi_connected = link["connected"]
             st.cached_wifi_level = link["level"]
-            online_now = internet_available() if link["connected"] else False
-            st.cached_online = online_now
-            if st.last_menu_online is None or online_now != st.last_menu_online:
-                st.last_menu_online = online_now
+            # Menu availability depends on the local Wi-Fi link, not public ping.
+            if was_connected != link["connected"]:
                 if is_root_menu_view():
-                    refresh_root_menu(reset_index=False)
+                    queue_root_menu_refresh()
             st.need_update = True
         except Exception:
             logging.exception("Network status polling failed")
@@ -1033,6 +1041,7 @@ def stm32_poll_thread():
 
 def execute_button_logic():
     while not st.stop_threads:
+        apply_pending_root_menu()
         now = now_mono()
 
         if st.battery_percentage == 0:
@@ -1210,6 +1219,8 @@ def main():
 
     realtime_update_thread = threading.Thread(target=realtime_update_display, daemon=True)
     realtime_update_thread.start()
+
+    threading.Thread(target=ap_client_poll_thread, daemon=True).start()
 
     wifi_thread = threading.Thread(target=wifi_worker_thread, daemon=True)
     wifi_thread.start()

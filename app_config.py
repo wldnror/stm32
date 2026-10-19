@@ -79,4 +79,4 @@ FONT_PATH = os.environ.get("STM32_FONT_PATH") or next(
     "/usr/share/fonts/truetype/malgun/malgunbd.ttf",
 )
 BATTERY_ICON_PATH = "/home/user/stm32/img/bat.png"
-APP_VERSION = "ver 3.76"
+APP_VERSION = "ver 3.77"

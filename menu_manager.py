@@ -161,12 +161,12 @@ def build_menu_for_dir(dir_path, is_root=False):
     }
 
 
-def refresh_root_menu(reset_index=False):
+def install_root_menu(menu, reset_index=False):
     previous = None
     index = st.current_command_index
     if not reset_index and 0 <= index < min(len(st.command_names), len(st.command_types)):
         previous = (st.command_types[index], st.command_names[index])
-    st.current_menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
+    st.current_menu = menu
     st.commands = st.current_menu["commands"]
     st.command_names = st.current_menu["names"]
     st.command_types = st.current_menu["types"]
@@ -178,6 +178,26 @@ def refresh_root_menu(reset_index=False):
             st.current_command_index = pairs.index(previous)
     if reset_index or (st.current_command_index >= len(st.commands)):
         st.current_command_index = 0
+
+
+def refresh_root_menu(reset_index=False):
+    install_root_menu(build_menu_for_dir(FIRMWARE_DIR, is_root=True), reset_index)
+
+
+def queue_root_menu_refresh():
+    # Background I/O must not overwrite a button selection or a new submenu.
+    menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
+    with st.root_menu_pending_lock:
+        st.root_menu_pending = menu
+
+
+def apply_pending_root_menu():
+    # Called only by the input loop, using the selection at publication time.
+    with st.root_menu_pending_lock:
+        menu, st.root_menu_pending = st.root_menu_pending, None
+    if menu is not None and is_root_menu_view():
+        install_root_menu(menu)
+        st.need_update = True
 
 
 def is_root_menu_view() -> bool:
