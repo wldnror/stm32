@@ -13,7 +13,7 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 RuntimeDirectory=stm32-boot
 RuntimeDirectoryMode=0775
 RuntimeDirectoryPreserve=yes
-StandardOutput=append:/run/stm32-boot/boot.log
+StandardOutput=append:/run/stm32-boot.log
 StandardError=inherit
 Nice=-5
 ExecStartPre=-/sbin/modprobe i2c_bcm2835

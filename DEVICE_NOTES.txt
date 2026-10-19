@@ -50,9 +50,9 @@ Early startup screen (3.75)
 - An exclusive lock hands the OLED from the splash to the normal display.
   The splash closes its bus without clearing the screen.
 - systemd READY=1 is sent only after a real menu frame has been transmitted.
-- The menu journal and /run/stm32-boot/boot.log record timestamps since Linux
+- The menu journal and /run/stm32-boot.log record timestamps since Linux
   kernel start, excluding the Raspberry Pi firmware interval before Linux.
-  The early service logs directly to the runtime directory so it can start
+  The early service logs directly under /run so it can start
   before the journal socket. Its initial priority is lowered after the first frame.
 - A legacy installation without the early unit still starts the normal app.
 
@@ -64,3 +64,4 @@ Early startup screen (3.75)
   Release, long-press and cancellation behavior still use the existing handlers.
 - /run/stm32-boot/first-frame.json retains the first successful OLED write time
   even if journald was not running yet. state.json at READY records menu time.
+  startup-error.log in that directory retains an early application traceback.

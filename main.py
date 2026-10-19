@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 
-from boot_status import publish
+from boot_status import RUNTIME, publish
 
 
 def main():
@@ -13,6 +13,11 @@ def main():
         publish(65, "CHECKING")
         serve.main()
     except BaseException:
+        import traceback
+        try:
+            (RUNTIME / "startup-error.log").write_text(traceback.format_exc())
+        except OSError:
+            pass
         publish(20, "RETRYING")
         raise
 
