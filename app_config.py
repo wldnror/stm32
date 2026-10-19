@@ -75,6 +75,12 @@ SCAN_MENU_REBUILD_MIN_SEC = 0.6
 SCAN_PREFIX_STABLE_CNT = 2
 SCAN_DETAIL_POLL_SEC = 0.2
 
-FONT_PATH = "/usr/share/fonts/truetype/malgun/malgunbd.ttf"
+FONT_PATH = os.environ.get("STM32_FONT_PATH") or next(
+    (path for path in (
+        "/usr/share/fonts/truetype/malgunbd/malgunbd.ttf",
+        "/usr/share/fonts/truetype/malgun/malgunbd.ttf",
+    ) if os.path.isfile(path)),
+    "/usr/share/fonts/truetype/malgun/malgunbd.ttf",
+)
 BATTERY_ICON_PATH = "/home/user/stm32/img/bat.png"
 APP_VERSION = "ver 3.73"
