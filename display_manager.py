@@ -451,7 +451,7 @@ def update_oled_display():
             wifi_running = st.wifi_action_running
 
         now_dt = datetime.now()
-        current_time = now_dt.strftime("%H:%M")
+        current_time = now_dt.strftime("%H시 %M분")
         voltage_percentage = st.battery_percentage
         ip_address = st.cached_ip
         wifi_level = st.cached_wifi_level
@@ -556,13 +556,13 @@ def update_oled_display():
             title, item_type = names[index], types[index]
 
             if item_type in ("system", "wifi"):
-                draw_system_header_footer(draw, ip_address, current_time, st.cached_wifi_connected, wifi_level)
+                draw_system_header_footer(draw, ip_address, now_dt.strftime("%H:%M"), st.cached_wifi_connected, wifi_level)
             else:
                 battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
                 draw.bitmap((90, -11), battery_icon, fill=255)
                 perc_text = f"{voltage_percentage:.0f}%" if (voltage_percentage is not None and voltage_percentage >= 0) else "--%"
                 draw.text((99, 1), perc_text, font=font_st, fill=255)
-                draw.text((2, 1), current_time, font=font_time, fill=255)
+                draw_fit_line(draw, current_time, 2, 4, 64, 12, min_size=11)
                 draw_wifi_bars(draw, 70, 3, wifi_level)
 
             if st.status_message:
