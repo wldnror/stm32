@@ -118,16 +118,15 @@ def build_menu_for_dir(dir_path, is_root=False):
         extras_local.append(extra)
 
     if is_root:
-        online = st.cached_online
         fw_extract_enabled = is_fw_extract_mode()
 
-        if online and fw_extract_enabled:
+        if fw_extract_enabled:
             commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
             names_local.append("FW 추출(OUT)")
             types_local.append("script")
             extras_local.append(None)
 
-        if online:
+        if st.cached_wifi_connected:
             with st.git_state_lock:
                 has_update = st.git_has_update_cached
 

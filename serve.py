@@ -267,7 +267,7 @@ def git_poll_thread():
     prev = None
     while not st.stop_threads:
         try:
-            if not st.cached_online:
+            if not st.cached_wifi_connected:
                 with st.git_state_lock:
                     st.git_has_update_cached = False
                 time.sleep(0.6)

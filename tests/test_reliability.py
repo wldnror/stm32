@@ -360,5 +360,15 @@ class TFTPTests(unittest.TestCase):
             self.assertEqual(list(Path(directory).glob("*.tmp-*")), [])
 
 
+class MenuTests(unittest.TestCase):
+    def test_blocked_public_ping_does_not_hide_updates_or_local_extraction(self):
+        import menu_manager as menu
+        import app_state as state
+        with tempfile.TemporaryDirectory() as directory, patch.object(menu, "GENERAL_ROOT", directory), patch.object(menu, "TFTP_ROOT", directory), patch.object(menu, "is_fw_extract_mode", return_value=True), patch.object(state, "cached_online", False), patch.object(state, "cached_wifi_connected", True), patch.object(state, "git_has_update_cached", True):
+            built = menu.build_menu_for_dir(directory, is_root=True)
+        self.assertIn("system", built["types"])
+        self.assertIn("script", built["types"])
+
+
 if __name__ == "__main__":
     unittest.main()
