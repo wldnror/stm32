@@ -189,7 +189,7 @@ class DisplayTests(unittest.TestCase):
         for name in ("luma", "luma.core", "luma.core.interface", "luma.core.interface.serial", "luma.oled", "luma.oled.device", "luma.core.render"):
             modules[name] = types.ModuleType(name)
         modules["luma.core.interface.serial"].i2c = lambda **kw: None
-        modules["luma.oled.device"].sh1107 = lambda *a, **kw: cls.device
+        modules["luma.oled.device"].sh1107 = Device
         modules["luma.core.render"].canvas = None
         original_font = ImageFont.truetype
         cls.patches = [patch.dict(sys.modules, modules),
@@ -199,6 +199,9 @@ class DisplayTests(unittest.TestCase):
         for item in cls.patches:
             item.start()
         cls.display = importlib.import_module("display_manager")
+        factory = patch.object(cls.display, "MenuDisplay", side_effect=lambda *a, **kw: cls.device)
+        factory.start()
+        cls.patches.append(factory)
         cls.display.initialize_display()
 
     @classmethod
