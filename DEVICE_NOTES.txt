@@ -65,3 +65,12 @@ Early startup screen (3.75)
 - /run/stm32-boot/first-frame.json retains the first successful OLED write time
   even if journald was not running yet. state.json at READY records menu time.
   startup-error.log in that directory retains an early application traceback.
+
+On-device validation (Pi Zero W, 2026-10-19)
+- Final reboot: first splash frame at 19.492 s, first real menu frame at
+  35.664 s after Linux kernel start; no application restart or failed unit.
+- A preceding reboot also reached the menu without restarting (36.071 s).
+- 47 regression tests pass locally and on the Pi. They include SH1107 packing,
+  exclusive handoff, readiness notification, button bounce and press/release.
+- These measurements do not include pre-kernel firmware initialization and
+  are not a promise of a fixed power-on time on other SD cards or hardware.
