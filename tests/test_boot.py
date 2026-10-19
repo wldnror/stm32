@@ -7,7 +7,9 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -208,6 +210,30 @@ class EarlyGPIOTests(unittest.TestCase):
         inputs.poll(2.05)
         next_button.assert_called_once_with(27, 0)
         self.assertEqual(execute.call_count, 1)
+
+    def test_existing_handlers_keep_short_click_and_long_press_release_behavior(self):
+        tree = ast.parse((ROOT / "serve.py").read_text())
+        nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                 and node.name in ("button_next_edge", "button_execute_edge")]
+        for name, prefix, event in [("button_next_edge", "next", "next_pressed_event"),
+                                     ("button_execute_edge", "execute", "execute_short_event")]:
+            for handled in (False, True):
+                with self.subTest(button=prefix, long_press_handled=handled):
+                    state = SimpleNamespace()
+                    clock = Mock(return_value=1.0)
+                    env = dict(st=state, now_mono=clock, button_state_lock=threading.Lock(),
+                               GPIO=SimpleNamespace(LOW=0), NEXT_LONG_CANCEL_THRESHOLD=.7)
+                    exec(compile(ast.Module(body=nodes, type_ignores=[]), "serve.py", "exec"), env)
+                    callback = env[name]
+                    setattr(state, event, False)
+                    callback(17, 0)
+                    self.assertTrue(getattr(state, prefix + "_is_down"))
+                    setattr(state, prefix + "_long_handled", handled)
+                    clock.return_value = 1.1 if not handled else 2.0
+                    callback(17, 1)
+                    self.assertFalse(getattr(state, prefix + "_is_down"))
+                    self.assertIsNone(getattr(state, prefix + "_press_time"))
+                    self.assertEqual(getattr(state, event), not handled)
 
 
 if __name__ == "__main__":
