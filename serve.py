@@ -7,6 +7,7 @@ import subprocess
 import re
 import logging
 
+from boot_status import publish, menu_ready
 from process_utils import run_command
 from network_utils import wifi_link
 
@@ -49,6 +50,8 @@ from menu_manager import (
     is_root_menu_view,
 )
 from display_manager import (
+    initialize_display,
+    display_ready,
     update_oled_display,
     wifi_stage_set,
     wifi_stage_clear,
@@ -1177,9 +1180,16 @@ def execute_button_logic():
 
 
 def main():
+    publish(70, "PREPARING")
     ensure_menu_config_csv()
     init_ina219()
     refresh_root_menu(reset_index=True)
+    publish(85, "ALMOST READY")
+    initialize_display()
+    force_oled_refresh()
+    if not display_ready():
+        raise RuntimeError("First OLED menu frame failed")
+    menu_ready()
 
     probe_thread = threading.Thread(target=stm32_poll_thread, daemon=True)
     probe_thread.start()

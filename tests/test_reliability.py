@@ -193,11 +193,13 @@ class DisplayTests(unittest.TestCase):
         modules["luma.core.render"].canvas = None
         original_font = ImageFont.truetype
         cls.patches = [patch.dict(sys.modules, modules),
+                       patch("boot_status.claim_display"),
                        patch("PIL.ImageFont.truetype", side_effect=lambda name, size: original_font(font_path, size)),
                        patch("app_config.BATTERY_ICON_PATH", str(ROOT / "img" / "bat.png"))]
         for item in cls.patches:
             item.start()
         cls.display = importlib.import_module("display_manager")
+        cls.display.initialize_display()
 
     @classmethod
     def tearDownClass(cls):

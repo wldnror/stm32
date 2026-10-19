@@ -1,4 +1,4 @@
-STM32 debug appliance 3.74
+STM32 debug appliance 3.75
 
 Entry: main.py -> serve.py. systemd owns restart/recovery.
 UI: display_manager.py (128x64 OLED), menu_manager.py, app_state.py.
@@ -38,3 +38,18 @@ python3 -m unittest discover -s tests -v
 TEST_FONT may point to the installed OLED TrueType font for exact metrics.
 Tests use fake GPIO/OLED hardware; real AP/client transitions require a separate
 recovery timer so the device can restore Wi-Fi independently of an SSH session.
+
+Early startup screen (3.75)
+- Install BOTH deploy/stm32.service and deploy/stm32-boot-screen.service into
+  /etc/systemd/system/, daemon-reload, and enable both units.
+- The boot-screen unit starts during sysinit with no networking dependency.
+  It loads the installed I2C drivers and draws via Python standard-library I2C,
+  before the main app imports its fonts, web server or hardware modules.
+- Main app startup also no longer waits for network.target. It publishes real
+  milestones to /run/stm32-boot/state.json; the bar never completes by a timer.
+- An exclusive lock hands the OLED from the splash to the normal display.
+  The splash closes its bus without clearing the screen.
+- systemd READY=1 is sent only after a real menu frame has been transmitted.
+- Journal messages record first splash and menu-frame times since Linux kernel
+  start. These exclude the Raspberry Pi firmware interval before Linux starts.
+- A legacy installation without the early unit still starts the normal app.

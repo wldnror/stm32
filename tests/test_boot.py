@@ -1,0 +1,158 @@
+import ast
+import fcntl
+import json
+import os
+from pathlib import Path
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from unittest.mock import Mock, patch
+
+from PIL import Image
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+import boot_display as display
+import boot_status as status
+
+
+class BootFrameTests(unittest.TestCase):
+    def test_packing_matches_installed_luma_rotation_and_page_order(self):
+        frame = bytearray(128 * 64)
+        for y in range(64):
+            for x in range(128):
+                frame[y * 128 + x] = int((x * 7 + y * 3) % 17 < 5)
+        logical = Image.frombytes("L", (128, 64), bytes(frame))
+        physical = logical.rotate(-90, expand=True)
+        expected = []
+        for page in range(16):
+            expected.append(bytearray(sum((physical.getpixel((x, page * 8 + bit)) & 1) << bit
+                                          for bit in range(8)) for x in range(64)))
+        self.assertEqual(display.pack_pages(frame), expected)
+
+    def test_controller_packets_address_only_expected_pages(self):
+        with patch.object(display.os, "open", return_value=23), patch.object(display.fcntl, "ioctl") as ioctl, patch.object(display.os, "write") as write, patch.object(display.os, "close") as close:
+            oled = display.SH1107()
+            oled.display(display.render(30, "APP LOADING", 5, 1))
+            oled.close()
+        ioctl.assert_called_once_with(23, 0x0703, 0x3c)
+        data = [call.args[1] for call in write.call_args_list if call.args[1][0] == 0x40]
+        self.assertEqual(len(data), 16)
+        self.assertTrue(all(len(packet) == 65 for packet in data))
+        self.assertEqual(write.call_args.args[1], bytes((0, 0xaf)))
+        close.assert_called_once_with(23)
+
+    def test_animation_changes_while_progress_stays_at_real_stage(self):
+        first = display.render(30, "APP LOADING", 3, 0)
+        later = display.render(30, "APP LOADING", 3, 1)
+        self.assertNotEqual(first, later)
+        self.assertEqual(first[44 * 128:52 * 128], later[44 * 128:52 * 128])
+        self.assertEqual(len(first), 128 * 64)
+        self.assertTrue(set(first) <= {0, 1})
+
+    def test_early_modules_do_not_import_the_heavy_application(self):
+        forbidden = {"PIL", "luma", "flask", "RPi", "app_config", "wifi_portal"}
+        for filename in ("boot_display.py", "boot_status.py", "boot_screen.py"):
+            tree = ast.parse((ROOT / filename).read_text())
+            imports = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imports.update(item.name.split(".")[0] for item in node.names)
+                if isinstance(node, ast.ImportFrom):
+                    imports.add(node.module.split(".")[0])
+            self.assertFalse(imports & forbidden, filename)
+
+
+class BootStatusTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.runtime = Path(self.directory.name)
+        self.path_patch = patch.object(status, "RUNTIME", self.runtime)
+        self.path_patch.start()
+        self.notify_patch = patch.dict(os.environ, {"NOTIFY_SOCKET": ""})
+        self.notify_patch.start()
+
+    def tearDown(self):
+        if status._display_lock is not None:
+            os.close(status._display_lock)
+            status._display_lock = None
+        self.path_patch.stop()
+        self.notify_patch.stop()
+        self.directory.cleanup()
+
+    def test_stage_is_atomic_and_has_the_live_main_process(self):
+        status.publish(70, "MENU LOADING")
+        state = status.read_state()
+        self.assertEqual(state["progress"], 70)
+        self.assertEqual(state["pid"], os.getpid())
+        self.assertFalse(state["handoff"])
+        self.assertEqual(list(self.runtime.glob(".state-*")), [])
+
+    def test_bad_or_stale_state_does_not_crash_the_boot_screen(self):
+        file = self.runtime / "state.json"
+        file.write_text("{")
+        self.assertEqual(status.read_state(), {})
+        file.write_text(json.dumps({"pid": 2147483647, "handoff": True}))
+        self.assertEqual(status.read_state(), {})
+
+    def test_legacy_installation_without_runtime_can_still_start(self):
+        with patch.object(status, "RUNTIME", self.runtime / "not-installed"):
+            status.publish(30, "APP LOADING")
+            status.claim_display()
+        self.assertIsNone(status._display_lock)
+
+    def test_handoff_releases_the_splash_before_main_takes_the_bus(self):
+        script = '''
+import os,time,fcntl
+from pathlib import Path
+import boot_status as status
+fd=os.open(status.RUNTIME/'display.lock',os.O_CREAT|os.O_RDWR,0o664)
+fcntl.flock(fd,fcntl.LOCK_EX)
+(status.RUNTIME/'locked').touch()
+while not status.read_state().get('handoff'):
+ time.sleep(.01)
+os.close(fd)
+'''
+        env = dict(os.environ, PYTHONPATH=str(ROOT), STM32_BOOT_RUNTIME=str(self.runtime))
+        child = subprocess.Popen([sys.executable, "-c", script], env=env)
+        try:
+            deadline = time.monotonic() + 3
+            while not (self.runtime / "locked").exists():
+                if time.monotonic() > deadline:
+                    self.fail("splash did not acquire lock")
+                time.sleep(.01)
+            status.claim_display()
+            child.wait(timeout=2)
+            self.assertIsNotNone(status._display_lock)
+            self.assertTrue(status.read_state()["handoff"])
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait()
+
+    def test_busy_bus_times_out_instead_of_two_writers(self):
+        descriptor = os.open(self.runtime / "display.lock", os.O_CREAT | os.O_RDWR, 0o664)
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        try:
+            with self.assertRaises(RuntimeError):
+                status.claim_display(timeout=.05)
+        finally:
+            os.close(descriptor)
+
+    def test_ready_notification_is_sent_after_real_menu_completion(self):
+        address = str(self.runtime / "notify")
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as server:
+            server.bind(address)
+            server.settimeout(1)
+            with patch.dict(os.environ, {"NOTIFY_SOCKET": address}), patch("builtins.print"):
+                status.menu_ready()
+            messages = [server.recv(1024), server.recv(1024)]
+        self.assertTrue(any(b"READY=1" in message for message in messages))
+        self.assertEqual(status.read_state()["progress"], 100)
+
+
+if __name__ == "__main__":
+    unittest.main()
