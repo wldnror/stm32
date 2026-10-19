@@ -41,6 +41,13 @@ class FirmwareSplashTests(unittest.TestCase):
             self.assertEqual(packets[1 + page * 2], bytes((0, 0x10, 0, 0xb0 | page)))
             self.assertEqual(packets[2 + page * 2], b"\x40" + pages[page])
 
+    def test_native_assets_are_reproducible(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("native_assets", ROOT / "native/build_assets.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual((ROOT / "native/boot_assets.h").read_text(), module.build())
+
     def test_committed_assets_are_reproducible(self):
         self.assertEqual((ROOT / "deploy/stm32_power_on.bin").read_bytes(), splash.build_binary())
         self.assertEqual((ROOT / "deploy/stm32_power_on.splash").read_text(), splash.source_text())
