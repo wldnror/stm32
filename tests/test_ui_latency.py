@@ -137,10 +137,8 @@ class OLEDPageTests(unittest.TestCase):
         device.data.assert_not_called()
         image.putpixel((33, 20), 1)
         display_rotated_frame(device, image)
-        device.command.assert_called_once_with(0x10, 0x00, 0xb4)
-        expected = [0] * 64
-        expected[43] = 2
-        device.data.assert_called_once_with(expected)
+        device.command.assert_called_once_with(0x12, 0x0b, 0xb4)
+        device.data.assert_called_once_with([2])
 
     def test_a_failed_transfer_is_retried_without_advancing_the_cache(self):
         from PIL import Image
@@ -158,6 +156,31 @@ class OLEDPageTests(unittest.TestCase):
         device.data.reset_mock()
         display_rotated_frame(device, image)
         device.data.assert_called_once()
+
+    def test_partial_writes_reconstruct_the_entire_rotated_image(self):
+        import random
+        from PIL import Image
+        from oled_frames import display_rotated_frame
+        class Controller:
+            def __init__(self):
+                self.ram = [bytearray(64) for _ in range(16)]
+            def command(self, high, low, page):
+                self.column = ((high & 0x0f) << 4) | low
+                self.page = page & 0x0f
+            def data(self, values):
+                assert self.column + len(values) <= 64
+                self.ram[self.page][self.column:self.column + len(values)] = bytes(values)
+        controller = Controller()
+        image = Image.new("1", (128, 64))
+        rng = random.Random(19)
+        for _ in range(20):
+            for _ in range(12):
+                image.putpixel((rng.randrange(128), rng.randrange(64)), rng.randrange(2))
+            display_rotated_frame(controller, image)
+            physical = image.rotate(-90, expand=True)
+            expected = [bytearray(sum((physical.getpixel((x, page * 8 + bit)) & 1) << bit
+                        for bit in range(8)) for x in range(64)) for page in range(16)]
+            self.assertEqual(controller.ram, expected)
 
 
 if __name__ == "__main__":
