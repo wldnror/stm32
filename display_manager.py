@@ -32,12 +32,13 @@ high_battery_icon = Image.open(BATTERY_ICON_PATH)
 full_battery_icon = Image.open(BATTERY_ICON_PATH)
 
 _last_frame = None
+_last_render_key = None
 _last_error_log = 0.0
 
 
 @contextmanager
-def oled_canvas():
-    global _last_frame
+def oled_canvas(render_key=None):
+    global _last_frame, _last_render_key
     image = Image.new("1", (device.width, device.height))
     draw = ImageDraw.Draw(image)
     yield draw
@@ -45,6 +46,8 @@ def oled_canvas():
     if frame != _last_frame:
         device.display(image)
         _last_frame = frame
+    if render_key is not None:
+        _last_render_key = render_key
 
 
 def draw_fit_line(draw, text, x, y, width, start_size=12, min_size=8):
@@ -380,11 +383,41 @@ def draw_override(draw):
     return False
 
 
+def visual_state_key():
+    menu = st.current_menu or {}
+    with st.ui_override_lock:
+        override = tuple(st.ui_override.items())
+    with st.wifi_action_lock:
+        wifi_running = st.wifi_action_running
+    animation = None
+    if wifi_running:
+        with st.wifi_stage_lock:
+            stage = tuple(st.wifi_stage.items())
+        with st.ap_state_lock:
+            ap = (st.ap_state["spinner"], st.ap_state["last_clients"],
+                  time.time() < st.ap_state["flash_until"])
+        animation = (stage, ap)
+    scan = None
+    if menu.get("dir") == "__scan__":
+        with st.scan_lock:
+            scan = (tuple(st.scan_ips), st.scan_selected_idx,
+                    tuple(st.scan_infos.items()), st.scan_done)
+    elif menu.get("dir") == "__scan_detail__":
+        scan = (st.scan_detail.get("gas"), st.scan_detail.get("err"),
+                tuple(st.scan_detail.get("flags", {}).items()))
+    return (id(menu), st.current_command_index, st.status_message, st.message_position,
+            st.message_font_size, st.cached_ip, st.cached_wifi_level, st.cached_wifi_connected,
+            st.battery_percentage, datetime.now().strftime("%H:%M"), override, animation, scan)
+
+
 def update_oled_display():
     if not st.display_lock.acquire(timeout=0.2):
         return
     try:
         if not st.commands:
+            return
+        render_key = visual_state_key()
+        if render_key == _last_render_key:
             return
 
         with st.wifi_action_lock:
@@ -396,7 +429,7 @@ def update_oled_display():
         ip_address = st.cached_ip
         wifi_level = st.cached_wifi_level
 
-        with oled_canvas() as draw:
+        with oled_canvas(render_key=render_key) as draw:
             if draw_override(draw):
                 return
 

@@ -222,6 +222,17 @@ class DisplayTests(unittest.TestCase):
                 draw.rectangle((1, 1, 5, 5), fill=255)
         self.assertEqual(len(self.device.frames), 1)
 
+    def test_unchanged_state_skips_font_layout_work(self):
+        import app_state as state
+        state.commands = ["wifi_setup"]
+        state.current_menu = {"dir": "root", "names": ["Wi-Fi"], "types": ["wifi"]}
+        state.command_names, state.command_types = ["Wi-Fi"], ["wifi"]
+        state.current_command_index = 0
+        self.display._last_render_key = None
+        self.display.update_oled_display()
+        with patch.object(self.display, "draw_system_header_footer", side_effect=AssertionError("unchanged layout recomputed")):
+            self.display.update_oled_display()
+
 
 class UpdateTests(unittest.TestCase):
     def git(self, *args, cwd=None, check=True):
