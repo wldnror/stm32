@@ -10,7 +10,7 @@ import logging
 from boot_status import publish, menu_ready
 from button_input import ButtonInputs
 from process_utils import run_command
-from network_utils import wifi_link
+from network_utils import IW, wifi_link
 import wifi_backend
 
 import RPi.GPIO as GPIO
@@ -438,7 +438,7 @@ def wifi_worker_thread():
 
 def get_ap_station_count():
     try:
-        r = subprocess.run(["iw", "dev", "wlan0", "station", "dump"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.7)
+        r = subprocess.run([IW, "dev", "wlan0", "station", "dump"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.7)
         if r.returncode != 0:
             return 0
         return sum(1 for line in (r.stdout or "").splitlines() if line.strip().startswith("Station "))
