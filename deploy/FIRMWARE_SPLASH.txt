@@ -1,0 +1,69 @@
+Firmware-stage power-on image (Pi Zero W / SH1107), version 3.78
+
+This adds a static GDSENG / POWER ON image before Linux starts. The existing
+Linux service later replaces it with animated progress, then the normal menu.
+The firmware program contains no delays, loops or network access. It writes only
+to OLED address 0x3c on SDA2/SCL3 at 100 kHz and does not touch STM32 GPIO pins.
+
+Build the 1328-byte image without third-party Python dependencies:
+  python3 firmware_splash.py deploy/stm32_power_on.bin --source deploy/stm32_power_on.splash
+
+Pinned, matched official CUT-DOWN firmware pair:
+  Commit 6c87074190d5d364b814dccca83229801a4ac939, 2026-10-15
+  https://raw.githubusercontent.com/raspberrypi/firmware/6c87074190d5d364b814dccca83229801a4ac939/boot/start_cd.elf
+  https://raw.githubusercontent.com/raspberrypi/firmware/6c87074190d5d364b814dccca83229801a4ac939/boot/fixup_cd.dat
+
+SHA256, installed filename:
+  47ef3ae4f5b250f6d91e96c7cafd6ea7fcf1b50b66b24cbf63dc281aab6f9f99  start_cd.elf
+  3ce2dc88f51af832988e72d2179b4c5fabee95913b78be84d02eefcb3f208223  fixup_cd.dat
+  b447b38b575a3840cb5cc8b2a87a8327e7536aacebb582a2206995968b22ef95  gdsboot.bin
+
+Final device configuration uses gpu_mem=16, preserving the former RAM split.
+There are no start_file/fixup_file overrides. The cut-down pair must use its
+standard filenames; it cannot be selected with start_file/fixup_file.
+Device paths are /boot/ (Raspbian 11), not /boot/firmware/.
+
+Safe trial sequence used on this device:
+1. Back up config.txt, cmdline.txt, start_cd.elf and fixup_cd.dat. Leave the
+   original STANDARD start.elf/fixup.dat, kernel and DTBs untouched.
+2. Temporarily set the NORMAL config to the original configuration plus
+   [all] / gpu_mem=32, with no start_file or fixup_file. This selects the untouched
+   original standard pair as a fallback, even if a cut-down update is interrupted.
+3. Copy and verify BOTH new cut-down files before trialling them. Never mix pairs.
+   Copy deploy/stm32_power_on.bin to /boot/gdsboot.bin.
+4. Make tryboot.txt from the original config and append:
+   [all]
+   gpu_mem=16
+   splash_screen=gdsboot.bin
+5. sync; sudo reboot '0 tryboot'
+6. Verify firmware version (start_cd), gpu=16M, splash_screen setting, image and
+   menu READY. The one-shot flag clears before booting; a reset uses the normal
+   standard-firmware fallback config until the trial is promoted.
+7. Copy the tested tryboot.txt to config.txt atomically and sync. Install
+   deploy/stm32-headless.conf in /etc/modprobe.d/ to keep unused camera/codec/ISP
+   drivers from autoloading. Verify a further normal boot.
+
+Device backups are under:
+  /home/user/device-tuning-20261019/firmware-splash-v378/
+
+Rollback order (keeps a valid matched pair selected at every stage):
+1. Restore fallback-standard-config.txt as /boot/config.txt; sync.
+2. Restore original-start_cd.elf and original-fixup_cd.dat to /boot/; sync.
+3. Restore config-before.txt as /boot/config.txt; sync and reboot.
+No kernel, DTB, STM32 firmware or command-line changes are required.
+An application git pull alone does not install these boot firmware files.
+
+Timing interpretation:
+The standard-firmware preliminary trial log opened gdsboot.bin at 1.785 s and
+completed the splash transfer by approximately 1.906 s on its firmware clock.
+The final cut-down firmware disables debug logging, so that log is not an exact
+measurement of the final configuration's power-to-visible-image interval.
+/run/stm32-boot/first-frame.json timestamps the LATER Linux animation, not the
+new first power-on image. Actual power-to-image time needs physical observation
+or a power/video measurement and must not be called a Linux boot timestamp.
+
+Official references:
+https://www.raspberrypi.com/news/configure-early-boot-splash-screens-for-spi-and-i2c-based-displays/
+https://github.com/raspberrypi/utils/tree/master/splashasm
+https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#fail-safe-os-updates-tryboot
+https://www.raspberrypi.com/documentation/computers/config_txt.html#start_file-fixup_file
