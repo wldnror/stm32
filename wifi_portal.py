@@ -429,15 +429,13 @@ tick();
 # Shared state is accessed by Flask requests and the device Wi-Fi worker.
 _state_lock = threading.RLock()
 _server = None
-_internet_cache = {"at": 0.0, "ok": False}
-_internet_lock = threading.Lock()
 
 from wifi_backend import (
     AP_SSID, AP_PASS, AP_IP, PORTAL_PORT, start_ap, stop_ap, scan_ssids,
     list_saved_nm, delete_saved_nm, reset_wifi_config, connect_network,
     restore_connection, validate_credentials, ap_active,
 )
-from network_utils import wifi_link
+from network_utils import wifi_link, internet_available as has_internet, internet_cache as _internet_cache
 from process_utils import run_command
 
 
@@ -449,22 +447,6 @@ def _set_state(**kwargs):
 def pop_request():
     with _state_lock:
         return _state.pop("requested", None)
-
-
-def has_internet(timeout=1.5):
-    # All callers share the result; HTTP polling never starts a ping storm.
-    with _internet_lock:
-        now = time.monotonic()
-        if _internet_cache["at"] and now - _internet_cache["at"] < 20:
-            return _internet_cache["ok"]
-        ok = False
-        for target in ("1.1.1.1", "8.8.8.8"):
-            result = run_command(["ping", "-I", IFACE, "-c", "1", "-W", "1", target], timeout=timeout)
-            if result.returncode == 0:
-                ok = True
-                break
-        _internet_cache.update(at=now, ok=ok)
-        return ok
 
 
 @app.before_request

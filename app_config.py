@@ -1,12 +1,8 @@
 import os
-import wifi_portal
+from wifi_backend import AP_SSID, AP_PASS, AP_IP, PORTAL_PORT
 
 VISUAL_X_OFFSET = 0
 
-AP_SSID = getattr(wifi_portal, "AP_SSID", "GDSENG-SETUP")
-AP_PASS = getattr(wifi_portal, "AP_PASS", "12345678")
-AP_IP = getattr(wifi_portal, "AP_IP", "192.168.4.1")
-PORTAL_PORT = wifi_portal.PORTAL_PORT
 
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17

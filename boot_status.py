@@ -82,3 +82,19 @@ def menu_ready():
     publish(100, "READY", handoff=True)
     notify("READY=1\nSTATUS=Menu ready")
     print("STM32 menu ready at %.3fs since kernel start" % time.monotonic(), flush=True)
+
+
+def record_first_frame():
+    # The early journal stream may precede journald startup; retain the timestamp
+    # independently in /run, with read access for post-boot verification.
+    descriptor, temporary = tempfile.mkstemp(dir=RUNTIME, prefix=".frame-")
+    try:
+        os.fchmod(descriptor, 0o644)
+        with os.fdopen(descriptor, "w") as stream:
+            json.dump({"first_frame_at": time.monotonic(), "pid": os.getpid()}, stream)
+        os.replace(temporary, RUNTIME / "first-frame.json")
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass

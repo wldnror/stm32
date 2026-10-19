@@ -53,3 +53,10 @@ Early startup screen (3.75)
 - Journal messages record first splash and menu-frame times since Linux kernel
   start. These exclude the Raspberry Pi firmware interval before Linux starts.
 - A legacy installation without the early unit still starts the normal app.
+
+- Flask and the web setup UI are loaded only when Wi-Fi setup is requested.
+  Normal menu startup and connectivity polling do not import the web server.
+- GPIO edge setup retries a bounded udev ownership race instead of restarting
+  the entire application. A permanent hardware error still fails startup.
+- /run/stm32-boot/first-frame.json retains the first successful OLED write time
+  even if journald was not running yet. state.json at READY records menu time.

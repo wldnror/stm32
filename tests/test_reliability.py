@@ -305,7 +305,7 @@ class WorkerTests(unittest.TestCase):
                 if outcome is True:
                     backend.stop_portal.side_effect = finish
                 loop = Mock(side_effect=outcome) if isinstance(outcome, Exception) else Mock(return_value=outcome)
-                env = dict(st=state, wifi_portal=backend, time=types.SimpleNamespace(sleep=lambda n: None),
+                env = dict(st=state, wifi_backend=backend, portal_module=lambda: backend, time=types.SimpleNamespace(sleep=lambda n: None),
                     portal_loop_until_connected_or_cancel=loop, logging=Mock(),
                     portal_set_state_safe=Mock(), wifi_stage_clear=Mock(), wifi_stage_set=Mock(),
                     text_stage=Mock(), clear_ui_override=Mock(), is_root_menu_view=lambda: False,

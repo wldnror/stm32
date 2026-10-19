@@ -4,7 +4,7 @@ import os
 import time
 
 from boot_display import SH1107, render
-from boot_status import RUNTIME, read_state
+from boot_status import RUNTIME, read_state, record_first_frame
 
 
 def main():
@@ -36,9 +36,10 @@ def main():
                     stage = "PLEASE WAIT"
                 display.display(render(progress, stage, elapsed, tick))
                 if tick == 0:
+                    record_first_frame()
                     print("OLED first boot frame at %.3fs since kernel start" % time.monotonic(), flush=True)
                 tick += 1
-                time.sleep(0.25)
+                time.sleep(0.5)
         finally:
             if display:
                 display.close()

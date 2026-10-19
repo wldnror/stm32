@@ -65,6 +65,11 @@ class BootFrameTests(unittest.TestCase):
                     imports.add(node.module.split(".")[0])
             self.assertFalse(imports & forbidden, filename)
 
+    def test_configuration_does_not_eagerly_import_the_web_server(self):
+        result = subprocess.run([sys.executable, "-c", "import app_config,sys; assert 'flask' not in sys.modules"],
+                                cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 class BootStatusTests(unittest.TestCase):
     def setUp(self):
@@ -103,6 +108,13 @@ class BootStatusTests(unittest.TestCase):
             status.publish(30, "APP LOADING")
             status.claim_display()
         self.assertIsNone(status._display_lock)
+
+    def test_first_frame_timestamp_survives_early_journal_startup(self):
+        with patch.object(status.time, "monotonic", return_value=12.5):
+            status.record_first_frame()
+        file = self.runtime / "first-frame.json"
+        self.assertEqual(json.loads(file.read_text())["first_frame_at"], 12.5)
+        self.assertEqual(file.stat().st_mode & 0o777, 0o644)
 
     def test_handoff_releases_the_splash_before_main_takes_the_bus(self):
         script = '''
@@ -152,6 +164,30 @@ os.close(fd)
             messages = [server.recv(1024), server.recv(1024)]
         self.assertTrue(any(b"READY=1" in message for message in messages))
         self.assertEqual(status.read_state()["progress"], 100)
+
+
+class EarlyGPIOTests(unittest.TestCase):
+    def load(self, gpio):
+        tree = ast.parse((ROOT / "serve.py").read_text())
+        node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "initialize_gpio")
+        env = dict(GPIO=gpio, time=time, BUTTON_PIN_NEXT=27, BUTTON_PIN_EXECUTE=17,
+                   LED_SUCCESS=24, LED_ERROR=25, LED_ERROR1=23,
+                   button_next_edge=Mock(), button_execute_edge=Mock())
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "serve.py", "exec"), env)
+        return env["initialize_gpio"]
+
+    def test_transient_gpio_edge_permission_race_does_not_restart_the_app(self):
+        gpio = Mock(IN=1, OUT=2, PUD_UP=3, BOTH=4)
+        gpio.add_event_detect.side_effect = [RuntimeError("udev still changing ownership"), None, None]
+        self.load(gpio)(timeout=1)
+        self.assertEqual(gpio.add_event_detect.call_count, 3)
+        self.assertEqual(gpio.remove_event_detect.call_count, 2)
+
+    def test_permanent_gpio_failure_is_bounded(self):
+        gpio = Mock(IN=1, OUT=2, PUD_UP=3, BOTH=4)
+        gpio.add_event_detect.side_effect = RuntimeError("not ready")
+        with self.assertRaises(RuntimeError):
+            self.load(gpio)(timeout=.01)
 
 
 if __name__ == "__main__":

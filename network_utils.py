@@ -2,6 +2,8 @@
 import ipaddress
 import re
 import socket
+import threading
+import time
 
 from process_utils import run_command
 
@@ -59,3 +61,22 @@ def source_ipv4_for(peer):
             return sock.getsockname()[0]
     except OSError:
         return "0.0.0.0"
+
+
+internet_cache = {"at": 0.0, "ok": False}
+_internet_lock = threading.Lock()
+
+
+def internet_available(timeout=1.5):
+    with _internet_lock:
+        now = time.monotonic()
+        if internet_cache["at"] and now - internet_cache["at"] < 20:
+            return internet_cache["ok"]
+        ok = False
+        for target in ("1.1.1.1", "8.8.8.8"):
+            result = run_command(["ping", "-I", "wlan0", "-c", "1", "-W", "1", target], timeout=timeout)
+            if result.returncode == 0:
+                ok = True
+                break
+        internet_cache.update(at=now, ok=ok)
+        return ok

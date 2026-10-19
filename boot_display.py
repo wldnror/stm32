@@ -5,6 +5,7 @@ networking, font loading and normal application initialization.
 """
 import fcntl
 import os
+from functools import lru_cache
 
 WIDTH, HEIGHT = 128, 64
 FONT = {
@@ -50,30 +51,37 @@ def centered_text(frame, text, y, scale=1):
                               y + (row + 1) * scale - 1, fill=True)
 
 
-def render(progress, stage, elapsed, tick=0):
+@lru_cache(maxsize=16)
+def static_frame(progress, stage):
     frame = bytearray(WIDTH * HEIGHT)
     centered_text(frame, "GDSENG", 7, scale=2)
     centered_text(frame, stage, 28)
-    # Activity dots move even while a real startup stage is still working.
-    for index in range((tick % 4) + 1):
-        rectangle(frame, 57 + index * 4, 38, 58 + index * 4, 38, fill=True)
     rectangle(frame, 12, 44, 115, 51)
     filled = int(100 * max(0, min(100, progress)) / 100)
     if filled:
         rectangle(frame, 14, 46, 13 + filled, 49, fill=True)
+    return bytes(frame)
+
+
+def render(progress, stage, elapsed, tick=0):
+    frame = bytearray(static_frame(progress, stage))
+    for index in range((tick % 4) + 1):
+        rectangle(frame, 57 + index * 4, 38, 58 + index * 4, 38, fill=True)
     centered_text(frame, str(int(max(0, elapsed))) + "S", 56)
     return frame
 
 
 def pack_pages(frame):
-    """Match luma SH1107(64,128,rotate=1): clockwise rotation then pages."""
-    pages = []
-    for page in range(16):
-        row = bytearray(64)
-        for x in range(64):
-            row[x] = sum((frame[(63 - x) * WIDTH + page * 8 + bit] & 1) << bit
-                         for bit in range(8))
-        pages.append(row)
+    """Clockwise rotation plus SH1107 pages, without per-pixel generators."""
+    pages = [bytearray(64) for _ in range(16)]
+    for y in range(64):
+        row = frame[y * WIDTH:(y + 1) * WIDTH]
+        x = 63 - y
+        for page in range(16):
+            start = page * 8
+            pages[page][x] = (row[start] | row[start + 1] << 1 | row[start + 2] << 2 |
+                              row[start + 3] << 3 | row[start + 4] << 4 | row[start + 5] << 5 |
+                              row[start + 6] << 6 | row[start + 7] << 7)
     return pages
 
 
