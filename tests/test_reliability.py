@@ -210,11 +210,12 @@ class DisplayTests(unittest.TestCase):
         image = Image.new("1", (128, 64))
         draw = ImageDraw.Draw(image)
         with patch.object(draw, "text", wraps=draw.text) as text:
-            box = self.display.draw_system_header_footer(draw, "255.255.255.255", "15시 30분", True)
+            box = self.display.draw_system_header_footer(draw, "255.255.255.255", "15:30", True)
         self.assertLessEqual(box[2], 127)
         self.assertLessEqual(box[3], 64)
         self.assertEqual(text.call_args.args[1], "255.255.255.255")
         self.assertGreaterEqual(box[1], 51)
+        self.assertLessEqual(abs((box[0] + box[2]) / 2 - 64), 1)
 
     def test_unbounded_title_is_clipped_at_minimum_font(self):
         from PIL import Image, ImageDraw
@@ -222,6 +223,18 @@ class DisplayTests(unittest.TestCase):
         with patch.object(draw, "text", wraps=draw.text) as text:
             self.display.draw_center_text_autofit(draw, "x" * 200, 64, 32, 124, 17, 11)
         self.assertIn("…", text.call_args.args[1])
+
+    def test_korean_title_uses_visible_bounds_for_centering(self):
+        from PIL import Image, ImageDraw
+        image = Image.new("1", (128, 64))
+        draw = ImageDraw.Draw(image)
+        self.display.draw_center_text_autofit(draw, "시스템 업데이트", 64, 33, 124, 17, 11)
+        box = image.getbbox()
+        self.assertGreaterEqual(box[0], 2)
+        self.assertLessEqual(box[2], 126)
+        self.assertLessEqual(abs((box[0] + box[2]) / 2 - 64), 1)
+        self.assertGreater(box[1], 16)
+        self.assertLess(box[3], 48)
 
     def test_unchanged_frame_is_not_sent_again(self):
         self.display._last_frame = None
