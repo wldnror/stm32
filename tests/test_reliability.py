@@ -166,7 +166,16 @@ class DisplayTests(unittest.TestCase):
         from PIL import ImageFont
         font_paths = [os.environ.get("TEST_FONT", ""), "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
                       "/System/Library/Fonts/Supplemental/Arial.ttf"]
-        font_path = next((p for p in font_paths if p and Path(p).exists()), None)
+        font_path = None
+        for candidate in font_paths:
+            if not candidate:
+                continue
+            try:
+                # Pillow also resolves font basenames in installed font folders.
+                font_path = ImageFont.truetype(candidate, 12).path
+                break
+            except OSError:
+                continue
         if not font_path:
             raise unittest.SkipTest("Set TEST_FONT to an installed TrueType font")
         class Device:
@@ -230,8 +239,9 @@ class DisplayTests(unittest.TestCase):
         state.current_command_index = 0
         self.display._last_render_key = None
         self.display.update_oled_display()
-        with patch.object(self.display, "draw_system_header_footer", side_effect=AssertionError("unchanged layout recomputed")):
+        with patch.object(self.display, "draw_system_header_footer", wraps=self.display.draw_system_header_footer) as layout:
             self.display.update_oled_display()
+            layout.assert_not_called()
 
 
 class UpdateTests(unittest.TestCase):
