@@ -7,11 +7,13 @@ import subprocess
 import re
 import logging
 
+from boot_status import publish, menu_ready
+from button_input import ButtonInputs
 from process_utils import run_command
-from network_utils import wifi_link
+from network_utils import wifi_link, internet_available
+import wifi_backend
 
 import RPi.GPIO as GPIO
-import wifi_portal
 
 import app_state as st
 from app_config import *
@@ -49,6 +51,8 @@ from menu_manager import (
     is_root_menu_view,
 )
 from display_manager import (
+    initialize_display,
+    display_ready,
     update_oled_display,
     wifi_stage_set,
     wifi_stage_clear,
@@ -57,6 +61,11 @@ from display_manager import (
     set_ui_text,
     clear_ui_override,
 )
+
+def portal_module():
+    import wifi_portal
+    return wifi_portal
+
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
@@ -121,28 +130,28 @@ def text_stage(line1: str, line2: str = "", pos=(10, 18), font_size=15, immediat
 
 def portal_set_state_safe(**kwargs):
     try:
-        if hasattr(wifi_portal, "_set_state"):
-            wifi_portal._set_state(**kwargs)
+        if hasattr(portal_module(), "_set_state"):
+            portal_module()._set_state(**kwargs)
             return
     except Exception:
         pass
     try:
-        state_obj = getattr(wifi_portal, "_state", None)
+        state_obj = getattr(portal_module(), "_state", None)
         if isinstance(state_obj, dict):
             state_obj.update(kwargs)
     except Exception:
         pass
     try:
-        if hasattr(wifi_portal, "_write_state_file"):
-            wifi_portal._write_state_file()
+        if hasattr(portal_module(), "_write_state_file"):
+            portal_module()._write_state_file()
     except Exception:
         pass
 
 
 def portal_pop_req_safe():
     try:
-        if hasattr(wifi_portal, "_pop_req_file"):
-            return wifi_portal._pop_req_file()
+        if hasattr(portal_module(), "_pop_req_file"):
+            return portal_module()._pop_req_file()
     except Exception:
         pass
     return None
@@ -150,7 +159,7 @@ def portal_pop_req_safe():
 
 def portal_clear_req_safe():
     try:
-        state_obj = getattr(wifi_portal, "_state", None)
+        state_obj = getattr(portal_module(), "_state", None)
         if isinstance(state_obj, dict):
             state_obj["requested"] = None
     except Exception:
@@ -158,14 +167,12 @@ def portal_clear_req_safe():
     portal_set_state_safe(requested=None)
 
 
-def button_next_edge(channel):
+def button_next_edge(channel, value):
     now = now_mono()
     with button_state_lock:
-        if (now - st.last_time_button_next_pressed) < SOFT_DEBOUNCE_NEXT:
-            return
         st.last_time_button_next_pressed = now
 
-        if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
+        if value == GPIO.LOW:
             st.next_press_time = now
             st.next_is_down = True
             st.next_long_handled = False
@@ -178,14 +185,12 @@ def button_next_edge(channel):
             st.next_press_time = None
 
 
-def button_execute_edge(channel):
+def button_execute_edge(channel, value):
     now = now_mono()
     with button_state_lock:
-        if (now - st.last_time_button_execute_pressed) < SOFT_DEBOUNCE_EXEC:
-            return
         st.last_time_button_execute_pressed = now
 
-        if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
+        if value == GPIO.LOW:
             st.execute_press_time = now
             st.execute_is_down = True
             st.execute_long_handled = False
@@ -196,15 +201,22 @@ def button_execute_edge(channel):
             st.execute_press_time = None
 
 
-GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+def initialize_gpio():
+    GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(LED_SUCCESS, GPIO.OUT)
+    GPIO.setup(LED_ERROR, GPIO.OUT)
+    GPIO.setup(LED_ERROR1, GPIO.OUT)
+    return ButtonInputs(GPIO, {BUTTON_PIN_NEXT: button_next_edge,
+                               BUTTON_PIN_EXECUTE: button_execute_edge})
 
-GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_next_edge, bouncetime=40)
-GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.BOTH, callback=button_execute_edge, bouncetime=40)
 
-GPIO.setup(LED_SUCCESS, GPIO.OUT)
-GPIO.setup(LED_ERROR, GPIO.OUT)
-GPIO.setup(LED_ERROR1, GPIO.OUT)
+def button_input_thread(inputs):
+    # Direct GPIO reads avoid the boot-time sysfs export/udev permission race.
+    # A separate sampler keeps release/long-press input working during actions.
+    while not st.stop_threads:
+        inputs.poll()
+        time.sleep(0.01)
 
 
 def git_head_hash():
@@ -318,20 +330,20 @@ def wifi_cancelled():
 
 def portal_loop_until_connected_or_cancel():
     portal_set_state_safe(running=True, done=False, last_ok="", last_error="", connecting=False)
-    wifi_portal.start_ap()
-    wifi_portal.run_portal(block=False)
+    portal_module().start_ap()
+    portal_module().run_portal(block=False)
     deadline = time.monotonic() + 600
     while not st.stop_threads and time.monotonic() < deadline:
         if wifi_cancelled():
             return "cancel"
-        req = wifi_portal.pop_request()
+        req = portal_module().pop_request()
         if not req:
             time.sleep(0.1)
             continue
         portal_set_state_safe(connecting=True, last_error="", connect_stage="무선 연결 중…")
         wifi_stage_set(30, "WiFi 연결 중", req["ssid"])
         try:
-            wifi_portal.connect_network(req["ssid"], req["psk"], cancel=wifi_cancelled, hidden=req.get("hidden", False))
+            portal_module().connect_network(req["ssid"], req["psk"], cancel=wifi_cancelled, hidden=req.get("hidden", False))
             portal_set_state_safe(done=True, running=False, last_ok="연결 완료", last_error="")
             return True
         except Exception as exc:
@@ -339,7 +351,7 @@ def portal_loop_until_connected_or_cancel():
                 return "cancel"
             portal_set_state_safe(last_error=str(exc), connect_stage="설정 AP로 다시 접속하세요.")
             wifi_stage_clear()
-            wifi_portal.start_ap()
+            portal_module().start_ap()
         finally:
             portal_set_state_safe(connecting=False)
             req.clear()  # Do not retain the password in pending UI state.
@@ -348,11 +360,11 @@ def portal_loop_until_connected_or_cancel():
 
 def wifi_worker_thread():
     try:
-        if wifi_portal.ap_active():
+        if wifi_backend.ap_active():
             with st.wifi_action_lock:
                 st.wifi_action_running = True
             wifi_stage_set(40, "기존 WiFi 복원", "설정 모드 복구 중")
-            wifi_portal.restore_connection(cancel=lambda: st.stop_threads)
+            wifi_backend.restore_connection(cancel=lambda: st.stop_threads)
     except Exception:
         logging.exception("Stale setup AP recovery failed")
     finally:
@@ -370,7 +382,7 @@ def wifi_worker_thread():
             continue
         result = False
         st.wifi_cancel_requested = False
-        wifi_stage_clear()
+        wifi_stage_set(10, "WiFi 설정 준비", "잠시만 기다려주세요")
         try:
             result = portal_loop_until_connected_or_cancel()
         except Exception:
@@ -380,10 +392,10 @@ def wifi_worker_thread():
             # Includes cancellation, ten-minute timeout, server bind/AP failures.
             # None may leave wlan0 in AP mode or unmanaged after the worker exits.
             try:
-                wifi_portal.stop_portal()
+                portal_module().stop_portal()
                 if result is not True:
                     wifi_stage_set(60, "기존 WiFi 복원", "잠시만 기다려주세요")
-                    restored = wifi_portal.restore_connection(cancel=lambda: st.stop_threads)
+                    restored = portal_module().restore_connection(cancel=lambda: st.stop_threads)
                     text_stage("재연결 완료" if restored else "재연결 실패")
                 else:
                     text_stage("WiFi 연결 완료")
@@ -493,7 +505,7 @@ def net_poll_thread():
             st.cached_ip = link["ip"]
             st.cached_wifi_connected = link["connected"]
             st.cached_wifi_level = link["level"]
-            online_now = wifi_portal.has_internet() if link["connected"] else False
+            online_now = internet_available() if link["connected"] else False
             st.cached_online = online_now
             if st.last_menu_online is None or online_now != st.last_menu_online:
                 st.last_menu_online = online_now
@@ -1177,9 +1189,18 @@ def execute_button_logic():
 
 
 def main():
+    publish(70, "PREPARING")
+    inputs = initialize_gpio()
+    threading.Thread(target=button_input_thread, args=(inputs,), daemon=True).start()
     ensure_menu_config_csv()
     init_ina219()
     refresh_root_menu(reset_index=True)
+    publish(85, "ALMOST READY")
+    initialize_display()
+    force_oled_refresh()
+    if not display_ready():
+        raise RuntimeError("First OLED menu frame failed")
+    menu_ready()
 
     probe_thread = threading.Thread(target=stm32_poll_thread, daemon=True)
     probe_thread.start()

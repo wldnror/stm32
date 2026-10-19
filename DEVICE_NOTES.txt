@@ -1,4 +1,4 @@
-STM32 debug appliance 3.74
+STM32 debug appliance 3.75
 
 Entry: main.py -> serve.py. systemd owns restart/recovery.
 UI: display_manager.py (128x64 OLED), menu_manager.py, app_state.py.
@@ -38,3 +38,39 @@ python3 -m unittest discover -s tests -v
 TEST_FONT may point to the installed OLED TrueType font for exact metrics.
 Tests use fake GPIO/OLED hardware; real AP/client transitions require a separate
 recovery timer so the device can restore Wi-Fi independently of an SSH session.
+
+Early startup screen (3.75)
+- Install BOTH deploy/stm32.service and deploy/stm32-boot-screen.service into
+  /etc/systemd/system/, daemon-reload, and enable both units.
+- The boot-screen unit starts during sysinit with no networking dependency.
+  It loads the installed I2C drivers and draws via Python standard-library I2C,
+  before the main app imports its fonts, web server or hardware modules.
+- Main app startup also no longer waits for network.target. It publishes real
+  milestones to /run/stm32-boot/state.json; the bar never completes by a timer.
+- An exclusive lock hands the OLED from the splash to the normal display.
+  The splash closes its bus without clearing the screen.
+- systemd READY=1 is sent only after a real menu frame has been transmitted.
+- The menu journal and /run/stm32-boot.log record timestamps since Linux
+  kernel start, excluding the Raspberry Pi firmware interval before Linux.
+  The early service logs directly under /run so it can start
+  before the journal socket. Its initial priority is lowered after the first frame.
+- A legacy installation without the early unit still starts the normal app.
+
+- Flask and the web setup UI are loaded only when Wi-Fi setup is requested.
+  Normal menu startup and connectivity polling do not import the web server.
+- A separate 100 Hz button sampler applies 40 ms stable-state debounce to both
+  buttons, including a button held during startup. It uses direct GPIO reads
+  instead of sysfs edge registration, which failed during early udev startup.
+  Release, long-press and cancellation behavior still use the existing handlers.
+- /run/stm32-boot/first-frame.json retains the first successful OLED write time
+  even if journald was not running yet. state.json at READY records menu time.
+  startup-error.log in that directory retains an early application traceback.
+
+On-device validation (Pi Zero W, 2026-10-19)
+- Final reboot: first splash frame at 19.492 s, first real menu frame at
+  35.664 s after Linux kernel start; no application restart or failed unit.
+- A preceding reboot also reached the menu without restarting (36.071 s).
+- 47 regression tests pass locally and on the Pi. They include SH1107 packing,
+  exclusive handoff, readiness notification, button bounce and press/release.
+- These measurements do not include pre-kernel firmware initialization and
+  are not a promise of a fixed power-on time on other SD cards or hardware.

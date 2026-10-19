@@ -19,17 +19,31 @@ from app_config import (
     APP_VERSION,
 )
 
-serial = i2c(port=1, address=0x3C)
-device = sh1107(serial, rotate=1)
+# Keep the early splash alive while the larger application is being imported.
+serial = None
+device = None
+
+
+def initialize_display():
+    global serial, device
+    if device is None:
+        from boot_status import claim_display
+        claim_display()
+        serial = i2c(port=1, address=0x3C)
+        device = sh1107(serial, rotate=1)
+        device.persist = True
+
+
+def display_ready():
+    return _last_frame is not None
 
 font_big = ImageFont.truetype(FONT_PATH, 12)
 font_st = ImageFont.truetype(FONT_PATH, 11)
-font_time = ImageFont.truetype(FONT_PATH, 12)
+font_time = font_big
 
-low_battery_icon = Image.open(BATTERY_ICON_PATH)
-medium_battery_icon = Image.open(BATTERY_ICON_PATH)
-high_battery_icon = Image.open(BATTERY_ICON_PATH)
-full_battery_icon = Image.open(BATTERY_ICON_PATH)
+with Image.open(BATTERY_ICON_PATH) as icon_source:
+    low_battery_icon = icon_source.copy()
+medium_battery_icon = high_battery_icon = full_battery_icon = low_battery_icon
 
 _last_frame = None
 _last_render_key = None

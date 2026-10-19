@@ -1,15 +1,22 @@
 [Unit]
 Description=STM32 debug appliance
-After=network.target
+DefaultDependencies=no
+Wants=stm32-boot-screen.service
+After=stm32-boot-screen.service systemd-remount-fs.service systemd-modules-load.service
+RequiresMountsFor=/home/user/stm32
+Before=shutdown.target
+Conflicts=shutdown.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
 User=user
 WorkingDirectory=/home/user/stm32
-ExecStartPre=-+/sbin/hwclock -s
-ExecStart=/usr/bin/python3 /home/user/stm32/main.py
+ExecStartPre=-+/bin/sh -c 'if [ -e /dev/rtc0 ]; then /sbin/hwclock -s; fi'
+ExecStart=/usr/bin/python3 -u /home/user/stm32/main.py
 Restart=on-failure
 RestartSec=3
+TimeoutStartSec=90
 TimeoutStopSec=15
 
 [Install]

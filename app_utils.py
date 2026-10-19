@@ -76,8 +76,8 @@ def iface_exists(name: str) -> bool:
 
 
 def has_real_internet(timeout=1.5):
-    from wifi_portal import has_internet
-    return has_internet(timeout=timeout)
+    from network_utils import internet_available
+    return internet_available(timeout=timeout)
 
 
 def ip_from_ip_cmd(ifname: str) -> str:

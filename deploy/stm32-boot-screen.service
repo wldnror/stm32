@@ -1,0 +1,24 @@
+[Unit]
+Description=Early STM32 OLED startup screen
+DefaultDependencies=no
+RequiresMountsFor=/home/user/stm32
+Before=stm32.service shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=simple
+Group=user
+UMask=0002
+Environment=PYTHONDONTWRITEBYTECODE=1
+RuntimeDirectory=stm32-boot
+RuntimeDirectoryMode=0775
+RuntimeDirectoryPreserve=yes
+StandardOutput=append:/run/stm32-boot.log
+StandardError=inherit
+Nice=-5
+ExecStartPre=-/sbin/modprobe -a i2c_bcm2835 i2c_dev
+ExecStart=/usr/bin/python3 -u /home/user/stm32/boot_screen.py
+TimeoutStopSec=3
+
+[Install]
+WantedBy=sysinit.target
