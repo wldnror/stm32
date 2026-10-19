@@ -130,14 +130,15 @@ form.inline button{
 
 <div class="card">
   <div class="small">주변 와이파이</div>
-  {% if ssids and ssids|length > 0 %}
   <form method="post" action="/connect" id="connectForm" onsubmit="return onSubmitConnect(this)">
-    <select name="ssid" required id="ssidSelect">
+    <select name="ssid" id="ssidSelect">
+      <option value="">와이파이 선택 또는 직접 입력</option>
       {% for s in ssids %}
         <option value="{{s}}">{{s}}</option>
       {% endfor %}
     </select>
 
+    <input name="ssid_manual" maxlength="32" placeholder="SSID 직접 입력 (숨겨진 Wi-Fi 포함)" />
     <div class="pw-wrap">
       <input name="psk" id="psk1" type="password" placeholder="비밀번호 (없으면 빈칸)" autocomplete="current-password" />
       <button class="pw-btn" type="button" aria-label="비밀번호 보기" aria-pressed="false" onclick="togglePw('psk1', this)">
@@ -147,12 +148,7 @@ form.inline button{
 
     <button type="submit" class="primary">연결하기</button>
   </form>
-  {% else %}
-    <div class="small" style="margin-top:10px">
-      주변 와이파이를 찾지 못했습니다.
-    </div>
-    <button class="primary" style="margin-top:12px" type="button" onclick="manualRefreshScan()">다시 스캔</button>
-  {% endif %}
+  <button type="button" onclick="manualRefreshScan()">목록 새로고침</button>
 
   {% if msg %}
     <div class="{{ 'ok' if ok else 'err' }}">{{ msg }}</div>
@@ -192,7 +188,7 @@ form.inline button{
     <div class="hr"></div>
   {% endif %}
 
-  <form method="post" action="/reset" onsubmit="return confirm('저장된 와이파이를 전부 삭제할까요?')">
+  <form method="post" action="/reset" onsubmit="if(!confirm('저장된 와이파이를 전부 삭제할까요?')){event.preventDefault();event.stopImmediatePropagation();return false;}">
     <button type="submit" class="primary">전체 초기화</button>
   </form>
 </div>
@@ -234,7 +230,7 @@ function togglePw(id, btn){
 }
 
 function onSubmitConnect(form){
-  const ssid = (form.ssid && form.ssid.value || "").trim();
+  const ssid = (form.ssid_manual && form.ssid_manual.value) || (form.ssid && form.ssid.value) || "";
   if(!ssid){ alert("SSID를 선택하세요."); return false; }
   return true;
 }
@@ -273,13 +269,15 @@ document.querySelectorAll('form[action="/delete"]').forEach(f => {
 document.querySelectorAll('form[action="/reset"]').forEach(f => {
   f.addEventListener("submit", () => {
     disableSubmitButtons(f);
+    if (f.dataset.cancelled === "1") return;
     showLoading("전체 초기화 중입니다…");
     loadingSlowHint();
   });
 });
 
 document.querySelectorAll('form[action="/connect"]').forEach(f => {
-  f.addEventListener("submit", () => {
+  f.addEventListener("submit", (event) => {
+    if(event.defaultPrevented) return;
     disableSubmitButtons(f);
     showLoading("연결 적용 중입니다…", "연결 화면으로 이동합니다.");
     loadingSlowHint();
@@ -300,7 +298,7 @@ function applyScan(ssids){
   const opts = new Set();
   Array.from(sel.options).forEach(o => opts.add(o.value));
 
-  sel.innerHTML = "";
+  sel.innerHTML = '<option value="">와이파이 선택 또는 직접 입력</option>';
   (ssids || []).forEach(s => {
     const o = document.createElement("option");
     o.value = s;
@@ -331,7 +329,7 @@ function manualRefreshScan(){
   refreshScan().finally(() => location.reload());
 }
 
-setInterval(refreshScan, 5000);
+setInterval(refreshScan, 20000);
 
 async function refreshBadge(){
   try{
@@ -340,7 +338,7 @@ async function refreshBadge(){
     const j = await r.json();
     const badge = document.getElementById("badge");
     if(badge){
-      badge.textContent = j.internet ? "연결됨" : "설정 모드";
+      badge.textContent = j.connected ? "연결됨" : "설정 모드";
     }
   }catch(e){}
 }
@@ -409,7 +407,7 @@ async function tick(){
       stage.textContent = s ? s : "연결 확인 중…";
     }
 
-    if(j.internet){
+    if(j.connected){
       location.href = "/";
       return;
     }
@@ -428,431 +426,160 @@ tick();
 </body></html>
 """
 
-def _run(cmd, check=False, timeout=15.0):
-    return subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=check,
-        timeout=timeout
-    )
+# Shared state is accessed by Flask requests and the device Wi-Fi worker.
+_state_lock = threading.RLock()
+_server = None
+_internet_cache = {"at": 0.0, "ok": False}
+_internet_lock = threading.Lock()
 
-def has_internet(timeout=1.2):
+from wifi_backend import (
+    AP_SSID, AP_PASS, AP_IP, PORTAL_PORT, start_ap, stop_ap, scan_ssids,
+    list_saved_nm, delete_saved_nm, reset_wifi_config, connect_network,
+    restore_connection, validate_credentials, ap_active,
+)
+from network_utils import wifi_link
+from process_utils import run_command
+
+
+def _set_state(**kwargs):
+    with _state_lock:
+        _state.update(kwargs)
+
+
+def pop_request():
+    with _state_lock:
+        return _state.pop("requested", None)
+
+
+def has_internet(timeout=1.5):
+    # All callers share the result; HTTP polling never starts a ping storm.
+    with _internet_lock:
+        now = time.monotonic()
+        if _internet_cache["at"] and now - _internet_cache["at"] < 20:
+            return _internet_cache["ok"]
+        ok = False
+        for target in ("1.1.1.1", "8.8.8.8"):
+            result = run_command(["ping", "-I", IFACE, "-c", "1", "-W", "1", target], timeout=timeout)
+            if result.returncode == 0:
+                ok = True
+                break
+        _internet_cache.update(at=now, ok=ok)
+        return ok
+
+
+@app.before_request
+def setup_mode_only():
+    # Configuration endpoints exist only during physical-button setup mode.
+    with _state_lock:
+        running = _state.get("running", False)
+    if not running:
+        return "Wi-Fi 설정 모드가 아닙니다.", 403
+    import ipaddress
+    from urllib.parse import urlsplit
     try:
-        r = subprocess.run(
-            ["ping", "-I", IFACE, "-c", "1", "-W", "1", "8.8.8.8"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=timeout
-        )
-        return r.returncode == 0
-    except Exception:
-        return False
+        remote = ipaddress.ip_address(request.remote_addr or "")
+        if not (remote.is_loopback or remote in ipaddress.ip_network(AP_IP + "/24", strict=False)):
+            return "설정 AP에서 접속해 주세요.", 403
+    except ValueError:
+        return "접속 주소 오류", 403
+    if request.method == "POST":
+        with _state_lock:
+            if _state.get("connecting") or _state.get("requested"):
+                return "이미 연결을 처리하고 있습니다.", 409
+        origin = request.headers.get("Origin")
+        if origin and urlsplit(origin).netloc != request.host:
+            return "잘못된 요청 출처입니다.", 403
 
-def _scan_iwlist():
-    p = _run(["sudo", "iwlist", IFACE, "scan"], timeout=18.0)
-    txt = (p.stdout or "") + "\n" + (p.stderr or "")
-    ssids = re.findall(r'ESSID:"(.*?)"', txt)
-    ssids = [s.strip() for s in ssids if s and s.strip()]
-    out = []
-    for s in ssids:
-        if s not in out:
-            out.append(s)
-    return out[:40]
-
-def _scan_nmcli():
-    p = _run(["sudo", "nmcli", "-t", "-f", "SSID,SIGNAL", "dev", "wifi", "list", "ifname", IFACE], timeout=12.0)
-    items = []
-    for line in (p.stdout or "").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split(":")
-        ssid = (parts[0] or "").strip()
-        if not ssid:
-            continue
-        try:
-            sig = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
-        except Exception:
-            sig = 0
-        items.append((ssid, sig))
-
-    best = {}
-    for s, sig in items:
-        if s not in best or sig > best[s]:
-            best[s] = sig
-    uniq = [(s, best[s]) for s in best]
-    uniq.sort(key=lambda x: (-x[1], x[0]))
-    return [s for s, _ in uniq[:40]]
-
-def scan_ssids():
-    try:
-        nm = _scan_nmcli()
-        if nm:
-            return nm
-    except Exception:
-        pass
-    try:
-        iw = _scan_iwlist()
-        if iw:
-            return iw
-    except Exception:
-        pass
-    return []
-
-def list_saved_wpa():
-    try:
-        txt = _run(["sudo", "cat", WPA_CONF], timeout=6.0).stdout
-        ssids = re.findall(r'network=\{[^}]*ssid="([^"]+)"[^}]*\}', txt, flags=re.S)
-        out = []
-        for s in ssids:
-            s = s.strip()
-            if s and s not in out:
-                out.append(s)
-        return out
-    except Exception:
-        return []
-
-def _parse_nmconnection_files():
-    items = []
-    try:
-        if not os.path.isdir(NM_CONN_DIR):
-            return items
-        for fn in os.listdir(NM_CONN_DIR):
-            if not fn.endswith(".nmconnection"):
-                continue
-            path = os.path.join(NM_CONN_DIR, fn)
-            try:
-                txt = _run(["sudo", "cat", path], timeout=3.5).stdout
-            except Exception:
-                continue
-            nm_id = os.path.splitext(fn)[0].strip()
-            m = re.search(r"(?m)^\s*ssid\s*=\s*(.+?)\s*$", txt)
-            ssid = m.group(1).strip() if m else ""
-            if ssid:
-                items.append({"ssid": ssid, "nm_id": nm_id, "display": f"{ssid} ({nm_id})"})
-    except Exception:
-        pass
-    return items
-
-def list_saved_nm():
-    items = []
-    try:
-        p = _run(["sudo", "nmcli", "-t", "-f", "NAME,TYPE,802-11-wireless.ssid", "connection", "show"], timeout=6.0)
-        for line in (p.stdout or "").splitlines():
-            parts = line.strip().split(":")
-            if len(parts) < 2:
-                continue
-            name = (parts[0] or "").strip()
-            ctype = (parts[1] or "").strip()
-            if ctype != "wifi" or not name:
-                continue
-            ssid = (parts[2] if len(parts) >= 3 else "").strip()
-            display = ssid if ssid else name
-            if ssid and ssid != name:
-                display = f"{ssid} ({name})"
-            items.append({"ssid": ssid or name, "nm_id": name, "display": display})
-    except Exception:
-        items = []
-
-    if not items:
-        items = _parse_nmconnection_files()
-    else:
-        has_real_ssid = any(("(" in it["display"]) or (it["ssid"] and it["ssid"] != it["nm_id"]) for it in items)
-        if not has_real_ssid:
-            fb = _parse_nmconnection_files()
-            known = set([it["nm_id"] for it in items if it.get("nm_id")])
-            for it in fb:
-                if it["nm_id"] not in known:
-                    items.append(it)
-
-    uniq = []
-    seen = set()
-    for it in items:
-        key = (it.get("nm_id",""), it.get("display",""))
-        if key in seen:
-            continue
-        seen.add(key)
-        uniq.append(it)
-    return uniq
-
-def delete_saved_wpa(ssid):
-    if not ssid:
-        return False, "SSID empty"
-    try:
-        txt = _run(["sudo", "cat", WPA_CONF], timeout=6.0).stdout
-        before = txt
-        txt2 = re.sub(r'network=\{[^}]*ssid="'+re.escape(ssid)+r'"[^}]*\}\s*', "", txt, flags=re.S)
-        if txt2 == before:
-            return False, "해당 SSID를 찾지 못했습니다."
-        tmp = "/tmp/wpa_supplicant.conf.tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(txt2.rstrip() + "\n")
-        _run(["sudo", "cp", tmp, WPA_CONF], timeout=6.0)
-        _run(["sudo", "chmod", "600", WPA_CONF], timeout=6.0)
-        _run(["sudo", "wpa_cli", "-i", IFACE, "reconfigure"], timeout=6.0)
-        return True, "삭제 완료"
-    except Exception as e:
-        return False, f"삭제 실패: {e}"
-
-def delete_saved_nm(nm_id: str):
-    if not nm_id:
-        return False, "NM id empty"
-    try:
-        p = _run(["sudo", "nmcli", "connection", "delete", "id", nm_id], timeout=8.0)
-        if p.returncode == 0:
-            return True, "삭제 완료"
-        msg = (p.stderr or "").strip() or (p.stdout or "").strip() or "삭제 실패"
-        return False, msg
-    except Exception as e:
-        return False, f"삭제 실패: {e}"
-
-def reset_wifi_config():
-    errs = []
-    for it in list_saved_nm():
-        nm_id = it.get("nm_id", "")
-        ok, _ = delete_saved_nm(nm_id)
-        if not ok:
-            errs.append(f"NM:{nm_id}")
-    for s in list_saved_wpa():
-        ok, _ = delete_saved_wpa(s)
-        if not ok:
-            errs.append(f"WPA:{s}")
-    if errs:
-        return False, "일부 삭제 실패: " + ", ".join(errs)
-    return True, "초기화 완료"
-
-def _write_wpa_network(ssid, psk):
-    if not ssid:
-        raise ValueError("SSID empty")
-
-    if psk:
-        gen = _run(["wpa_passphrase", ssid, psk], check=True, timeout=6.0).stdout
-        m = re.search(r"network=\{.*?\}\s*", gen, flags=re.S)
-        block = m.group(0) if m else gen
-    else:
-        block = f'network={{\n    ssid="{ssid}"\n    key_mgmt=NONE\n}}\n'
-
-    _run(["sudo", "cp", WPA_CONF, WPA_CONF + ".bak"], timeout=6.0)
-
-    existing = _run(["sudo", "cat", WPA_CONF], timeout=6.0).stdout
-    existing = re.sub(r'network=\{[^}]*ssid="'+re.escape(ssid)+r'"[^}]*\}\s*', "", existing, flags=re.S)
-
-    tmp = "/tmp/wpa_supplicant.conf.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(existing.rstrip() + "\n\n" + block + "\n")
-
-    _run(["sudo", "cp", tmp, WPA_CONF], timeout=6.0)
-    _run(["sudo", "chmod", "600", WPA_CONF], timeout=6.0)
-
-def _kill_wifi_owners():
-    _run(["sudo", "pkill", "-f", "hostapd"], timeout=4.0)
-    _run(["sudo", "pkill", "-f", "dnsmasq"], timeout=4.0)
-    _run(["sudo", "pkill", "-f", f"wpa_supplicant.*{IFACE}"], timeout=4.0)
-    _run(["sudo", "dhclient", "-r", IFACE], timeout=6.0)
-    _run(["sudo", "rfkill", "unblock", "wifi"], timeout=4.0)
-
-def start_ap():
-    _state["running"] = True
-    _state["done"] = False
-    _state["last_error"] = ""
-    _state["last_ok"] = ""
-    _state["requested"] = None
-    _state["connect_stage"] = ""
-    _state["connect_started_at"] = 0.0
-
-    _kill_wifi_owners()
-
-    _run(["sudo", "ip", "link", "set", IFACE, "down"], timeout=4.0)
-    _run(["sudo", "ip", "addr", "flush", "dev", IFACE], timeout=4.0)
-    _run(["sudo", "ip", "addr", "add", f"{AP_IP}/24", "dev", IFACE], timeout=4.0)
-    _run(["sudo", "ip", "link", "set", IFACE, "up"], timeout=4.0)
-
-    hostapd_conf = f"""
-country_code=KR
-interface={IFACE}
-driver=nl80211
-ssid={AP_SSID}
-hw_mode=g
-channel=6
-ieee80211n=1
-wmm_enabled=0
-auth_algs=1
-ignore_broadcast_ssid=0
-wpa=2
-wpa_passphrase={AP_PASS}
-wpa_key_mgmt=WPA-PSK
-rsn_pairwise=CCMP
-"""
-    dnsmasq_conf = f"""
-interface={IFACE}
-bind-interfaces
-dhcp-range=192.168.4.10,192.168.4.200,255.255.255.0,12h
-address=/#/{AP_IP}
-"""
-
-    with open("/tmp/hostapd.conf", "w", encoding="utf-8") as f:
-        f.write(hostapd_conf.strip() + "\n")
-    with open("/tmp/dnsmasq.conf", "w", encoding="utf-8") as f:
-        f.write(dnsmasq_conf.strip() + "\n")
-
-    subprocess.Popen(["sudo", "dnsmasq", "-C", "/tmp/dnsmasq.conf", "-d"],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.Popen(["sudo", "hostapd", "/tmp/hostapd.conf"],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-def stop_ap_and_connect(ssid, psk, wait_sec=35):
-    _state["connect_started_at"] = time.time()
-    _state["connect_stage"] = "설정 저장 중…"
-    try:
-        _write_wpa_network(ssid, psk)
-    except Exception as e:
-        _state["last_error"] = f"설정 저장 실패: {e}"
-        return False
-
-    _state["connect_stage"] = "설정 모드 종료 중…"
-    _run(["sudo", "pkill", "-f", "hostapd"], timeout=4.0)
-    _run(["sudo", "pkill", "-f", "dnsmasq"], timeout=4.0)
-
-    _state["connect_stage"] = "인터페이스 초기화 중…"
-    _run(["sudo", "ip", "addr", "flush", "dev", IFACE], timeout=4.0)
-    _run(["sudo", "ip", "link", "set", IFACE, "down"], timeout=4.0)
-    _run(["sudo", "ip", "link", "set", IFACE, "up"], timeout=4.0)
-
-    _state["connect_stage"] = "무선 연결 시도 중…"
-    _run(["sudo", "pkill", "-f", f"wpa_supplicant.*{IFACE}"], timeout=4.0)
-    _run(["sudo", "wpa_supplicant", "-B", "-i", IFACE, "-c", WPA_CONF], timeout=10.0)
-    _run(["sudo", "wpa_cli", "-i", IFACE, "reconfigure"], timeout=6.0)
-
-    _state["connect_stage"] = "IP 받는 중…"
-    _run(["sudo", "dhclient", "-r", IFACE], timeout=8.0)
-    _run(["sudo", "dhclient", IFACE], timeout=12.0)
-
-    _state["connect_stage"] = "인터넷 확인 중…"
-    t0 = time.time()
-    while time.time() - t0 < wait_sec:
-        if has_internet():
-            _state["done"] = True
-            _state["running"] = False
-            _state["last_ok"] = "연결 완료"
-            _state["last_error"] = ""
-            _state["connect_stage"] = "연결 완료"
-            return True
-        time.sleep(1)
-
-    _state["last_error"] = "연결 시간 초과"
-    _state["connect_stage"] = ""
-    return False
 
 @app.route("/", methods=["GET"])
 def index():
-    ssids = scan_ssids()
-    saved_wpa = list_saved_wpa()
-    saved_nm = list_saved_nm()
+    with _state_lock:
+        state = dict(_state)
+    return render_template_string(PAGE, ssids=scan_ssids(), saved_wpa=[],
+        saved_nm=list_saved_nm(), msg=state["last_error"] or state["last_ok"],
+        ok=bool(state["last_ok"]) and not state["last_error"], status="설정 모드")
 
-    msg = _state["last_error"] or _state["last_ok"] or ""
-    ok = bool(_state["last_ok"]) and not _state["last_error"]
-    status = "연결됨" if has_internet() else "설정 모드"
 
-    return render_template_string(
-        PAGE,
-        ssids=ssids,
-        saved_wpa=saved_wpa,
-        saved_nm=saved_nm,
-        msg=msg,
-        ok=ok,
-        status=status,
-    )
-
-@app.route("/connecting", methods=["GET"])
+@app.route("/connecting")
 def connecting():
     return render_template_string(CONNECTING)
 
-@app.route("/api/scan", methods=["GET"])
+
+@app.route("/api/scan")
 def api_scan():
     return jsonify({"ssids": scan_ssids()})
 
-@app.route("/api/state", methods=["GET"])
+
+@app.route("/api/state")
 def api_state():
-    return jsonify({
-        "internet": has_internet(),
-        "running": bool(_state.get("running")),
-        "requested": bool(_state.get("requested")),
-        "last_ok": _state.get("last_ok",""),
-        "last_error": _state.get("last_error",""),
-        "connect_stage": _state.get("connect_stage",""),
-        "connect_started_at": _state.get("connect_started_at", 0.0),
-    })
+    with _state_lock:
+        state = {key: _state.get(key) for key in
+            ("running", "done", "last_ok", "last_error", "connect_stage", "connect_started_at")}
+    # Association + DHCP is success even on isolated company networks.
+    state["connected"] = bool(state["done"])
+    state["internet"] = bool(_internet_cache["ok"])
+    return jsonify(state)
+
 
 @app.route("/connect", methods=["POST"])
 def connect():
-    ssid = (request.form.get("ssid") or "").strip()
-    psk  = (request.form.get("psk") or "").strip()
-    if not ssid:
-        return "SSID가 비어있습니다.", 400
-    _state["requested"] = {"ssid": ssid, "psk": psk}
-    _state["last_error"] = ""
-    _state["last_ok"] = ""
-    _state["connect_stage"] = "연결 준비 중…"
-    _state["connect_started_at"] = time.time()
+    manual = request.form.get("ssid_manual") or ""
+    ssid = manual or request.form.get("ssid") or ""
+    psk = request.form.get("psk") or ""
+    try:
+        validate_credentials(ssid, psk)
+    except ValueError as exc:
+        return str(exc), 400
+    with _state_lock:
+        if _state.get("requested") or _state.get("connecting"):
+            return "이미 연결을 처리하고 있습니다.", 409
+        _state.update(requested={"ssid": ssid, "psk": psk, "hidden": bool(manual)}, last_error="", last_ok="",
+                      done=False, connect_stage="연결 준비 중…", connect_started_at=time.time())
     return redirect("/connecting")
+
 
 @app.route("/delete", methods=["POST"])
 def delete():
-    src = (request.form.get("src") or "").strip().lower()
-
-    if src == "nm":
-        nm_id = (request.form.get("nm_id") or "").strip()
-        ok, msg = delete_saved_nm(nm_id)
-    else:
-        ssid = (request.form.get("ssid") or "").strip()
-        ok, msg = delete_saved_wpa(ssid)
-
-    _state["last_ok"] = msg if ok else ""
-    _state["last_error"] = "" if ok else msg
+    try:
+        ok, msg = delete_saved_nm(request.form.get("nm_id") or "")
+    except Exception as exc:
+        ok, msg = False, str(exc)
+    _set_state(last_ok=msg if ok else "", last_error="" if ok else msg)
     return redirect("/")
+
 
 @app.route("/reset", methods=["POST"])
 def reset():
-    ok, msg = reset_wifi_config()
-    _state["last_ok"] = msg if ok else ""
-    _state["last_error"] = "" if ok else msg
+    try:
+        ok, msg = reset_wifi_config()
+    except Exception as exc:
+        ok, msg = False, str(exc)
+    _set_state(last_ok=msg if ok else "", last_error="" if ok else msg)
     return redirect("/")
 
-def run_portal(block=True, host="0.0.0.0", port=8080):
+
+def run_portal(block=True, host=AP_IP, port=PORTAL_PORT):
+    global _server
+    from werkzeug.serving import make_server
+    if _server is None:
+        _server = make_server(host, port, app, threaded=True)
+        _set_state(server_started=True)
     if block:
-        app.run(host=host, port=port, debug=False, use_reloader=False)
+        _server.serve_forever()
     else:
-        th = threading.Thread(
-            target=lambda: app.run(host=host, port=port, debug=False, use_reloader=False),
-            daemon=True
-        )
-        th.start()
-        return th
+        thread = threading.Thread(target=_server.serve_forever, daemon=True)
+        thread.start()
+        return thread
 
-def ensure_wifi_connected(auto_start_ap=True):
-    if has_internet():
-        return True
-    if not auto_start_ap:
-        return False
 
-    start_ap()
-    if not _state["server_started"]:
-        run_portal(block=False)
-        _state["server_started"] = True
+def stop_portal():
+    global _server
+    server, _server = _server, None
+    if server is not None:
+        server.shutdown()
+        server.server_close()
+    _set_state(server_started=False)
 
-    while _state["running"]:
-        req = _state.get("requested")
-        if req:
-            ok = stop_ap_and_connect(req["ssid"], req["psk"])
-            _state["requested"] = None
-            if ok:
-                return True
-            start_ap()
-        time.sleep(0.5)
-
-    return has_internet()
 
 if __name__ == "__main__":
-    run_portal(block=True)
+    raise SystemExit("Use the device Wi-Fi setup button to start the portal.")

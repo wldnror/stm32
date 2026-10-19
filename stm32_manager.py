@@ -23,14 +23,15 @@ from app_utils import run_capture, strip_order_prefix, canon_name
 
 
 def kill_openocd():
-    subprocess.run(["sudo", "pkill", "-f", "openocd"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    run_capture(["sudo", "-n", "pkill", "-x", "openocd"], timeout=3.0)
 
 
 def run_openocd_capture(commands, timeout):
-    cmd = ["sudo", "openocd", "-f", OPENOCD_IFACE, "-f", OPENOCD_TARGET]
+    cmd = ["sudo", "-n", "openocd", "-f", OPENOCD_IFACE, "-f", OPENOCD_TARGET]
     for c in commands:
         cmd.extend(["-c", c])
-    return run_capture(cmd, timeout=timeout)
+    with st.openocd_lock:
+        return run_capture(cmd, timeout=timeout)
 
 
 def run_openocd_ok(commands, timeout):
@@ -51,13 +52,13 @@ def has_recent_unlock(ttl=STM32_RECENT_UNLOCK_TTL_SEC) -> bool:
         return (time.time() - (st._unlock_cache["ts"] or 0.0)) < ttl
 
 
-def make_openocd_program_cmd(bin_path: str) -> str:
-    return (
-        "sudo openocd "
-        f"-f {OPENOCD_IFACE} "
-        f"-f {OPENOCD_TARGET} "
-        f'-c "program {bin_path} verify reset exit 0x08000000"'
-    )
+def make_openocd_program_cmd(bin_path: str):
+    # A subprocess argv list protects the shell; Tcl also needs its own quoting.
+    escaped = bin_path
+    for char in ('\\', '"', '$', '[', ']'):
+        escaped = escaped.replace(char, "\\" + char)
+    return ["sudo", "-n", "openocd", "-f", OPENOCD_IFACE, "-f", OPENOCD_TARGET,
+            "-c", 'program "' + escaped + '" verify reset exit 0x08000000']
 
 
 def parse_openocd_flash_kb(text: str) -> Optional[int]:
@@ -96,8 +97,8 @@ def detect_stm32_flash_kb_with_unlock(timeout=STM32_DETECT_TIMEOUT_SEC) -> Tuple
         timeout=timeout,
     )
     text = (out or "") + "\n" + (err or "")
-    m_id = re.search(r"0xE0042000:\s+(0x[0-9a-fA-F]+)", text, re.IGNORECASE)
-    m_fs = re.search(r"0x1FFFF7E0:\s+(0x[0-9a-fA-F]+)", text, re.IGNORECASE)
+    m_id = re.search(r"0xE0042000:\s+((?:0x)?[0-9a-fA-F]+)", text, re.IGNORECASE)
+    m_fs = re.search(r"0x1FFFF7E0:\s+((?:0x)?[0-9a-fA-F]+)", text, re.IGNORECASE)
 
     if rc == 0:
         mark_recent_unlock(True)
@@ -117,6 +118,8 @@ def detect_stm32_flash_kb_with_unlock(timeout=STM32_DETECT_TIMEOUT_SEC) -> Tuple
         fs_val = int(m_fs.group(1), 16)
         dev_id = id_val % 4096
         flash_kb = fs_val
+        if not 16 <= flash_kb <= 2048:
+            return None, None
         with st._detect_cache_lock:
             st._detect_cache["ts"] = time.time()
             st._detect_cache["flash_kb"] = flash_kb
@@ -225,6 +228,10 @@ def check_stm32_connection():
             else:
                 st.connection_failed_since_last_success = True
                 st.connection_success = False
+        if not ok:
+            with st._detect_cache_lock:
+                st._detect_cache.update(ts=0.0, flash_kb=None, dev_id=None)
+            mark_recent_unlock(False)
         return ok
     except Exception:
         with st.stm32_state_lock:

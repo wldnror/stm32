@@ -1,0 +1,16 @@
+[Unit]
+Description=STM32 debug appliance
+After=network.target
+
+[Service]
+Type=simple
+User=user
+WorkingDirectory=/home/user/stm32
+ExecStartPre=-+/sbin/hwclock -s
+ExecStart=/usr/bin/python3 /home/user/stm32/main.py
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

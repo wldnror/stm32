@@ -5,6 +5,8 @@ import socket
 import subprocess
 
 from app_config import MENU_CONFIG_CSV
+from process_utils import run_command
+from network_utils import interface_ipv4
 
 
 def logi(msg: str):
@@ -16,31 +18,17 @@ def logi(msg: str):
 
 def run_quiet(cmd, timeout=3.0, shell=False):
     try:
-        subprocess.run(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=timeout,
-            shell=shell,
-        )
-        return True
-    except Exception:
+        return run_command(cmd, timeout=timeout, shell=shell, capture=False).returncode == 0
+    except (OSError, subprocess.SubprocessError):
         return False
 
 
 def run_capture(cmd, timeout=4.0, shell=False):
     try:
-        r = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=timeout,
-            shell=shell,
-        )
-        return r.returncode, (r.stdout or ""), (r.stderr or "")
-    except Exception as e:
-        return 999, "", str(e)
+        result = run_command(cmd, timeout=timeout, shell=shell)
+        return result.returncode, result.stdout, result.stderr
+    except (OSError, subprocess.SubprocessError) as exc:
+        return 999, "", type(exc).__name__
 
 
 def ensure_menu_config_csv():
@@ -88,72 +76,19 @@ def iface_exists(name: str) -> bool:
 
 
 def has_real_internet(timeout=1.5):
-    try:
-        targets = ["8.8.8.8", "1.1.1.1"]
-        iface = "wlan0" if iface_exists("wlan0") else ("eth0" if iface_exists("eth0") else None)
-        for t in targets:
-            if iface:
-                cmd = ["ping", "-I", iface, "-c", "1", "-W", "1", t]
-            else:
-                cmd = ["ping", "-c", "1", "-W", "1", t]
-            r = subprocess.run(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=timeout,
-            )
-            if r.returncode == 0:
-                return True
-        return False
-    except Exception:
-        return False
+    from wifi_portal import has_internet
+    return has_internet(timeout=timeout)
 
 
 def ip_from_ip_cmd(ifname: str) -> str:
-    rc, out, _ = run_capture(
-        ["bash", "-lc", f"ip -4 addr show {ifname} | awk '/inet /{{print $2}}' | head -n1"],
-        timeout=0.9,
-    )
-    if rc != 0:
-        return "0.0.0.0"
-    v = (out or "").strip()
-    if not v:
-        return "0.0.0.0"
-    ip = v.split("/")[0].strip()
-    return ip if ip else "0.0.0.0"
+    return interface_ipv4(ifname)
 
 
 def get_ip_address():
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(0.5)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        if ip and ip != "0.0.0.0" and not ip.startswith("127."):
+    for iface in ("wlan0", "eth0"):
+        ip = interface_ipv4(iface)
+        if ip != "0.0.0.0":
             return ip
-    except Exception:
-        pass
-
-    try:
-        for ifn in ["wlan0", "eth0"]:
-            if iface_exists(ifn):
-                ip2 = ip_from_ip_cmd(ifn)
-                if ip2 != "0.0.0.0" and not ip2.startswith("127."):
-                    return ip2
-        rc, out, _ = run_capture(
-            ["bash", "-lc", "ip -4 addr show | awk '/inet /{print $2}' | head -n1"],
-            timeout=0.9,
-        )
-        if rc == 0:
-            v = (out or "").strip()
-            if v:
-                ip3 = v.split("/")[0].strip()
-                if ip3 and ip3 != "0.0.0.0" and not ip3.startswith("127."):
-                    return ip3
-    except Exception:
-        pass
-
     return "0.0.0.0"
 
 

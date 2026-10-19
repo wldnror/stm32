@@ -6,7 +6,7 @@ VISUAL_X_OFFSET = 0
 AP_SSID = getattr(wifi_portal, "AP_SSID", "GDSENG-SETUP")
 AP_PASS = getattr(wifi_portal, "AP_PASS", "12345678")
 AP_IP = getattr(wifi_portal, "AP_IP", "192.168.4.1")
-PORTAL_PORT = 80
+PORTAL_PORT = wifi_portal.PORTAL_PORT
 
 BUTTON_PIN_NEXT = 27
 BUTTON_PIN_EXECUTE = 17
@@ -24,10 +24,10 @@ SOFT_DEBOUNCE_EXEC = 0.05
 LONG_PRESS_THRESHOLD = 0.7
 NEXT_LONG_CANCEL_THRESHOLD = 0.7
 
-STM32_POLL_INTERVAL_SEC = 0.08
+STM32_POLL_INTERVAL_SEC = 0.75
 STM32_POLL_LOOP_SLEEP_SEC = 0.02
 
-STM32_CONNECT_TIMEOUT_SEC = 0.55
+STM32_CONNECT_TIMEOUT_SEC = 1.5
 STM32_DETECT_TIMEOUT_SEC = 1.8
 STM32_FALLBACK_PROBE_TIMEOUT_SEC = 1.2
 STM32_UNLOCK_TIMEOUT_SEC = 1.4
@@ -75,6 +75,12 @@ SCAN_MENU_REBUILD_MIN_SEC = 0.6
 SCAN_PREFIX_STABLE_CNT = 2
 SCAN_DETAIL_POLL_SEC = 0.2
 
-FONT_PATH = "/usr/share/fonts/truetype/malgun/malgunbd.ttf"
+FONT_PATH = os.environ.get("STM32_FONT_PATH") or next(
+    (path for path in (
+        "/usr/share/fonts/truetype/malgunbd/malgunbd.ttf",
+        "/usr/share/fonts/truetype/malgun/malgunbd.ttf",
+    ) if os.path.isfile(path)),
+    "/usr/share/fonts/truetype/malgun/malgunbd.ttf",
+)
 BATTERY_ICON_PATH = "/home/user/stm32/img/bat.png"
-APP_VERSION = "ver 3.72"
+APP_VERSION = "ver 3.73"

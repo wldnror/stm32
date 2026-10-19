@@ -118,16 +118,15 @@ def build_menu_for_dir(dir_path, is_root=False):
         extras_local.append(extra)
 
     if is_root:
-        online = st.cached_online
         fw_extract_enabled = is_fw_extract_mode()
 
-        if online and fw_extract_enabled:
+        if fw_extract_enabled:
             commands_local.append(f"python3 {OUT_SCRIPT_PATH}")
             names_local.append("FW 추출(OUT)")
             types_local.append("script")
             extras_local.append(None)
 
-        if online:
+        if st.cached_wifi_connected:
             with st.git_state_lock:
                 has_update = st.git_has_update_cached
 
@@ -163,12 +162,20 @@ def build_menu_for_dir(dir_path, is_root=False):
 
 
 def refresh_root_menu(reset_index=False):
+    previous = None
+    index = st.current_command_index
+    if not reset_index and 0 <= index < min(len(st.command_names), len(st.command_types)):
+        previous = (st.command_types[index], st.command_names[index])
     st.current_menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
     st.commands = st.current_menu["commands"]
     st.command_names = st.current_menu["names"]
     st.command_types = st.current_menu["types"]
     st.menu_extras = st.current_menu["extras"]
 
+    if previous:
+        pairs = list(zip(st.command_types, st.command_names))
+        if previous in pairs:
+            st.current_command_index = pairs.index(previous)
     if reset_index or (st.current_command_index >= len(st.commands)):
         st.current_command_index = 0
 

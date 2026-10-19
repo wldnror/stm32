@@ -1,10 +1,11 @@
 import time
+import logging
+from contextlib import contextmanager
 from datetime import datetime
 
-from PIL import Image, ImageFont
+from PIL import Image, ImageFont, ImageDraw
 from luma.core.interface.serial import i2c
 from luma.oled.device import sh1107
-from luma.core.render import canvas
 
 import app_state as st
 from app_config import (
@@ -29,6 +30,49 @@ low_battery_icon = Image.open(BATTERY_ICON_PATH)
 medium_battery_icon = Image.open(BATTERY_ICON_PATH)
 high_battery_icon = Image.open(BATTERY_ICON_PATH)
 full_battery_icon = Image.open(BATTERY_ICON_PATH)
+
+_last_frame = None
+_last_render_key = None
+_last_error_log = 0.0
+
+
+@contextmanager
+def oled_canvas(render_key=None):
+    global _last_frame, _last_render_key
+    image = Image.new("1", (device.width, device.height))
+    draw = ImageDraw.Draw(image)
+    yield draw
+    frame = image.tobytes()
+    if frame != _last_frame:
+        device.display(image)
+        _last_frame = frame
+    if render_key is not None:
+        _last_render_key = render_key
+
+
+def draw_fit_line(draw, text, x, y, width, start_size=12, min_size=8):
+    text = str(text or "")
+    for size in range(start_size, min_size - 1, -1):
+        font = get_font(size)
+        if text_size(draw, text, font)[0] <= width:
+            break
+    text = ellipsis_to_width(draw, text, font, width)
+    # Anchor at the actual top-left ink edge, not the font's ascender offset.
+    box = draw.textbbox((0, 0), text, font=font)
+    draw.text((x - box[0], y - box[1]), text, font=font, fill=255)
+    return draw.textbbox((x - box[0], y - box[1]), text, font=font)
+
+
+def draw_system_header_footer(draw, ip, current_time, connected):
+    width, height = device.width, device.height
+    draw_fit_line(draw, current_time, 1, 1, 76, 12)
+    draw_fit_line(draw, "GDSENG", 80, 1, width - 81, 12)
+    draw_fit_line(draw, "WiFi" if connected else "WiFi 미연결", 1, 16, 75, 10)
+    draw_fit_line(draw, APP_VERSION, 82, 16, width - 83, 10)
+    # Full-width IP row: the version never shares this row.
+    return draw_fit_line(draw, ip if ip != "0.0.0.0" else "연결 없음",
+                         1, height - 13, width - 2, 12)
+
 
 
 def get_font(size: int):
@@ -98,6 +142,7 @@ def draw_center_text_autofit(draw, text, center_x, center_y, max_width, start_si
             return
         size -= 1
     f = get_font(min_size)
+    text = ellipsis_to_width(draw, text, f, max_width)
     try:
         draw.text((center_x, center_y), text, font=f, fill=255, anchor="mm")
     except TypeError:
@@ -198,7 +243,7 @@ def draw_box_label(draw, x, y, w, h, label, active):
 
 
 def draw_scan_detail_screen():
-    with canvas(device) as draw:
+    with oled_canvas() as draw:
         draw.rectangle(device.bounding_box, fill="black")
 
         W, H = device.width, device.height
@@ -248,6 +293,12 @@ def draw_scan_detail_screen():
             draw.text((2, y0), msg, font=fbot, fill=255)
 
 
+def scan_back_selected():
+    types = (st.current_menu or {}).get("types", [])
+    index = st.current_command_index
+    return 0 <= index < len(types) and types[index] == "back_from_scan"
+
+
 def draw_scan_screen():
     with st.scan_lock:
         ips = list(st.scan_ips)
@@ -255,7 +306,7 @@ def draw_scan_screen():
         infos = dict(st.scan_infos)
         done = st.scan_done
 
-    with canvas(device) as draw:
+    with oled_canvas() as draw:
         draw.rectangle(device.bounding_box, fill="black")
 
         W, H = device.width, device.height
@@ -265,7 +316,9 @@ def draw_scan_screen():
 
         cx = W // 2 + VISUAL_X_OFFSET
 
-        if ips:
+        if scan_back_selected():
+            draw_center_text_autofit(draw, "◀ 이전으로", cx, 30, W - 4, 18, min_size=12)
+        elif ips:
             if idx < 0:
                 idx = 0
             if idx >= len(ips):
@@ -283,7 +336,7 @@ def draw_scan_screen():
             if not info:
                 info = "가스: 읽는중..."
             else:
-                info = "가스: " + info
+                info = info if info.startswith("가스:") else "가스: " + info
 
             draw.text((2, info_y), ellipsis_to_width(draw, info, get_font(10), W - 4), font=get_font(10), fill=255)
         else:
@@ -330,11 +383,41 @@ def draw_override(draw):
     return False
 
 
+def visual_state_key():
+    menu = st.current_menu or {}
+    with st.ui_override_lock:
+        override = tuple(st.ui_override.items())
+    with st.wifi_action_lock:
+        wifi_running = st.wifi_action_running
+    animation = None
+    if wifi_running:
+        with st.wifi_stage_lock:
+            stage = tuple(st.wifi_stage.items())
+        with st.ap_state_lock:
+            ap = (st.ap_state["spinner"], st.ap_state["last_clients"],
+                  time.time() < st.ap_state["flash_until"])
+        animation = (stage, ap)
+    scan = None
+    if menu.get("dir") == "__scan__":
+        with st.scan_lock:
+            scan = (tuple(st.scan_ips), st.scan_selected_idx,
+                    tuple(st.scan_infos.items()), st.scan_done)
+    elif menu.get("dir") == "__scan_detail__":
+        scan = (st.scan_detail.get("gas"), st.scan_detail.get("err"),
+                tuple(st.scan_detail.get("flags", {}).items()))
+    return (id(menu), st.current_command_index, st.status_message, st.message_position,
+            st.message_font_size, st.cached_ip, st.cached_wifi_level, st.cached_wifi_connected,
+            st.battery_percentage, datetime.now().strftime("%H:%M"), override, animation, scan)
+
+
 def update_oled_display():
     if not st.display_lock.acquire(timeout=0.2):
         return
     try:
         if not st.commands:
+            return
+        render_key = visual_state_key()
+        if render_key == _last_render_key:
             return
 
         with st.wifi_action_lock:
@@ -346,7 +429,7 @@ def update_oled_display():
         ip_address = st.cached_ip
         wifi_level = st.cached_wifi_level
 
-        with canvas(device) as draw:
+        with oled_canvas(render_key=render_key) as draw:
             if draw_override(draw):
                 return
 
@@ -410,7 +493,9 @@ def update_oled_display():
                     infos = dict(st.scan_infos)
                     done = st.scan_done
 
-                if ips:
+                if scan_back_selected():
+                    draw_center_text_autofit(draw, "◀ 이전으로", cx, 30, W - 4, 18, min_size=12)
+                elif ips:
                     if idx < 0:
                         idx = 0
                     if idx >= len(ips):
@@ -424,7 +509,7 @@ def update_oled_display():
                     if not info:
                         info = "가스: 읽는중..."
                     else:
-                        info = "가스: " + info
+                        info = info if info.startswith("가스:") else "가스: " + info
 
                     draw.text((2, H - 12), ellipsis_to_width(draw, info, get_font(10), W - 4), font=get_font(10), fill=255)
                 else:
@@ -436,17 +521,15 @@ def update_oled_display():
                         draw.text((2, H - 12), ellipsis_to_width(draw, "잠시만...", get_font(10), W - 4), font=get_font(10), fill=255)
                 return
 
-            title = st.command_names[st.current_command_index]
-            item_type = st.command_types[st.current_command_index]
+            menu = st.current_menu or {}
+            names, types = menu.get("names", []), menu.get("types", [])
+            index = st.current_command_index
+            if not (0 <= index < min(len(names), len(types))):
+                return
+            title, item_type = names[index], types[index]
 
             if item_type in ("system", "wifi"):
-                ip_display = "연결 없음" if ip_address == "0.0.0.0" else ip_address
-                draw.text((0, 51), ellipsis_to_width(draw, ip_display, font_big, device.width - 2), font=font_big, fill=255)
-                draw.text((80, -3), "GDSENG", font=font_big, fill=255)
-                draw.text((83, 50), APP_VERSION, font=font_big, fill=255)
-                draw.text((0, -3), current_time, font=font_time, fill=255)
-                if not st.cached_online:
-                    draw.text((0, 38), "WiFi(옵션)", font=font_big, fill=255)
+                draw_system_header_footer(draw, ip_address, current_time, st.cached_wifi_connected)
             else:
                 battery_icon = select_battery_icon(voltage_percentage if voltage_percentage >= 0 else 0)
                 draw.bitmap((90, -11), battery_icon, fill=255)
@@ -494,9 +577,9 @@ def update_oled_display():
                         draw.text((x, 0), ("연결됨!" + dots2)[:16], font=get_font(14), fill=255)
                     else:
                         draw.text((x, 0), "WiFi 설정 모드", font=get_font(14), fill=255)
-                    draw.text((x, 18), f"AP: {AP_SSID}"[:18], font=get_font(12), fill=255)
-                    draw.text((x, 34), f"PW: {AP_PASS}"[:18], font=get_font(12), fill=255)
-                    draw.text((x, 50), f"IP: {AP_IP}:{PORTAL_PORT}"[:18], font=get_font(12), fill=255)
+                    draw_fit_line(draw, f"AP: {AP_SSID}", x, 18, device.width - 4, 12)
+                    draw_fit_line(draw, f"PW: {AP_PASS}", x, 34, device.width - 4, 12)
+                    draw_fit_line(draw, f"{AP_IP}:{PORTAL_PORT}", x, 50, device.width - 4, 12)
                 return
 
             center_x = device.width // 2 + VISUAL_X_OFFSET
@@ -509,6 +592,9 @@ def update_oled_display():
             max_w = device.width - 4
             draw_center_text_autofit(draw, title, center_x, center_y, max_w, start_size, min_size=11)
     except Exception:
-        return
+        global _last_error_log
+        if time.monotonic() - _last_error_log > 30:
+            logging.exception("OLED rendering failed")
+            _last_error_log = time.monotonic()
     finally:
         st.display_lock.release()

@@ -1,0 +1,40 @@
+STM32 debug appliance 3.73
+
+Entry: main.py -> serve.py. systemd owns restart/recovery.
+UI: display_manager.py (128x64 OLED), menu_manager.py, app_state.py.
+Hardware: stm32_manager.py (OpenOCD/GPIO), modbus_manager.py (LAN/TFTP), power_manager.py.
+Networking: wifi_backend.py (NetworkManager), wifi_portal.py (setup HTTP),
+network_utils.py (link/address parsing), process_utils.py (bounded process groups).
+
+Wi-Fi setup
+- Hold the Wi-Fi setup menu item. Join GDSENG-SETUP using the password shown on the OLED.
+- Open http://192.168.4.1:8080 (port is shared with the OLED configuration).
+- Choose a scanned SSID or manually enter a hidden SSID. Password whitespace is preserved.
+- Association + an IPv4 address counts as connected; external internet is optional.
+- The Pi has one radio: the setup AP disappears while connecting to the target Wi-Fi.
+  Rejoin the setup AP if connection fails. Cancellation/timeout restores the previous profile.
+- The setup AP is owned by NetworkManager (shared IPv4 requires dnsmasq-base).
+  Do not run separate hostapd/dnsmasq/wpa_supplicant instances on wlan0.
+- Setup HTTP binds only to the AP address and changes are rejected outside setup mode.
+- The last working profile UUID is stored under ~/.config/stm32/ for crash recovery.
+
+Updates
+- git-pull.sh updates the current tracking branch, using fast-forward only.
+- A failed fetch or tracked local modification is an error, never success.
+- Initial startup does not install packages or wait on apt/network access.
+- Install the Python/hardware dependencies during provisioning. Preserve the known-working
+  pymodbus API version (slave=1); do not replace it with a new incompatible major version.
+- deploy/stm32.service documents the tested service configuration.
+
+Firmware extraction
+- Extracted files are saved under Download/ before FTP transfer.
+- FTP credentials are read from ~/.config/stm32/ftp.json (chmod 600), keys:
+  server, username, password, path. STM32_FTP_PASSWORD overrides the password.
+- No credentials are stored in this repository. Failure to upload returns nonzero
+  and preserves the local extracted file. No firmware writes are part of unit tests.
+
+Verification
+python3 -m unittest discover -s tests -v
+TEST_FONT may point to the installed OLED TrueType font for exact metrics.
+Tests use fake GPIO/OLED hardware; real AP/client transitions require a separate
+recovery timer so the device can restore Wi-Fi independently of an SSH session.
