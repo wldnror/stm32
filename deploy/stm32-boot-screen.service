@@ -16,8 +16,7 @@ RuntimeDirectoryPreserve=yes
 StandardOutput=append:/run/stm32-boot.log
 StandardError=inherit
 Nice=-5
-ExecStartPre=-/sbin/modprobe i2c_bcm2835
-ExecStartPre=-/sbin/modprobe i2c_dev
+ExecStartPre=-/sbin/modprobe -a i2c_bcm2835 i2c_dev
 ExecStart=/usr/bin/python3 -u /home/user/stm32/boot_screen.py
 TimeoutStopSec=3
 

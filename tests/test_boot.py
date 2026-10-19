@@ -113,8 +113,8 @@ class BootStatusTests(unittest.TestCase):
         self.assertIsNone(status._display_lock)
 
     def test_first_frame_timestamp_survives_early_journal_startup(self):
-        with patch.object(status.time, "monotonic", return_value=12.5):
-            status.record_first_frame()
+        with patch.object(status.time, "monotonic", return_value=99.0):
+            status.record_first_frame(12.5)
         file = self.runtime / "first-frame.json"
         self.assertEqual(json.loads(file.read_text())["first_frame_at"], 12.5)
         self.assertEqual(file.stat().st_mode & 0o777, 0o644)
