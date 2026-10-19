@@ -183,5 +183,34 @@ class OLEDPageTests(unittest.TestCase):
             self.assertEqual(controller.ram, expected)
 
 
+class ScanMenuPublicationTests(unittest.TestCase):
+    def run_update(self, back=False, held=False):
+        old = dict(dir="__scan__", types=["scan_item", "back_from_scan"], extras=["192.168.1.20", None])
+        new = dict(dir="__scan__", commands=[None] * 3, names=["new", "old", "back"],
+            types=["scan_item", "scan_item", "back_from_scan"], extras=["192.168.1.10", "192.168.1.20", None])
+        state = SimpleNamespace(current_menu=old, current_command_index=int(back),
+            scan_menu_dirty=True, scan_menu_rebuild_last=0.0, next_is_down=held,
+            execute_is_down=False, scan_lock=threading.Lock(), next_pressed_event=True)
+        build = Mock(return_value=new)
+        env = dict(st=state, button_state_lock=threading.Lock(), build_scan_menu=build,
+            time=SimpleNamespace(time=lambda: 10), SCAN_MENU_REBUILD_MIN_SEC=.6)
+        functions({"apply_scan_menu_update"}, env)["apply_scan_menu_update"]()
+        return state, build
+
+    def test_inserted_device_keeps_selection_on_the_same_ip(self):
+        state, _ = self.run_update()
+        self.assertEqual(state.current_command_index, 1)
+        self.assertTrue(state.next_pressed_event)
+
+    def test_selected_back_item_does_not_jump_to_a_stale_ip(self):
+        state, _ = self.run_update(back=True)
+        self.assertEqual(state.current_command_index, 2)
+
+    def test_scan_rebuild_waits_until_a_held_button_is_released(self):
+        state, build = self.run_update(held=True)
+        build.assert_not_called()
+        self.assertTrue(state.scan_menu_dirty)
+
+
 if __name__ == "__main__":
     unittest.main()

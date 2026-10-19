@@ -448,46 +448,44 @@ def ap_client_tick(wifi_running: bool):
             st.ap_state["flash_until"] = now + 1.3
 
 
+def apply_scan_menu_update():
+    menu = st.current_menu or {}
+    if not st.scan_menu_dirty or menu.get("dir") != "__scan__":
+        return
+    with button_state_lock:
+        if st.next_is_down or st.execute_is_down:
+            return
+    now = time.time()
+    if now - st.scan_menu_rebuild_last < SCAN_MENU_REBUILD_MIN_SEC:
+        return
+    st.scan_menu_rebuild_last = now
+    index = st.current_command_index
+    kind = menu["types"][index] if 0 <= index < len(menu["types"]) else None
+    selected = menu["extras"][index] if kind == "scan_item" else None
+    with st.scan_lock:
+        st.scan_menu_dirty = False
+    nm = build_scan_menu()
+    st.current_menu = nm
+    st.commands, st.command_names = nm["commands"], nm["names"]
+    st.command_types, st.menu_extras = nm["types"], nm["extras"]
+    if kind == "back_from_scan":
+        st.current_command_index = len(st.commands) - 1
+    elif selected in nm["extras"] and selected is not None:
+        st.current_command_index = nm["extras"].index(selected)
+    else:
+        st.current_command_index = min(index, len(st.commands) - 1)
+    with st.scan_lock:
+        st.scan_selected_idx = st.current_command_index
+    # Do not flush a button release queued while the scan results changed.
+    st.need_update = True
+
+
 def realtime_update_display():
     while not st.stop_threads:
         with st.wifi_action_lock:
             wifi_running = st.wifi_action_running
-
         wifi_stage_tick()
-
         now = time.time()
-
-        with button_state_lock:
-            next_is_down_now = st.next_is_down
-            execute_is_down_now = st.execute_is_down
-
-        if st.scan_menu_dirty and st.current_menu and st.current_menu.get("dir") == "__scan__":
-            if (not next_is_down_now) and (not execute_is_down_now):
-                if now - st.scan_menu_rebuild_last >= SCAN_MENU_REBUILD_MIN_SEC:
-                    st.scan_menu_rebuild_last = now
-                    with st.scan_lock:
-                        st.scan_menu_dirty = False
-                        ips_now = list(st.scan_ips)
-                        sel_ip = st.scan_selected_ip
-
-                    nm = build_scan_menu()
-                    st.current_menu = nm
-                    st.commands = nm["commands"]
-                    st.command_names = nm["names"]
-                    st.command_types = nm["types"]
-                    st.menu_extras = nm["extras"]
-
-                    if sel_ip and (sel_ip in ips_now):
-                        new_idx = ips_now.index(sel_ip)
-                        st.current_command_index = new_idx
-                        with st.scan_lock:
-                            st.scan_selected_idx = new_idx
-                    else:
-                        if st.current_command_index >= len(st.commands):
-                            st.current_command_index = max(0, len(st.commands) - 1)
-
-                    enter_ui_transition(0.05)
-                    st.need_update = True
 
         if st.need_update or now - st.last_oled_update_time >= (0.10 if wifi_running or st.is_executing else 0.20):
             with oled_refresh_lock:
@@ -1042,6 +1040,7 @@ def stm32_poll_thread():
 def execute_button_logic():
     while not st.stop_threads:
         apply_pending_root_menu()
+        apply_scan_menu_update()
         now = now_mono()
 
         if st.battery_percentage == 0:

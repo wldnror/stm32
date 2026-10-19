@@ -1,4 +1,4 @@
-STM32 debug appliance 3.76
+STM32 debug appliance 3.77
 
 Normal firmware/folder menus show the clock as HH시 MM분 again, within a
 64-pixel area before the Wi-Fi bars. System/Wi-Fi menus retain their compact
@@ -78,3 +78,25 @@ On-device validation (Pi Zero W, 2026-10-19)
   exclusive handoff, readiness notification, button bounce and press/release.
 - These measurements do not include pre-kernel firmware initialization and
   are not a promise of a fixed power-on time on other SD cards or hardware.
+
+Menu responsiveness (3.77)
+- Dirty UI state bypasses the 100/200 ms periodic redraw interval. A request
+  raised during a display write is retained for the next pass.
+- AP station queries run in their own worker, never in the display loop.
+- Normal link polling does not ping public servers. Menu eligibility uses
+  association plus a local IPv4 address. Background Git queries run at nice 10.
+- Network/Git workers prepare root menus in the background; only the input
+  loop publishes them, preserving the latest selection and current submenu.
+- Scan-menu changes also publish in the input loop, preserve the selected IP
+  or Back entry, and no longer flush a queued release event.
+- MenuDisplay/oled_frames.py send only changed page/column spans. The first
+  frame remains a full write; failed writes leave the cache unchanged for retry.
+  Rotation and page order match luma. The bus clock remains at 100 kHz.
+  SH1107 page/column addressing reference (manufacturer datasheet, pp.23-24):
+  https://cdn-shop.adafruit.com/product-files/5297/SH1107V2.1.pdf
+- Pi comparison: redraw scheduling median 140.01 -> 11.37 ms; with an injected
+  600 ms AP query, 321.15 -> 11.26 ms. These are request-to-handler timings,
+  excluding physical button debounce and OLED rendering/transmission.
+- Physical OLED comparison, 16 samples per scenario: menu-label transfer
+  median 237.24 -> 65.92 ms; activity indicator 236.50 -> 24.79 ms.
+  These are separate measurements, not complete button-to-screen timings.
