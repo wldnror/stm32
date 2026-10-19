@@ -8,6 +8,9 @@ import os
 from functools import lru_cache
 
 WIDTH, HEIGHT = 128, 64
+SH1107_INIT = (0xae, 0x20, 0xa6, 0xa8, 0x7f, 0xa4, 0xd3, 0x60,
+               0xd5, 0x80, 0xd9, 0x22, 0xda, 0x12, 0xdb, 0x35,
+               0x81, 0x7f)
 FONT = {
     " ": (0, 0, 0, 0, 0),
     "A": (0x7e, 0x11, 0x11, 0x11, 0x7e), "B": (0x7f, 0x49, 0x49, 0x49, 0x36),
@@ -65,6 +68,11 @@ def static_frame(progress, stage):
 
 def render(progress, stage, elapsed, tick=0):
     frame = bytearray(static_frame(progress, stage))
+    if 0 <= progress <= 90:
+        # A thin moving pulse conveys activity while the solid portion stays
+        # tied to the real stage rather than inventing percentage progress.
+        left = 16 + progress + (tick * 5) % max(1, 100 - progress - 8)
+        rectangle(frame, left, 47, left + 5, 48, fill=True)
     for index in range((tick % 4) + 1):
         rectangle(frame, 57 + index * 4, 38, 58 + index * 4, 38, fill=True)
     centered_text(frame, str(int(max(0, elapsed))) + "S", 56)
@@ -90,9 +98,7 @@ class SH1107:
         self.descriptor = os.open(path, os.O_RDWR)
         try:
             fcntl.ioctl(self.descriptor, 0x0703, address)
-            self.command(0xae, 0x20, 0xa6, 0xa8, 0x7f, 0xa4, 0xd3, 0x60,
-                         0xd5, 0x80, 0xd9, 0x22, 0xda, 0x12, 0xdb, 0x35,
-                         0x81, 0x7f)
+            self.command(*SH1107_INIT)
         except BaseException:
             os.close(self.descriptor)
             raise

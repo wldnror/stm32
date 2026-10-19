@@ -2,10 +2,15 @@
 import ipaddress
 import re
 import socket
+import shutil
 import threading
 import time
 
 from process_utils import run_command
+
+# Login shells can omit sbin even though systemd includes it. Resolve the
+# installed radio tool independently so manual recovery uses the same path.
+IW = shutil.which("iw", path="/usr/sbin:/sbin:/usr/bin:/bin") or "iw"
 
 
 def split_nmcli(line):
@@ -43,7 +48,7 @@ def interface_ipv4(iface):
 
 
 def wifi_link():
-    result = run_command(["iw", "dev", "wlan0", "link"], timeout=2)
+    result = run_command([IW, "dev", "wlan0", "link"], timeout=2)
     text = result.stdout
     connected = result.returncode == 0 and "Connected to " in text
     match = re.search(r"signal:\s*(-?\d+)\s*dBm", text)

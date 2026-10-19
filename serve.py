@@ -10,7 +10,7 @@ import logging
 from boot_status import publish, menu_ready
 from button_input import ButtonInputs
 from process_utils import run_command
-from network_utils import wifi_link
+from network_utils import IW, wifi_link
 import wifi_backend
 
 import RPi.GPIO as GPIO
@@ -100,8 +100,11 @@ def enter_ui_transition(sec: float = 0.08, flush_events: bool = True):
         with button_state_lock:
             st.execute_short_event = False
             st.next_pressed_event = False
-            st.execute_long_handled = False
-            st.next_long_handled = False
+            # A held button remains consumed until its physical release.
+            if not st.execute_is_down:
+                st.execute_long_handled = False
+            if not st.next_is_down:
+                st.next_long_handled = False
 
 
 def force_oled_refresh():
@@ -322,7 +325,17 @@ def git_poll_thread():
 
 def request_wifi_setup():
     with st.wifi_action_lock:
+        if st.wifi_action_running or st.wifi_action_requested:
+            return False
         st.wifi_action_requested = True
+        st.wifi_cancel_requested = False
+    return True
+
+
+def request_wifi_cancel():
+    with st.wifi_action_lock:
+        st.wifi_action_requested = False
+        st.wifi_cancel_requested = True
 
 
 def wifi_cancelled():
@@ -331,8 +344,13 @@ def wifi_cancelled():
 
 def portal_loop_until_connected_or_cancel():
     portal_set_state_safe(running=True, done=False, last_ok="", last_error="", connecting=False)
-    portal_module().start_ap()
+    portal_module().start_ap(cancel=wifi_cancelled, progress=wifi_stage_set)
+    if wifi_cancelled():
+        return "cancel"
+    wifi_stage_set(25, "설정 페이지 시작", "잠시만 기다려주세요")
     portal_module().run_portal(block=False)
+    # AP + HTTP are ready: show the SSID, password and URL, not stale progress.
+    wifi_stage_clear()
     deadline = time.monotonic() + 600
     while not st.stop_threads and time.monotonic() < deadline:
         if wifi_cancelled():
@@ -352,7 +370,8 @@ def portal_loop_until_connected_or_cancel():
                 return "cancel"
             portal_set_state_safe(last_error=str(exc), connect_stage="설정 AP로 다시 접속하세요.")
             wifi_stage_clear()
-            portal_module().start_ap()
+            portal_module().start_ap(cancel=wifi_cancelled, progress=wifi_stage_set)
+            wifi_stage_clear()
         finally:
             portal_set_state_safe(connecting=False)
             req.clear()  # Do not retain the password in pending UI state.
@@ -378,11 +397,11 @@ def wifi_worker_thread():
             if do:
                 st.wifi_action_requested = False
                 st.wifi_action_running = True
+                st.wifi_cancel_requested = False
         if not do:
             time.sleep(0.1)
             continue
         result = False
-        st.wifi_cancel_requested = False
         wifi_stage_set(10, "WiFi 설정 준비", "잠시만 기다려주세요")
         try:
             result = portal_loop_until_connected_or_cancel()
@@ -410,6 +429,7 @@ def wifi_worker_thread():
                 clear_ui_override()
                 with st.wifi_action_lock:
                     st.wifi_action_running = False
+                    st.wifi_action_requested = False
                 if is_root_menu_view():
                     queue_root_menu_refresh()
                 st.need_update = True
@@ -418,7 +438,7 @@ def wifi_worker_thread():
 
 def get_ap_station_count():
     try:
-        r = subprocess.run(["iw", "dev", "wlan0", "station", "dump"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.7)
+        r = subprocess.run([IW, "dev", "wlan0", "station", "dump"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.7)
         if r.returncode != 0:
             return 0
         return sum(1 for line in (r.stdout or "").splitlines() if line.strip().startswith("Station "))
@@ -1069,9 +1089,20 @@ def execute_button_logic():
             if now - next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:
                 with button_state_lock:
                     st.next_long_handled = True
-                st.wifi_cancel_requested = True
+                request_wifi_cancel()
                 wifi_stage_set(5, "취소 처리중", "잠시만")
                 st.need_update = True
+
+        if wifi_running:
+            # Consume SET/NEXT events inside setup. They must not navigate the
+            # underlying menu or queue a second setup while cancellation runs.
+            with button_state_lock:
+                st.execute_short_event = False
+                st.next_pressed_event = False
+                if st.execute_is_down:
+                    st.execute_long_handled = True
+            time.sleep(0.01)
+            continue
 
         if (not wifi_running) and next_is_down and (not next_long_handled) and (next_press_time is not None):
             if now - next_press_time >= NEXT_LONG_CANCEL_THRESHOLD:

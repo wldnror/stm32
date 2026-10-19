@@ -35,8 +35,8 @@ def nmcli(*args, timeout=10, cancel=None, check=True):
     return result
 
 
-def active_profile():
-    result = nmcli("-t", "-f", "UUID,TYPE,DEVICE", "connection", "show", "--active")
+def active_profile(cancel=None):
+    result = nmcli("-t", "-f", "UUID,TYPE,DEVICE", "connection", "show", "--active", cancel=cancel)
     for line in result.stdout.splitlines():
         parts = split_nmcli(line)
         if len(parts) == 3 and parts[1] in ("wifi", "802-11-wireless") and parts[2] == IFACE:
@@ -44,20 +44,20 @@ def active_profile():
     return None
 
 
-def ap_active():
-    result = nmcli("-t", "-f", "NAME,DEVICE", "connection", "show", "--active", check=False)
+def ap_active(cancel=None):
+    result = nmcli("-t", "-f", "NAME,DEVICE", "connection", "show", "--active", check=False, cancel=cancel)
     return any(split_nmcli(line) == [AP_PROFILE, IFACE] for line in result.stdout.splitlines())
 
 
-def scan_ssids(force=False):
+def scan_ssids(force=False, cancel=None):
     with _scan_lock:
         now = time.monotonic()
         if not force and _scan_cache["at"] and now - _scan_cache["at"] < 20:
             return list(_scan_cache["ssids"])
         # The single-radio Pi cannot safely scan while serving the setup AP.
-        rescan = "no" if ap_active() else "yes"
+        rescan = "no" if ap_active(cancel=cancel) else "yes"
         result = nmcli("-t", "-f", "SSID,SIGNAL", "device", "wifi", "list",
-                       "ifname", IFACE, "--rescan", rescan, timeout=12, check=False)
+                       "ifname", IFACE, "--rescan", rescan, timeout=12, check=False, cancel=cancel)
         best = {}
         for line in result.stdout.splitlines():
             fields = split_nmcli(line)
@@ -86,39 +86,56 @@ def list_saved_nm():
     return items
 
 
-def start_ap():
+def start_ap(cancel=None, progress=None):
     global _previous_profile
-    if ap_active():
+    deadline = time.monotonic() + 45
+    def interrupted():
+        return (cancel is not None and cancel()) or time.monotonic() >= deadline
+    def command(*args, **kwargs):
+        if interrupted():
+            raise RuntimeError("연결 취소됨" if cancel and cancel() else "설정 준비 시간 초과")
+        return nmcli(*args, cancel=interrupted, **kwargs)
+    if ap_active(cancel=interrupted):
         return
-    profile = active_profile()
+    profile = active_profile(cancel=interrupted)
     if profile:
         _previous_profile = profile
         _profile_file.parent.mkdir(parents=True, exist_ok=True)
         descriptor = os.open(str(_profile_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(descriptor, "w") as stream:
             stream.write(profile)
-    scan_ssids(force=True)
-    result = nmcli("connection", "show", "id", AP_PROFILE, check=False)
+    if progress:
+        progress(12, "주변 WiFi 검색", "NEXT 길게: 취소")
+    scan_ssids(force=True, cancel=interrupted)
+    result = command("connection", "show", "id", AP_PROFILE, check=False)
     if result.returncode != 0:
-        nmcli("connection", "add", "type", "wifi", "ifname", IFACE,
+        command("connection", "add", "type", "wifi", "ifname", IFACE,
               "con-name", AP_PROFILE, "ssid", AP_SSID, "connection.autoconnect", "no")
-    nmcli("connection", "modify", "id", AP_PROFILE,
+    command("connection", "modify", "id", AP_PROFILE,
           "802-11-wireless.mode", "ap", "802-11-wireless.band", "bg",
           "802-11-wireless.channel", "6", "802-11-wireless.powersave", "2",
           "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", AP_PASS,
           "ipv4.method", "shared", "ipv4.addresses", AP_IP + "/24",
           "ipv6.method", "disabled", "connection.autoconnect", "no")
     # Never kill system-wide wpa_supplicant/dnsmasq or restart NetworkManager.
-    nmcli("--wait", "20", "connection", "up", "id", AP_PROFILE, timeout=23)
+    if progress:
+        progress(20, "설정 AP 시작", "NEXT 길게: 취소")
+    command("--wait", "20", "connection", "up", "id", AP_PROFILE, timeout=23)
 
 
 def stop_ap():
-    if ap_active():
-        nmcli("--wait", "8", "connection", "down", "id", AP_PROFILE, timeout=10, check=False)
+    # Also cancel an activation whose nmcli client was interrupted. NetworkManager
+    # owns that async operation and can continue it after its client exits.
+    nmcli("--wait", "8", "connection", "down", "id", AP_PROFILE, timeout=10, check=False)
 
 
 def restore_connection(cancel=None):
     stop_ap()
+    # Cancelling before the radio switches (or NM's own auto-reconnect) may
+    # already leave the original link healthy. Do not tear it down again.
+    if (_previous_profile and wifi_link()["connected"]
+            and active_profile(cancel=cancel) == _previous_profile):
+        return True
     nmcli("device", "set", IFACE, "managed", "yes")
     if _previous_profile:
         result = nmcli("--wait", "20", "connection", "up", "uuid", _previous_profile,

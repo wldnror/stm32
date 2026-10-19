@@ -1,0 +1,117 @@
+Firmware-stage power-on image (Pi Zero W / SH1107), version 3.79
+
+Status: the user confirmed POWER ON is visible about one second after power
+application on 2026-10-20. Firmware output is intentionally static and now omits
+a frozen percentage bar. Native early animation bridges to Linux/app progress;
+see native/README.txt. The prior cut-down/v1 setup was not physically successful.
+
+This adds a static GDSENG / POWER ON image before Linux starts.
+The native Linux helper later replaces it with animation, then the normal menu.
+Only OLED address 0x3c on SDA2/SCL3 at 100 kHz is written. There are no delays,
+loops, network operations or STM32 GPIO writes in the splash program.
+
+Build the 1328-byte image without third-party Python dependencies:
+  python3 firmware_splash.py deploy/stm32_power_on.bin --source deploy/stm32_power_on.splash
+
+The binary uses version 2 and explicitly selects controller BSC1 (port byte 1).
+The reference .splash file describes that intent. Upstream splash_assembler.py
+at b57c48e97f7f43d95d86334798650cfda1ebc8a1 rewrites [port 1] to wire port 0.
+Its output produced "Failed to display splash screen image" on this Pi; the
+otherwise identical binary with wire port 1 completed the OLED transfer.
+Use firmware_splash.py to build this asset, not that unmodified assembler.
+
+Pinned, matched official STANDARD firmware pair (2026-10-15):
+  Commit 6c87074190d5d364b814dccca83229801a4ac939
+  https://raw.githubusercontent.com/raspberrypi/firmware/6c87074190d5d364b814dccca83229801a4ac939/boot/start.elf
+  https://raw.githubusercontent.com/raspberrypi/firmware/6c87074190d5d364b814dccca83229801a4ac939/boot/fixup.dat
+
+SHA256, installed filename:
+  dbab350306e64a59cbe529f48a97d950baebd54c5f6c7808c8367eb3a7aa1d0a  gdsstart.elf
+  4d9f13d0090dce21e12b8ba179218f5c214e1d7a324182e345cb10d491f50b8e  gdsfix.dat
+  6e3dcbf7692426fd460a2727a1049d9f3067c276c24fbd1f2b1c2510bfbc63b5  gdsv2p1.bin
+
+Firmware config (device uses /boot/, not /boot/firmware/):
+  [all]
+  gpu_mem=32
+  start_file=gdsstart.elf
+  fixup_file=gdsfix.dat
+  splash_screen=gdsv2p1.bin
+
+This standard firmware uses 16 MiB more GPU memory than the former cut-down
+configuration (461 MiB Linux RAM, about 368 MiB available in the measured run).
+It permits firmware logs. The original standard start.elf/fixup.dat is untouched.
+The previously tested new cut-down pair remains installed, but is not selected.
+No kernel, DTB or STM32 firmware replacement is required for this image.
+A git pull alone does not install boot firmware files.
+
+Safe deployment:
+1. Back up config.txt and cmdline.txt, and any boot files that will be replaced.
+2. Install the matched standard pair under the custom filenames above; verify
+   both hashes before selecting either file in a config.
+3. Install the verified splash image. Build tryboot.txt from the saved original
+   config plus the firmware section. Keep normal config as a known-working
+   fallback; sync and reboot '0 tryboot' for a one-shot trial.
+4. Check firmware version, transfer logs, menu READY, Wi-Fi and restart count.
+5. After those checks pass, copy tryboot.txt atomically to config.txt and sync.
+   A physical power cycle is still necessary to verify the first visible image.
+6. deploy/stm32-headless.conf blocks unused video-driver autoloading.
+
+Device backups and trial logs:
+  /home/user/device-tuning-20261019/firmware-splash-v378/
+  trial-v2-port0-log.txt: failed image display at 1.602 s.
+  trial-v2-port1-log.txt: prior artwork opened at 1.655 s, transferred by 1.775 s.
+The latter reached menu READY at Linux monotonic 28.541 s, with zero restarts
+and no failed systemd units. Firmware-clock timestamps do not by themselves
+prove physical visibility or exact time since power application.
+/run/stm32-boot/first-frame.json measures the LATER Linux animation only.
+
+Full rollback, including the earlier cut-down update:
+1. Restore fallback-standard-config.txt as /boot/config.txt; sync. It selects
+   the untouched original standard pair with gpu_mem=32.
+2. Restore original-start_cd.elf and original-fixup_cd.dat to /boot/; sync.
+3. Restore config-before.txt as /boot/config.txt; sync and reboot.
+Always select a known-working pair before replacing firmware pair members.
+
+Official references:
+https://www.raspberrypi.com/news/configure-early-boot-splash-screens-for-spi-and-i2c-based-displays/
+https://github.com/raspberrypi/utils/tree/master/splashasm
+https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#fail-safe-os-updates-tryboot
+https://www.raspberrypi.com/documentation/computers/config_txt.html#start_file-fixup_file
+
+Native animation and panel setup (3.79):
+The installed native helper starts before systemd using a separate kernel
+command-line copy selected by cmdline=gds-native-cmdline.txt. The original
+cmdline.txt is retained. Native animation uses the same display lock/state and
+hands over only when the application requests it. A thin moving bar segment,
+activity dots and elapsed seconds keep motion visible between real stage
+updates; the solid fill is tied to those stages. The wrapper falls back to the
+Python renderer when the optional native binary is absent.
+See native/README.txt for building, kernel-matched module preparation and trials.
+
+Wi-Fi setup now clears preparation progress after AP/HTTP become ready, showing
+SSID/password/address. A held SET press stays consumed through UI transitions,
+duplicate setup requests are rejected and cancellation removes queued requests.
+AP commands observe cancellation and a 45-second preparation deadline. Restoring
+the last connection also stops an activation left running inside NetworkManager.
+During setup, panel button events cannot act on the hidden underlying menu.
+
+Native-only rollback: restore native-animation-1020/config-before.txt as
+/boot/config.txt and boot-service-before.service as the installed boot-screen
+service; daemon-reload, sync and reboot. This retains the verified early static
+firmware image while returning to the original command line/Python animation.
+
+Validation on 2026-10-20:
+- User-observed firmware power-on image: approximately one second.
+- Native animation first frame: kernel monotonic 3.280879 s (previous Python
+  first frame 16.138287 s). These are Linux-clock times, not power-on times.
+- Normal boot (tryboot flag zero) reached menu READY at kernel 26.255474 s,
+  with zero service restarts, no failed units and company Wi-Fi connected.
+- Production panel loops with real AP + HTTP: credentials displayed at 12.843 s
+  of the test; NEXT cancellation at 13.855 s; restoration finished at 25.892 s.
+  One held SET did not queue another setup; no hidden menu navigation or reentry.
+- 73 unit tests passed locally; native pixels match Python at three stages.
+- Cancellation during real AP activation also passed: one NEXT cancellation,
+  no HTTP startup afterward, no reentry and the company link restored.
+- Restoration preserves an already healthy original link instead of forcing a
+  second disconnect/reconnect. First-frame diagnostics preserve the boot's
+  earliest native frame across later application restarts.
