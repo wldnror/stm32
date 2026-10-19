@@ -38,6 +38,8 @@ def main():
                 if tick == 0:
                     record_first_frame()
                     print("OLED first boot frame at %.3fs since kernel start" % time.monotonic(), flush=True)
+                    # Prioritize the first visible frame, then yield to boot/app work.
+                    os.nice(10)
                 tick += 1
                 time.sleep(0.5)
         finally:

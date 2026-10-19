@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import boot_display as display
 import boot_status as status
+from button_input import ButtonInputs
 
 
 class BootFrameTests(unittest.TestCase):
@@ -170,24 +171,43 @@ class EarlyGPIOTests(unittest.TestCase):
     def load(self, gpio):
         tree = ast.parse((ROOT / "serve.py").read_text())
         node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "initialize_gpio")
-        env = dict(GPIO=gpio, time=time, BUTTON_PIN_NEXT=27, BUTTON_PIN_EXECUTE=17,
+        env = dict(GPIO=gpio, ButtonInputs=ButtonInputs, BUTTON_PIN_NEXT=27, BUTTON_PIN_EXECUTE=17,
                    LED_SUCCESS=24, LED_ERROR=25, LED_ERROR1=23,
                    button_next_edge=Mock(), button_execute_edge=Mock())
         exec(compile(ast.Module(body=[node], type_ignores=[]), "serve.py", "exec"), env)
         return env["initialize_gpio"]
 
-    def test_transient_gpio_edge_permission_race_does_not_restart_the_app(self):
-        gpio = Mock(IN=1, OUT=2, PUD_UP=3, BOTH=4)
-        gpio.add_event_detect.side_effect = [RuntimeError("udev still changing ownership"), None, None]
-        self.load(gpio)(timeout=1)
-        self.assertEqual(gpio.add_event_detect.call_count, 3)
-        self.assertEqual(gpio.remove_event_detect.call_count, 2)
+    def test_startup_does_not_require_sysfs_edge_permissions(self):
+        gpio = Mock(IN=1, OUT=2, PUD_UP=3, HIGH=1)
+        gpio.add_event_detect.side_effect = RuntimeError("udev still changing ownership")
+        self.assertIsInstance(self.load(gpio)(), ButtonInputs)
+        gpio.add_event_detect.assert_not_called()
+        self.assertEqual(gpio.setup.call_count, 5)
 
-    def test_permanent_gpio_failure_is_bounded(self):
-        gpio = Mock(IN=1, OUT=2, PUD_UP=3, BOTH=4)
-        gpio.add_event_detect.side_effect = RuntimeError("not ready")
-        with self.assertRaises(RuntimeError):
-            self.load(gpio)(timeout=.01)
+    def test_bounce_and_held_press_produce_one_press_and_one_release(self):
+        gpio = Mock(HIGH=1, input=Mock(return_value=1))
+        callback = Mock()
+        inputs = ButtonInputs(gpio, {17: callback})
+        for now, value in [(1, 0), (1.01, 1), (1.02, 0), (1.07, 0),
+                           (2, 0), (3, 1), (3.01, 0), (3.02, 1), (3.07, 1)]:
+            gpio.input.return_value = value
+            inputs.poll(now)
+        self.assertEqual([call.args for call in callback.call_args_list], [(17, 0), (17, 1)])
+
+    def test_button_held_at_startup_is_detected_and_buttons_are_independent(self):
+        levels = {17: 0, 27: 1}
+        gpio = Mock(HIGH=1, input=Mock(side_effect=lambda pin: levels[pin]))
+        execute, next_button = Mock(), Mock()
+        inputs = ButtonInputs(gpio, {17: execute, 27: next_button})
+        inputs.poll(1)
+        inputs.poll(1.05)
+        execute.assert_called_once_with(17, 0)
+        next_button.assert_not_called()
+        levels[27] = 0
+        inputs.poll(2)
+        inputs.poll(2.05)
+        next_button.assert_called_once_with(27, 0)
+        self.assertEqual(execute.call_count, 1)
 
 
 if __name__ == "__main__":

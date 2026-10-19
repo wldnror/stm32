@@ -8,6 +8,7 @@ import re
 import logging
 
 from boot_status import publish, menu_ready
+from button_input import ButtonInputs
 from process_utils import run_command
 from network_utils import wifi_link, internet_available
 import wifi_backend
@@ -166,14 +167,12 @@ def portal_clear_req_safe():
     portal_set_state_safe(requested=None)
 
 
-def button_next_edge(channel):
+def button_next_edge(channel, value):
     now = now_mono()
     with button_state_lock:
-        if (now - st.last_time_button_next_pressed) < SOFT_DEBOUNCE_NEXT:
-            return
         st.last_time_button_next_pressed = now
 
-        if GPIO.input(BUTTON_PIN_NEXT) == GPIO.LOW:
+        if value == GPIO.LOW:
             st.next_press_time = now
             st.next_is_down = True
             st.next_long_handled = False
@@ -186,14 +185,12 @@ def button_next_edge(channel):
             st.next_press_time = None
 
 
-def button_execute_edge(channel):
+def button_execute_edge(channel, value):
     now = now_mono()
     with button_state_lock:
-        if (now - st.last_time_button_execute_pressed) < SOFT_DEBOUNCE_EXEC:
-            return
         st.last_time_button_execute_pressed = now
 
-        if GPIO.input(BUTTON_PIN_EXECUTE) == GPIO.LOW:
+        if value == GPIO.LOW:
             st.execute_press_time = now
             st.execute_is_down = True
             st.execute_long_handled = False
@@ -204,28 +201,22 @@ def button_execute_edge(channel):
             st.execute_press_time = None
 
 
-def initialize_gpio(timeout=12.0):
-    deadline = time.monotonic() + timeout
-    while True:
-        try:
-            GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-            GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-            GPIO.setup(LED_SUCCESS, GPIO.OUT)
-            GPIO.setup(LED_ERROR, GPIO.OUT)
-            GPIO.setup(LED_ERROR1, GPIO.OUT)
-            GPIO.add_event_detect(BUTTON_PIN_NEXT, GPIO.BOTH, callback=button_next_edge, bouncetime=40)
-            GPIO.add_event_detect(BUTTON_PIN_EXECUTE, GPIO.BOTH, callback=button_execute_edge, bouncetime=40)
-            return
-        except RuntimeError:
-            # sysfs GPIO ownership may still be changing during early udev.
-            for pin in (BUTTON_PIN_NEXT, BUTTON_PIN_EXECUTE):
-                try:
-                    GPIO.remove_event_detect(pin)
-                except RuntimeError:
-                    pass
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(0.1)
+def initialize_gpio():
+    GPIO.setup(BUTTON_PIN_NEXT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(BUTTON_PIN_EXECUTE, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(LED_SUCCESS, GPIO.OUT)
+    GPIO.setup(LED_ERROR, GPIO.OUT)
+    GPIO.setup(LED_ERROR1, GPIO.OUT)
+    return ButtonInputs(GPIO, {BUTTON_PIN_NEXT: button_next_edge,
+                               BUTTON_PIN_EXECUTE: button_execute_edge})
+
+
+def button_input_thread(inputs):
+    # Direct GPIO reads avoid the boot-time sysfs export/udev permission race.
+    # A separate sampler keeps release/long-press input working during actions.
+    while not st.stop_threads:
+        inputs.poll()
+        time.sleep(0.01)
 
 
 def git_head_hash():
@@ -1199,7 +1190,8 @@ def execute_button_logic():
 
 def main():
     publish(70, "PREPARING")
-    initialize_gpio()
+    inputs = initialize_gpio()
+    threading.Thread(target=button_input_thread, args=(inputs,), daemon=True).start()
     ensure_menu_config_csv()
     init_ina219()
     refresh_root_menu(reset_index=True)
