@@ -137,7 +137,7 @@ static char *value(char *json, const char *key) {
 }
 static int state(int *progress, char *stage, size_t size) {
     char buf[1024];
-    int fd = open(RUNTIME "/state.json", O_RDONLY);
+    int fd = open(RUNTIME "/state.json", O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
     if (fd < 0) return 0;
     ssize_t n = read(fd, buf, sizeof buf - 1);
     close(fd);
@@ -165,12 +165,14 @@ static void record_frame(void) {
     fchmod(fd, 0644);
     dprintf(fd, "{\"first_frame_at\":%.6f,\"pid\":%d,\"source\":\"native\"}\n", monotime(), getpid());
     close(fd);
-    rename(tmp, RUNTIME "/native-first-frame.json");
+    /* Keep the boot's earliest frame when the fallback runs on app restart. */
+    link(tmp, RUNTIME "/native-first-frame.json");
+    unlink(tmp);
 }
 static int animation(void) {
     signal(SIGTERM, on_signal); signal(SIGINT, on_signal);
     mkdir(RUNTIME, 0775); chown(RUNTIME, 1000, 1000); chmod(RUNTIME, 0775);
-    int lock = open(RUNTIME "/display.lock", O_RDWR | O_CREAT, 0664);
+    int lock = open(RUNTIME "/display.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0664);
     if (lock < 0) return 0;
     fchown(lock, 1000, 1000); fchmod(lock, 0664);
     if (flock(lock, LOCK_EX | LOCK_NB) != 0) { close(lock); return 0; }

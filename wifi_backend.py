@@ -131,6 +131,11 @@ def stop_ap():
 
 def restore_connection(cancel=None):
     stop_ap()
+    # Cancelling before the radio switches (or NM's own auto-reconnect) may
+    # already leave the original link healthy. Do not tear it down again.
+    if (_previous_profile and wifi_link()["connected"]
+            and active_profile(cancel=cancel) == _previous_profile):
+        return True
     nmcli("device", "set", IFACE, "managed", "yes")
     if _previous_profile:
         result = nmcli("--wait", "20", "connection", "up", "uuid", _previous_profile,

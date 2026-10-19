@@ -92,6 +92,16 @@ class SetupLifecycleTests(unittest.TestCase):
             wifi.stop_ap()
         self.assertIn('down', cmd.call_args.args)
 
+    def test_restoration_does_not_disconnect_an_already_restored_company_link(self):
+        with patch.object(wifi, '_previous_profile', 'company-uuid'), \
+             patch.object(wifi, 'stop_ap') as stop, \
+             patch.object(wifi, 'wifi_link', return_value={'connected': True}), \
+             patch.object(wifi, 'active_profile', return_value='company-uuid'), \
+             patch.object(wifi, 'nmcli') as cmd:
+            self.assertTrue(wifi.restore_connection())
+        stop.assert_called_once()
+        cmd.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

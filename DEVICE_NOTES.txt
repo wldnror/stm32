@@ -1,9 +1,15 @@
-STM32 debug appliance 3.78
+STM32 debug appliance 3.79
 
 Power-on image: deploy/FIRMWARE_SPLASH.txt documents the separate firmware-stage
 SH1107 image, pinned official firmware pair, one-shot trial and rollback.
-The firmware transfer precedes Linux; physical visibility is awaiting confirmation.
-/run/stm32-boot/first-frame.json timestamps the later Linux startup screen only.
+The user confirmed the firmware image at about one second after power-on.
+Native early animation is built/installed separately; see native/README.txt.
+/run/stm32-boot/native-first-frame.json timestamps its first animation frame
+relative to Linux kernel start. first-frame.json is the legacy Python timestamp.
+
+Wi-Fi setup clears the preparation screen when AP/HTTP are ready. Held SET
+requests and NEXT cancellation are consumed once, without replaying setup.
+Preparation observes cancellation and a 45-second deadline.
 
 Normal firmware/folder menus show the clock as HH시 MM분 again, within a
 64-pixel area before the Wi-Fi bars. System/Wi-Fi menus retain their compact
