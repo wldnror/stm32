@@ -18,6 +18,8 @@
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/types.h>
+#include <sys/syscall.h>
+#include <sys/utsname.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -39,6 +41,24 @@ static void api_mount(const char *type, const char *path, long magic, const char
     mount(type, path, type, MS_NOSUID | (strcmp(path, "/dev") ? MS_NODEV : 0), data);
 }
 static void modules(void) {
+    /* Pre-unpacked copies of this exact kernel's own modules avoid a cold
+     * dynamic modprobe + xz startup. Kernel changes fall back to modprobe. */
+    struct utsname uts;
+    int loaded = 1;
+    const char *names[] = {"i2c-bcm2835.ko", "i2c-dev.ko"};
+    if (uname(&uts) == 0) {
+        for (unsigned i = 0; i < sizeof names / sizeof *names; i++) {
+            char path[256];
+            snprintf(path, sizeof path, "/usr/local/lib/stm32-boot/%s/%s", uts.release, names[i]);
+            int fd = open(path, O_RDONLY | O_CLOEXEC);
+            if (fd < 0) { loaded = 0; break; }
+            int result = syscall(SYS_finit_module, fd, "", 0);
+            int error = errno;
+            close(fd);
+            if (result != 0 && error != EEXIST) { loaded = 0; break; }
+        }
+    } else loaded = 0;
+    if (loaded) return;
     pid_t pid = fork();
     if (pid == 0) {
         int null = open("/dev/null", O_WRONLY);
@@ -73,6 +93,13 @@ static void draw(int progress, const char *stage, int elapsed, int tick) {
     if (progress > 100) progress = 100;
     for (int y = 46; y <= 49; y++)
         for (int x = 14; x < 14 + progress; x++) frame[y * 128 + x] = 1;
+    if (progress <= 90) {
+        int span = 100 - progress - 8;
+        if (span < 1) span = 1;
+        int left = 16 + progress + (tick * 5) % span;
+        for (int y = 47; y <= 48; y++)
+            for (int x = left; x < left + 6; x++) frame[y * 128 + x] = 1;
+    }
     char buf[22];
     snprintf(buf, sizeof buf, "%dS", elapsed);
     text(buf, 56);

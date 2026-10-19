@@ -52,7 +52,10 @@ class BootFrameTests(unittest.TestCase):
         first = display.render(30, "APP LOADING", 3, 0)
         later = display.render(30, "APP LOADING", 3, 1)
         self.assertNotEqual(first, later)
-        self.assertEqual(first[44 * 128:52 * 128], later[44 * 128:52 * 128])
+        # Solid fill represents the real stage; a thinner pulse shows activity.
+        for y in (46, 49):
+            self.assertEqual(first[y * 128:(y + 1) * 128], later[y * 128:(y + 1) * 128])
+        self.assertNotEqual(first[47 * 128:49 * 128], later[47 * 128:49 * 128])
         self.assertEqual(len(first), 128 * 64)
         self.assertTrue(set(first) <= {0, 1})
 

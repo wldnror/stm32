@@ -68,6 +68,11 @@ def static_frame(progress, stage):
 
 def render(progress, stage, elapsed, tick=0):
     frame = bytearray(static_frame(progress, stage))
+    if 0 <= progress <= 90:
+        # A thin moving pulse conveys activity while the solid portion stays
+        # tied to the real stage rather than inventing percentage progress.
+        left = 16 + progress + (tick * 5) % max(1, 100 - progress - 8)
+        rectangle(frame, left, 47, left + 5, 48, fill=True)
     for index in range((tick % 4) + 1):
         rectangle(frame, 57 + index * 4, 38, 58 + index * 4, 38, fill=True)
     centered_text(frame, str(int(max(0, elapsed))) + "S", 56)

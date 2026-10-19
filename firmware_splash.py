@@ -13,8 +13,11 @@ MAGIC = b"SPLASH ASM" + b"\0" * 5 + b"\x02"
 
 
 def power_on_frame():
-    frame = bytearray(static_frame(5, "POWER ON"))
-    centered_text(frame, "STARTING", 56)
+    frame = bytearray(static_frame(0, "POWER ON"))
+    # Firmware execution is synchronous: a stationary percentage would suggest
+    # a stalled operation. Real stage progress and motion begin in the helper.
+    frame[38 * 128:] = bytes((64 - 38) * 128)
+    centered_text(frame, "BOOTING", 48)
     return frame
 
 
