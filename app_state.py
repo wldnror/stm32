@@ -86,7 +86,7 @@ last_good_wifi_profile = None
 git_state_lock = threading.Lock()
 git_has_update_cached = False
 git_last_check = 0.0
-git_check_interval = 5.0
+git_check_interval = 300.0
 
 scan_lock = threading.Lock()
 scan_active = False
@@ -126,3 +126,11 @@ last_time_button_execute_pressed = 0.0
 
 last_oled_update_time = 0.0
 font_cache = {}
+
+# STM32 probing is independent of the button/UI loop.
+stm32_probe_path = None
+stm32_probe_at = 0.0
+cached_wifi_connected = False
+
+openocd_lock = threading.Lock()
+scan_generation = 0

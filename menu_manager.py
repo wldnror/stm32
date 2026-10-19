@@ -163,12 +163,20 @@ def build_menu_for_dir(dir_path, is_root=False):
 
 
 def refresh_root_menu(reset_index=False):
+    previous = None
+    index = st.current_command_index
+    if not reset_index and 0 <= index < min(len(st.command_names), len(st.command_types)):
+        previous = (st.command_types[index], st.command_names[index])
     st.current_menu = build_menu_for_dir(FIRMWARE_DIR, is_root=True)
     st.commands = st.current_menu["commands"]
     st.command_names = st.current_menu["names"]
     st.command_types = st.current_menu["types"]
     st.menu_extras = st.current_menu["extras"]
 
+    if previous:
+        pairs = list(zip(st.command_types, st.command_names))
+        if previous in pairs:
+            st.current_command_index = pairs.index(previous)
     if reset_index or (st.current_command_index >= len(st.commands)):
         st.current_command_index = 0
 

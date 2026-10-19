@@ -5,6 +5,10 @@ import time
 import threading
 import subprocess
 import re
+import logging
+
+from process_utils import run_command
+from network_utils import wifi_link
 
 import RPi.GPIO as GPIO
 import wifi_portal
@@ -237,7 +241,7 @@ def git_upstream_hash():
     return v if v else None
 
 
-def git_has_remote_updates_light(timeout=2.2) -> bool:
+def git_has_remote_updates_light(timeout=10.0) -> bool:
     if not os.path.isdir(GIT_REPO_DIR):
         return False
     if not git_has_origin():
@@ -256,11 +260,7 @@ def git_has_remote_updates_light(timeout=2.2) -> bool:
             if rh:
                 return rh != lh
 
-    run_quiet(["git", "-C", GIT_REPO_DIR, "remote", "update"], timeout=3.8)
-    uh = git_upstream_hash()
-    if not uh:
-        return False
-    return uh != lh
+    return False
 
 
 def git_poll_thread():
@@ -289,7 +289,7 @@ def git_poll_thread():
 
             ok = False
             try:
-                ok = git_has_remote_updates_light(timeout=2.2)
+                ok = git_has_remote_updates_light(timeout=10.0)
             except Exception:
                 ok = False
 
@@ -307,377 +307,100 @@ def git_poll_thread():
             time.sleep(0.5)
 
 
-def nm_is_active():
-    rc, out, _ = run_capture(["systemctl", "is-active", "NetworkManager"], timeout=2.0)
-    return (rc == 0) and ("active" in out.strip())
-
-
-def nm_restart():
-    run_quiet(["sudo", "systemctl", "enable", "--now", "NetworkManager"], timeout=6.0)
-    run_quiet(["sudo", "systemctl", "restart", "NetworkManager"], timeout=6.0)
-
-
-def nm_set_managed(managed: bool):
-    v = "yes" if managed else "no"
-    run_quiet(["sudo", "nmcli", "dev", "set", "wlan0", "managed", v], timeout=4.0)
-
-
-def nm_disconnect_wlan0():
-    run_quiet(["sudo", "nmcli", "dev", "disconnect", "wlan0"], timeout=4.0)
-
-
-def nm_get_active_wifi_profile():
-    rc, out, _ = run_capture(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"], timeout=3.0)
-    if rc != 0:
-        return None
-    for line in out.splitlines():
-        parts = line.strip().split(":")
-        if len(parts) >= 3:
-            name, ctype, dev = parts[0], parts[1], parts[2]
-            if ctype == "wifi" and dev == "wlan0" and name:
-                return name
-    return None
-
-
-def nm_autoconnect(timeout=25):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        if has_real_internet():
-            return True
-        time.sleep(0.7)
-    return has_real_internet()
-
-
-def nm_connect(ssid: str, psk: str, timeout=30):
-    run_quiet(["sudo", "nmcli", "dev", "wifi", "rescan", "ifname", "wlan0"], timeout=6.0)
-    if psk:
-        cmd = ["sudo", "nmcli", "--wait", str(int(timeout)), "dev", "wifi", "connect", ssid, "password", psk, "ifname", "wlan0"]
-    else:
-        cmd = ["sudo", "nmcli", "--wait", str(int(timeout)), "dev", "wifi", "connect", ssid, "ifname", "wlan0"]
-    rc, _, _ = run_capture(cmd, timeout=timeout + 5)
-    if rc == 0:
-        return True
-    run_quiet(["sudo", "nmcli", "dev", "wifi", "rescan", "ifname", "wlan0"], timeout=6.0)
-    rc2, _, _ = run_capture(cmd, timeout=timeout + 5)
-    return rc2 == 0
-
-
-def nm_up_profile(nm_id: str, timeout=20) -> bool:
-    if not nm_id:
-        return False
-    rc, _, _ = run_capture(["sudo", "nmcli", "--wait", str(int(timeout)), "connection", "up", "id", nm_id], timeout=timeout + 2)
-    return rc == 0
-
-
-def wpa_select_saved_ssid(ssid: str) -> bool:
-    if not ssid:
-        return False
-    rc, out, _ = run_capture(["sudo", "wpa_cli", "-i", "wlan0", "list_networks"], timeout=4.0)
-    if rc != 0:
-        return False
-
-    net_id = None
-    for line in (out or "").splitlines():
-        line = line.strip()
-        if not line or line.startswith("network id"):
-            continue
-        parts = re.split(r"\t+", line)
-        if len(parts) >= 2 and parts[1] == ssid:
-            net_id = parts[0]
-            break
-
-    if net_id is None:
-        return False
-
-    run_quiet(["sudo", "wpa_cli", "-i", "wlan0", "select_network", net_id], timeout=3.0)
-    run_quiet(["sudo", "wpa_cli", "-i", "wlan0", "enable_network", net_id], timeout=3.0)
-    run_quiet(["sudo", "wpa_cli", "-i", "wlan0", "reconfigure"], timeout=4.0)
-    run_quiet(["sudo", "dhclient", "-r", "wlan0"], timeout=6.0)
-    run_quiet(["sudo", "dhclient", "wlan0"], timeout=10.0)
-    return True
-
-
-def kill_portal_tmp_procs():
-    cmd = r"""sudo bash -lc '
-pids=$(pgrep -a hostapd | awk "/\/tmp\/hostapd\.conf/{print \$1}" | xargs)
-[ -n "$pids" ] && kill -9 $pids || true
-pids=$(pgrep -a dnsmasq | awk "/\/tmp\/dnsmasq\.conf/{print \$1}" | xargs)
-[ -n "$pids" ] && kill -9 $pids || true
-' """
-    run_quiet(cmd, timeout=6.0, shell=True)
-
-
-def wlan0_soft_reset():
-    run_quiet(["sudo", "ip", "addr", "flush", "dev", "wlan0"], timeout=3.0)
-    run_quiet(["sudo", "ip", "link", "set", "wlan0", "down"], timeout=3.0)
-    time.sleep(1)
-    run_quiet(["sudo", "ip", "link", "set", "wlan0", "up"], timeout=3.0)
-    time.sleep(1)
-
-
 def request_wifi_setup():
     with st.wifi_action_lock:
         st.wifi_action_requested = True
 
 
-def prepare_for_ap_mode():
-    try:
-        prof = nm_get_active_wifi_profile()
-        if prof:
-            st.last_good_wifi_profile = prof
-    except Exception:
-        pass
-
-    if nm_is_active():
-        nm_disconnect_wlan0()
-        nm_set_managed(False)
-        time.sleep(0.3)
-
-
-def restore_after_ap_mode(timeout=25):
-    wifi_stage_set(5, "WiFi 종료 중", "프로세스 정리")
-    kill_portal_tmp_procs()
-    run_quiet(["sudo", "systemctl", "stop", "hostapd"], timeout=3.0)
-    run_quiet(["sudo", "systemctl", "stop", "dnsmasq"], timeout=3.0)
-    wifi_stage_set(25, "WiFi 재시작", "인터페이스 초기화")
-    wlan0_soft_reset()
-    wifi_stage_set(45, "WiFi 재시작", "NetworkManager")
-    nm_set_managed(True)
-    nm_restart()
-    time.sleep(1.2)
-
-    if st.last_good_wifi_profile:
-        wifi_stage_set(60, "재연결 중", st.last_good_wifi_profile[:18])
-        run_quiet(["sudo", "nmcli", "connection", "up", st.last_good_wifi_profile], timeout=12.0)
-
-    wifi_stage_set(75, "인터넷 확인", "")
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        if has_real_internet():
-            wifi_stage_set(100, "완료", "")
-            time.sleep(0.4)
-            wifi_stage_clear()
-            return True
-        p = 75 + int(25 * ((time.time() - t0) / max(1.0, timeout)))
-        wifi_stage_set(min(99, p), "인터넷 확인", "")
-        time.sleep(0.35)
-
-    ok = has_real_internet()
-    wifi_stage_set(100 if ok else 0, "완료" if ok else "실패", "")
-    time.sleep(0.6)
-    wifi_stage_clear()
-    return ok
-
-
-def connect_from_portal_nm(ssid: str, psk: str, timeout=35):
-    wifi_stage_set(10, "연결 준비", "AP 종료")
-    portal_set_state_safe(connect_stage="연결 준비 중…", last_error="", last_ok="")
-
-    try:
-        if hasattr(wifi_portal, "stop_ap"):
-            wifi_portal.stop_ap()
-    except Exception:
-        pass
-
-    kill_portal_tmp_procs()
-    run_quiet(["sudo", "systemctl", "stop", "hostapd"], timeout=3.0)
-    run_quiet(["sudo", "systemctl", "stop", "dnsmasq"], timeout=3.0)
-
-    wifi_stage_set(30, "연결 준비", "인터페이스 초기화")
-    portal_set_state_safe(connect_stage="인터페이스 초기화 중…")
-    wlan0_soft_reset()
-
-    wifi_stage_set(50, "연결 준비", "NetworkManager")
-    portal_set_state_safe(connect_stage="NetworkManager 준비 중…")
-    nm_set_managed(True)
-    nm_restart()
-    time.sleep(1.5)
-
-    wifi_stage_set(70, "WiFi 연결 중", ssid[:18])
-    portal_set_state_safe(connect_stage="무선 연결 시도 중…")
-    ok = nm_connect(ssid, psk, timeout=timeout)
-    if not ok:
-        portal_set_state_safe(last_error="연결 실패", connect_stage="")
-        wifi_stage_set(0, "연결 실패", "")
-        time.sleep(0.8)
-        wifi_stage_clear()
-        return False
-
-    wifi_stage_set(85, "인터넷 확인", "")
-    portal_set_state_safe(connect_stage="인터넷 확인 중…")
-    ok2 = nm_autoconnect(timeout=20)
-
-    if ok2:
-        portal_set_state_safe(last_ok="연결 완료", last_error="", connect_stage="연결 완료")
-    else:
-        portal_set_state_safe(last_error="인터넷 확인 실패", connect_stage="")
-
-    wifi_stage_set(100 if ok2 else 0, "완료" if ok2 else "실패", "")
-    time.sleep(0.6)
-    wifi_stage_clear()
-    return ok2
+def wifi_cancelled():
+    return st.stop_threads or st.wifi_cancel_requested
 
 
 def portal_loop_until_connected_or_cancel():
-    prepare_for_ap_mode()
-    wifi_stage_clear()
-    portal_set_state_safe(last_error="", last_ok="", connect_stage="설정 모드 시작", running=True, done=False)
+    portal_set_state_safe(running=True, done=False, last_ok="", last_error="", connecting=False)
     wifi_portal.start_ap()
-
-    try:
-        state_obj = getattr(wifi_portal, "_state", {})
-        if isinstance(state_obj, dict) and (not state_obj.get("server_started", False)):
-            wifi_portal.run_portal(block=False)
-            state_obj["server_started"] = True
-            portal_set_state_safe(server_started=True)
-    except Exception:
-        try:
-            wifi_portal.run_portal(block=False)
-        except Exception:
-            pass
-
-    t0 = time.time()
-    while True:
-        if st.wifi_cancel_requested:
-            portal_set_state_safe(connect_stage="취소 처리 중…")
-            try:
-                if hasattr(wifi_portal, "stop_ap"):
-                    wifi_portal.stop_ap()
-            except Exception:
-                pass
+    wifi_portal.run_portal(block=False)
+    deadline = time.monotonic() + 600
+    while not st.stop_threads and time.monotonic() < deadline:
+        if wifi_cancelled():
             return "cancel"
-
-        req = None
-        try:
-            state_obj = getattr(wifi_portal, "_state", {})
-            if isinstance(state_obj, dict):
-                req = state_obj.get("requested")
-        except Exception:
-            req = None
-
+        req = wifi_portal.pop_request()
         if not req:
-            req = portal_pop_req_safe()
-            if req and isinstance(getattr(wifi_portal, "_state", None), dict):
-                try:
-                    wifi_portal._state["requested"] = req
-                except Exception:
-                    pass
-
-        if req:
-            portal_clear_req_safe()
-
-            mode = (req.get("mode") or "new").strip().lower()
-            src = (req.get("src") or "").strip().lower()
-            ssid = (req.get("ssid") or "").strip()
-            psk = (req.get("psk") or "").strip()
-            nm_id = (req.get("nm_id") or "").strip()
-
-            ok = False
-            if mode == "saved":
-                wifi_stage_set(60, "저장된 WiFi", "연결 시도")
-                portal_set_state_safe(connect_stage="저장된 설정으로 연결 중…", last_error="", last_ok="")
-                if src == "nm" and nm_id:
-                    wlan0_soft_reset()
-                    nm_set_managed(True)
-                    nm_restart()
-                    time.sleep(1.0)
-                    portal_set_state_safe(connect_stage="NetworkManager 연결 시도 중…")
-                    ok = nm_up_profile(nm_id, timeout=20) and nm_autoconnect(timeout=20)
-                elif src == "wpa" and ssid:
-                    wlan0_soft_reset()
-                    portal_set_state_safe(connect_stage="wpa_supplicant 연결 시도 중…")
-                    ok = wpa_select_saved_ssid(ssid) and nm_autoconnect(timeout=20)
-                else:
-                    ok = False
-            else:
-                if ssid:
-                    ok = connect_from_portal_nm(ssid, psk, timeout=35)
-
-            if ok:
-                portal_set_state_safe(last_ok="연결 완료", last_error="", connect_stage="연결 완료", running=False, done=True)
-                return True
-
-            portal_set_state_safe(last_error="연결 실패", connect_stage="", running=True, done=False)
-            prepare_for_ap_mode()
+            time.sleep(0.1)
+            continue
+        portal_set_state_safe(connecting=True, last_error="", connect_stage="무선 연결 중…")
+        wifi_stage_set(30, "WiFi 연결 중", req["ssid"])
+        try:
+            wifi_portal.connect_network(req["ssid"], req["psk"], cancel=wifi_cancelled, hidden=req.get("hidden", False))
+            portal_set_state_safe(done=True, running=False, last_ok="연결 완료", last_error="")
+            return True
+        except Exception as exc:
+            if wifi_cancelled():
+                return "cancel"
+            portal_set_state_safe(last_error=str(exc), connect_stage="설정 AP로 다시 접속하세요.")
             wifi_stage_clear()
             wifi_portal.start_ap()
-
-        if time.time() - t0 > 600:
-            portal_set_state_safe(last_error="시간 초과", connect_stage="", running=False)
-            return False
-
-        time.sleep(0.2)
+        finally:
+            portal_set_state_safe(connecting=False)
+            req.clear()  # Do not retain the password in pending UI state.
+    return False
 
 
 def wifi_worker_thread():
-    while not st.stop_threads:
-        do = False
+    try:
+        if wifi_portal.ap_active():
+            with st.wifi_action_lock:
+                st.wifi_action_running = True
+            wifi_stage_set(40, "기존 WiFi 복원", "설정 모드 복구 중")
+            wifi_portal.restore_connection(cancel=lambda: st.stop_threads)
+    except Exception:
+        logging.exception("Stale setup AP recovery failed")
+    finally:
+        wifi_stage_clear()
         with st.wifi_action_lock:
-            if st.wifi_action_requested and (not st.wifi_action_running):
+            st.wifi_action_running = False
+    while not st.stop_threads:
+        with st.wifi_action_lock:
+            do = st.wifi_action_requested and not st.wifi_action_running
+            if do:
                 st.wifi_action_requested = False
                 st.wifi_action_running = True
-                do = True
-
-        if do:
+        if not do:
+            time.sleep(0.1)
+            continue
+        result = False
+        st.wifi_cancel_requested = False
+        wifi_stage_clear()
+        try:
+            result = portal_loop_until_connected_or_cancel()
+        except Exception:
+            logging.exception("Wi-Fi setup failed")
+            portal_set_state_safe(last_error="Wi-Fi 설정 오류", connect_stage="")
+        finally:
+            # Includes cancellation, ten-minute timeout, server bind/AP failures.
+            # None may leave wlan0 in AP mode or unmanaged after the worker exits.
             try:
-                st.wifi_cancel_requested = False
-                wifi_stage_clear()
-                with st.ap_state_lock:
-                    st.ap_state["last_clients"] = 0
-                    st.ap_state["flash_until"] = 0.0
-                    st.ap_state["poll_next"] = 0.0
-                    st.ap_state["spinner"] = 0
-
-                portal_set_state_safe(last_error="", last_ok="", connect_stage="설정 시작 준비…", running=True, done=False)
-
-                r1 = subprocess.run(["which", "hostapd"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                r2 = subprocess.run(["which", "dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-                if (r1.returncode != 0) or (r2.returncode != 0):
-                    st.status_message = "AP 구성 불가"
-                    st.message_position = (12, 10)
-                    st.message_font_size = 15
-                    st.need_update = True
-                    portal_set_state_safe(last_error="hostapd/dnsmasq 없음", connect_stage="", running=False)
-                    time.sleep(2.0)
+                wifi_portal.stop_portal()
+                if result is not True:
+                    wifi_stage_set(60, "기존 WiFi 복원", "잠시만 기다려주세요")
+                    restored = wifi_portal.restore_connection(cancel=lambda: st.stop_threads)
+                    text_stage("재연결 완료" if restored else "재연결 실패")
                 else:
-                    st.status_message = ""
-                    st.need_update = True
-
-                    result = portal_loop_until_connected_or_cancel()
-                    refresh_root_menu(reset_index=True)
-                    enter_ui_transition(0.10)
-                    st.need_update = True
-
-                    if result == "cancel":
-                        wifi_stage_set(10, "취소 처리중", "재연결 준비")
-                        portal_set_state_safe(connect_stage="취소 처리 중…", last_error="취소됨", last_ok="")
-                        ok_restore = restore_after_ap_mode(timeout=25)
-                        text_stage("재연결 완료" if ok_restore else "재연결 실패", "")
-                        time.sleep(1.0)
-                        clear_ui_override()
-                        wifi_stage_clear()
-                        portal_set_state_safe(connect_stage="", running=False)
-                    elif result is True:
-                        text_stage("WiFi 연결 완료", "")
-                        time.sleep(1.1)
-                        clear_ui_override()
-                        wifi_stage_clear()
-                        portal_set_state_safe(last_ok="연결 완료", last_error="", connect_stage="연결 완료", running=False, done=True)
-                    else:
-                        text_stage("WiFi 연결 실패", "")
-                        time.sleep(1.1)
-                        clear_ui_override()
-                        wifi_stage_clear()
-                        portal_set_state_safe(last_error="연결 실패", connect_stage="", running=False)
-
-                st.status_message = ""
-                st.need_update = True
+                    text_stage("WiFi 연결 완료")
+            except Exception:
+                logging.exception("Wi-Fi recovery failed")
+                text_stage("WiFi 복원 실패", "설정을 다시 시도하세요", font_size=12)
             finally:
+                portal_set_state_safe(running=False, connecting=False, requested=None)
+                wifi_stage_clear()
+                time.sleep(0.8)
+                clear_ui_override()
                 with st.wifi_action_lock:
                     st.wifi_action_running = False
-
-        time.sleep(0.05)
+                if is_root_menu_view():
+                    refresh_root_menu(reset_index=False)
+                st.need_update = True
+        time.sleep(0.1)
 
 
 def get_ap_station_count():
@@ -754,79 +477,40 @@ def realtime_update_display():
                     enter_ui_transition(0.05)
                     st.need_update = True
 
-        if st.need_update or (now - st.last_oled_update_time >= 0.05):
+        if now - st.last_oled_update_time >= (0.10 if wifi_running or st.is_executing else 0.20):
             with oled_refresh_lock:
                 update_oled_display()
                 st.last_oled_update_time = now
                 st.need_update = False
 
-        time.sleep(0.005)
-
-
-def get_wifi_level():
-    try:
-        rc, out, _ = run_capture(["iw", "dev", "wlan0", "link"], timeout=0.6)
-        if rc != 0 or "Not connected" in out:
-            return 0
-        r = subprocess.run(["iwconfig", "wlan0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=0.6)
-        m = re.search(r"Signal level=(-?\d+)\s*dBm", r.stdout)
-        if not m:
-            return 0
-        dbm = int(m.group(1))
-        if dbm >= -55:
-            return 4
-        if dbm >= -65:
-            return 3
-        if dbm >= -75:
-            return 2
-        if dbm >= -85:
-            return 1
-        return 0
-    except Exception:
-        return 0
+        time.sleep(0.02)
 
 
 def net_poll_thread():
     while not st.stop_threads:
         try:
-            st.cached_ip = get_ip_address()
-            online_now = has_real_internet()
+            link = wifi_link()
+            st.cached_ip = link["ip"]
+            st.cached_wifi_connected = link["connected"]
+            st.cached_wifi_level = link["level"]
+            online_now = wifi_portal.has_internet() if link["connected"] else False
             st.cached_online = online_now
-            st.cached_wifi_level = get_wifi_level() if online_now else 0
-
             if st.last_menu_online is None or online_now != st.last_menu_online:
                 st.last_menu_online = online_now
                 if is_root_menu_view():
                     refresh_root_menu(reset_index=False)
-                st.need_update = True
-
-            time.sleep(1.5)
+            st.need_update = True
         except Exception:
-            time.sleep(0.8)
+            logging.exception("Network status polling failed")
+        time.sleep(3.0)
 
 
 def git_pull():
     shell_script_path = "/home/user/stm32/git-pull.sh"
-    if not os.path.isfile(shell_script_path):
-        with open(shell_script_path, "w") as script_file:
-            script_file.write("#!/bin/bash\n")
-            script_file.write("cd /home/user/stm32\n")
-            script_file.write("git remote update\n")
-            script_file.write("if git status -uno | grep -q 'Your branch is up to date'; then\n")
-            script_file.write("   echo '이미 최신 상태입니다.'\n")
-            script_file.write("   exit 0\n")
-            script_file.write("fi\n")
-            script_file.write("git stash\n")
-            script_file.write("git pull\n")
-            script_file.write("git stash pop\n")
-            script_file.flush()
-            os.fsync(script_file.fileno())
-
-    os.chmod(shell_script_path, 0o755)
     text_stage("시스템", "업데이트 중", pos=(20, 10))
 
     try:
-        result = subprocess.run([shell_script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = run_command([shell_script_path], timeout=120)
 
         GPIO.output(LED_SUCCESS, False)
         GPIO.output(LED_ERROR, False)
@@ -891,6 +575,8 @@ def restart_script():
 
     def restart():
         time.sleep(1)
+        st.stop_threads = True
+        GPIO.cleanup()
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
     threading.Thread(target=restart, daemon=True).start()
@@ -942,6 +628,20 @@ def shutdown_system():
 
 
 def execute_command(command_index):
+    try:
+        _execute_command(command_index)
+    except Exception:
+        logging.exception("Device command failed")
+        text_stage("작업 실패", "다시 시도하세요", font_size=12)
+        time.sleep(0.8)
+        clear_ui_override()
+    finally:
+        st.is_executing = False
+        st.is_command_executing = False
+        st.need_update = True
+
+
+def _execute_command(command_index):
     if not st.command_types or command_index < 0 or command_index >= len(st.command_types):
         return
 
@@ -964,6 +664,7 @@ def execute_command(command_index):
     if item_type == "device_scan":
         myip = get_ip_address()
         with st.scan_lock:
+            st.scan_generation += 1
             st.scan_active = True
             st.scan_done = False
             st.scan_selected_idx = 0
@@ -1160,7 +861,7 @@ def execute_command(command_index):
 
         progress_stage(10, "실행 중", "")
         try:
-            result = subprocess.run(st.commands[command_index], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            result = run_command([sys.executable, OUT_SCRIPT_PATH], timeout=120)
             if result.returncode == 0:
                 GPIO.output(LED_SUCCESS, True)
                 progress_stage(100, "완료", "")
@@ -1246,20 +947,24 @@ def execute_command(command_index):
     force_oled_refresh()
 
     openocd_cmd = make_openocd_program_cmd(resolved_path)
-    process = subprocess.Popen(openocd_cmd, shell=True)
-    start_time = time.time()
-    progress_increment = 35 / PROGRAM_PROGRESS_MAX_DURATION_SEC
-
-    while process.poll() is None:
-        elapsed = time.time() - start_time
-        current_progress = 45 + (elapsed * progress_increment)
-        current_progress = min(current_progress, 80)
+    flash_result = {}
+    def program_target():
+        try:
+            with st.openocd_lock:
+                flash_result["code"] = run_command(openocd_cmd, timeout=90, capture=False).returncode
+        except Exception:
+            logging.exception("OpenOCD programming failed")
+            flash_result["code"] = 1
+    flash_thread = threading.Thread(target=program_target, daemon=True)
+    flash_thread.start()
+    start_time = time.monotonic()
+    while flash_thread.is_alive():
+        elapsed = time.monotonic() - start_time
+        current_progress = min(45 + elapsed * 35 / PROGRAM_PROGRESS_MAX_DURATION_SEC, 80)
         set_ui_progress(current_progress, progress_msg, pos=(6, 0), font_size=13)
         st.need_update = True
-        force_oled_refresh()
         time.sleep(PROGRAM_PROGRESS_POLL_SEC)
-
-    result = process.returncode
+    result = flash_result.get("code", 1)
     if result == 0:
         set_ui_progress(82, f"업데이트 진행 중\n{info_line}", pos=(6, 0), font_size=13)
         st.need_update = True
@@ -1287,6 +992,31 @@ def execute_command(command_index):
     st.need_update = True
     st.is_executing = False
     st.is_command_executing = False
+
+
+def stm32_poll_thread():
+    while not st.stop_threads:
+        with st.wifi_action_lock:
+            wifi_running = st.wifi_action_running
+        menu = st.current_menu or {}
+        idx = st.current_command_index
+        types = menu.get("types", [])
+        extras = menu.get("extras", [])
+        path = extras[idx] if 0 <= idx < len(extras) else None
+        should_probe = (0 <= idx < len(types) and types[idx] == "bin" and path
+                        and not wifi_running and not st.is_executing and not st.is_command_executing)
+        if should_probe:
+            check_stm32_connection()
+            with st.stm32_state_lock:
+                st.stm32_probe_path = path
+                st.stm32_probe_at = time.monotonic()
+            time.sleep(STM32_POLL_INTERVAL_SEC)
+        else:
+            if not st.is_executing and not st.is_command_executing:
+                with st.stm32_state_lock:
+                    st.connection_success = False
+                    st.stm32_probe_path = None
+            time.sleep(0.1)
 
 
 def execute_button_logic():
@@ -1406,7 +1136,10 @@ def execute_button_logic():
                 st.last_stm32_check_time = now_wall
 
                 prev_ok = st.last_stm32_poll_ok
-                cur_ok = check_stm32_connection()
+                with st.stm32_state_lock:
+                    path = st.menu_extras[st.current_command_index] if st.menu_extras else None
+                    cur_ok = (st.connection_success and st.stm32_probe_path == path
+                              and time.monotonic() - st.stm32_probe_at < 3.0)
                 st.last_stm32_poll_ok = cur_ok
 
                 if not cur_ok:
@@ -1424,7 +1157,7 @@ def execute_button_logic():
                     st.stm32_disconnected_since = 0.0
 
                 with st.stm32_state_lock:
-                    cs = st.connection_success
+                    cs = cur_ok
 
                 if st.commands:
                     if (
@@ -1443,41 +1176,49 @@ def execute_button_logic():
         time.sleep(0.01)
 
 
-ensure_menu_config_csv()
-init_ina219()
-refresh_root_menu(reset_index=True)
+def main():
+    ensure_menu_config_csv()
+    init_ina219()
+    refresh_root_menu(reset_index=True)
 
-battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
-battery_thread.start()
+    probe_thread = threading.Thread(target=stm32_poll_thread, daemon=True)
+    probe_thread.start()
 
-realtime_update_thread = threading.Thread(target=realtime_update_display, daemon=True)
-realtime_update_thread.start()
+    battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
+    battery_thread.start()
 
-wifi_thread = threading.Thread(target=wifi_worker_thread, daemon=True)
-wifi_thread.start()
+    realtime_update_thread = threading.Thread(target=realtime_update_display, daemon=True)
+    realtime_update_thread.start()
 
-net_thread = threading.Thread(target=net_poll_thread, daemon=True)
-net_thread.start()
+    wifi_thread = threading.Thread(target=wifi_worker_thread, daemon=True)
+    wifi_thread.start()
 
-git_thread = threading.Thread(target=git_poll_thread, daemon=True)
-git_thread.start()
+    net_thread = threading.Thread(target=net_poll_thread, daemon=True)
+    net_thread.start()
 
-scan_thread = threading.Thread(target=modbus_scan_loop, daemon=True)
-scan_thread.start()
+    git_thread = threading.Thread(target=git_poll_thread, daemon=True)
+    git_thread.start()
 
-detail_thread = threading.Thread(target=modbus_detail_poll_thread, daemon=True)
-detail_thread.start()
+    scan_thread = threading.Thread(target=modbus_scan_loop, daemon=True)
+    scan_thread.start()
 
-st.need_update = True
+    detail_thread = threading.Thread(target=modbus_detail_poll_thread, daemon=True)
+    detail_thread.start()
 
-try:
-    execute_button_logic()
-except KeyboardInterrupt:
-    pass
-finally:
-    st.stop_threads = True
+    st.need_update = True
+
     try:
-        kill_openocd()
-    except Exception:
+        execute_button_logic()
+    except KeyboardInterrupt:
         pass
-    GPIO.cleanup()
+    finally:
+        st.stop_threads = True
+        try:
+            kill_openocd()
+        except Exception:
+            pass
+        GPIO.cleanup()
+
+
+if __name__ == "__main__":
+    main()

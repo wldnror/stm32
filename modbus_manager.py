@@ -2,7 +2,10 @@ import os
 import re
 import shutil
 import socket
+import ipaddress
+import uuid
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 import RPi.GPIO as GPIO
@@ -24,6 +27,7 @@ from app_config import (
     LED_ERROR1,
 )
 from app_utils import get_ip_address, run_quiet
+from network_utils import source_ipv4_for
 from display_manager import set_ui_progress, set_ui_text, clear_ui_override
 
 
@@ -210,10 +214,13 @@ def read_device_info_fast(ip: str) -> Optional[str]:
 
 
 def scan_compute_prefix(ip: str):
-    parts = (ip or "").split(".")
-    if len(parts) != 4:
+    try:
+        address = ipaddress.IPv4Address(ip)
+        if address.is_unspecified or address.is_loopback or address.is_link_local:
+            return None
+        return str(address).rsplit(".", 1)[0] + "."
+    except ipaddress.AddressValueError:
         return None
-    return ".".join(parts[:3]) + "."
 
 
 def pick_remote_fw_file_for_device(ip: str) -> str:
@@ -273,6 +280,30 @@ def ensure_tftp_dir(path: str) -> bool:
         return False
 
 
+def publish_tftp_firmware(source, destination):
+    temporary = destination + ".tmp-" + uuid.uuid4().hex
+    try:
+        try:
+            shutil.copyfile(source, temporary)
+            os.chmod(temporary, 0o644)
+        except PermissionError:
+            if not run_quiet(["sudo", "-n", "cp", source, temporary], timeout=8):
+                raise OSError("TFTP firmware copy failed")
+            if not run_quiet(["sudo", "-n", "chmod", "0644", temporary], timeout=4):
+                raise OSError("TFTP firmware permissions failed")
+        try:
+            os.replace(temporary, destination)
+        except PermissionError:
+            if not run_quiet(["sudo", "-n", "mv", "-f", temporary, destination], timeout=4):
+                raise OSError("TFTP firmware publication failed")
+    finally:
+        try:
+            if os.path.exists(temporary):
+                os.remove(temporary)
+        except PermissionError:
+            run_quiet(["sudo", "-n", "rm", "-f", temporary], timeout=4)
+
+
 def tftp_upgrade_device(ip: str):
     ip = (ip or "").strip()
     if not ip:
@@ -316,21 +347,7 @@ def tftp_upgrade_device(ip: str):
 
     dst_path = os.path.join(device_dir, TFTP_DEVICE_FILENAME)
     try:
-        try:
-            if os.path.exists(dst_path):
-                os.remove(dst_path)
-        except PermissionError:
-            run_quiet(["sudo", "rm", "-f", dst_path], timeout=4.0)
-        except Exception:
-            pass
-
-        try:
-            shutil.copyfile(fw_src, dst_path)
-        except PermissionError:
-            run_quiet(["sudo", "cp", "-f", fw_src, dst_path], timeout=6.0)
-            run_quiet(["sudo", "chmod", "0644", dst_path], timeout=3.0)
-        except Exception:
-            shutil.copyfile(fw_src, dst_path)
+        publish_tftp_firmware(fw_src, dst_path)
     except Exception as e:
         GPIO.output(LED_ERROR, True)
         GPIO.output(LED_ERROR1, True)
@@ -341,7 +358,12 @@ def tftp_upgrade_device(ip: str):
         clear_ui_override()
         return
 
-    tftp_ip = get_ip_address()
+    tftp_ip = source_ipv4_for(ip)
+    if tftp_ip == "0.0.0.0":
+        set_ui_text("네트워크 오류", "경로를 확인하세요", font_size=12)
+        time.sleep(1)
+        clear_ui_override()
+        return
     set_ui_progress(45, f"명령 전송\n{ip}", pos=(6, 0), font_size=13)
 
     client = modbus_connect_with_retries(ip, port=502, timeout=2.2, retries=4, delay=0.35)
@@ -369,14 +391,17 @@ def tftp_upgrade_device(ip: str):
         addr_ip1 = reg_addr(40088)
         addr_ctrl = reg_addr(40091)
 
+        w1, w2 = encode_ip_to_words(tftp_ip)
         try:
-            w1, w2 = encode_ip_to_words(tftp_ip)
-            try:
-                client.write_registers(address=addr_ip1, values=[w1, w2], slave=1)
-            except Exception:
-                pass
+            address_result = client.write_registers(address=addr_ip1, values=[w1, w2], slave=1)
+            address_ok = not is_modbus_error(address_result)
         except Exception:
-            pass
+            address_ok = False
+        if not address_ok:
+            set_ui_text("서버 IP 전송 실패", "업데이트 중단", pos=(1, 18), font_size=12)
+            time.sleep(1.5)
+            clear_ui_override()
+            return
 
         try:
             r = client.write_register(address=addr_ctrl, value=1, slave=1)
@@ -499,73 +524,57 @@ def modbus_detail_poll_thread():
 
 
 def modbus_scan_loop():
-    while not st.stop_threads:
-        time.sleep(0.08)
-
-        with st.scan_lock:
-            active = st.scan_active
-            done = st.scan_done
-            pref = st.scan_base_prefix
-
-        if (not active) or done:
-            continue
-
-        now = time.time()
-        if not pref:
+    # Eight bounded workers turn a ~56-second serial /24 probe into a few seconds.
+    # A generation prevents a cancelled scan from overwriting a newer scan's menu.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        while not st.stop_threads:
+            time.sleep(0.1)
             with st.scan_lock:
-                st.scan_ips = []
-                st.scan_infos.clear()
-                st.scan_selected_idx = 0
-                st.scan_selected_ip = None
-                st.scan_done = True
-                st.scan_active = False
+                active, generation = st.scan_active, st.scan_generation
+                prefix = st.scan_base_prefix
+            if not active:
+                continue
+            def cancelled(generation=generation):
+                return st.stop_threads or not st.scan_active or generation != st.scan_generation
+            found, infos = [], {}
+            own_ip = get_ip_address()
+            def probe(ip, is_cancelled=cancelled):
+                if is_cancelled() or not quick_modbus_probe(ip, timeout=0.22):
+                    return ip, None, False
+                if is_cancelled():
+                    return ip, None, False
+                return ip, read_device_info_fast(ip), True
+            futures = []
+            if prefix:
+                futures = [pool.submit(probe, prefix + str(host)) for host in range(1, 255)
+                           if prefix + str(host) != own_ip]
+            last_push = 0.0
+            for future in as_completed(futures):
+                if cancelled():
+                    for pending in futures:
+                        pending.cancel()
+                    break
+                ip, info, ok = future.result()
+                if ok:
+                    found.append(ip)
+                    if info:
+                        infos[ip] = info
+                now = time.monotonic()
+                if now - last_push >= 0.35:
+                    last_push = now
+                    with st.scan_lock:
+                        if cancelled():
+                            break
+                        st.scan_ips = sorted(found, key=lambda value: tuple(map(int, value.split("."))))
+                        st.scan_infos = dict(infos)
+                        st.scan_menu_dirty = True
+                    st.need_update = True
+            with st.scan_lock:
+                if cancelled():
+                    continue
+                st.scan_ips = sorted(found, key=lambda value: tuple(map(int, value.split("."))))
+                st.scan_infos = dict(infos)
+                st.scan_selected_idx = min(st.scan_selected_idx, max(0, len(found) - 1))
+                st.scan_done, st.scan_active = True, False
                 st.scan_menu_dirty = True
-                st.scan_menu_dirty_ts = now
-                st.scan_last_tick = now
             st.need_update = True
-            continue
-
-        found = []
-        infos_local = {}
-        last_push = 0.0
-
-        for host in range(2, 255):
-            if st.stop_threads:
-                break
-
-            ip = pref + str(host)
-            if quick_modbus_probe(ip, timeout=0.22):
-                found.append(ip)
-                info = read_device_info_fast(ip)
-                if info:
-                    infos_local[ip] = info
-
-            tnow = time.time()
-            if tnow - last_push >= 0.35:
-                last_push = tnow
-                new_ips = sorted(found, key=lambda x: tuple(int(p) for p in x.split(".")))
-                with st.scan_lock:
-                    st.scan_ips = new_ips
-                    for k, v in infos_local.items():
-                        st.scan_infos[k] = v
-                    if st.scan_selected_idx >= len(st.scan_ips):
-                        st.scan_selected_idx = 0
-                    st.scan_menu_dirty = True
-                    st.scan_menu_dirty_ts = tnow
-                    st.scan_last_tick = tnow
-                st.need_update = True
-
-        new_ips = sorted(found, key=lambda x: tuple(int(p) for p in x.split(".")))
-        with st.scan_lock:
-            st.scan_ips = new_ips
-            st.scan_infos.clear()
-            st.scan_infos.update(infos_local)
-            if st.scan_selected_idx >= len(st.scan_ips):
-                st.scan_selected_idx = 0
-            st.scan_done = True
-            st.scan_active = False
-            st.scan_menu_dirty = True
-            st.scan_menu_dirty_ts = time.time()
-            st.scan_last_tick = time.time()
-
-        st.need_update = True
