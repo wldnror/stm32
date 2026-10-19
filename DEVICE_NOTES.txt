@@ -2,8 +2,8 @@ STM32 debug appliance 3.78
 
 Power-on image: deploy/FIRMWARE_SPLASH.txt documents the separate firmware-stage
 SH1107 image, pinned official firmware pair, one-shot trial and rollback.
-This precedes Linux; /run/stm32-boot/first-frame.json still timestamps the later
-Linux startup screen, not the first image shown after power is applied.
+The firmware transfer precedes Linux; physical visibility is awaiting confirmation.
+/run/stm32-boot/first-frame.json timestamps the later Linux startup screen only.
 
 Normal firmware/folder menus show the clock as HH시 MM분 again, within a
 64-pixel area before the Wi-Fi bars. System/Wi-Fi menus retain their compact

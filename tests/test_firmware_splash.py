@@ -12,9 +12,9 @@ from boot_display import pack_pages, SH1107_INIT
 class FirmwareSplashTests(unittest.TestCase):
     def decode(self):
         binary = splash.build_binary()
-        self.assertEqual(binary[:16], b"SPLASH ASM" + b"\0" * 5 + b"\x01")
+        self.assertEqual(binary[:16], b"SPLASH ASM" + b"\0" * 5 + b"\x02")
         setup = struct.unpack_from("<B4sBBHBBBBI", binary, 16)
-        self.assertEqual(setup, (1, b"I2C ", 8, 0, 0, 2, 3, 0x3c, 0, 100000))
+        self.assertEqual(setup, (1, b"I2C ", 8, 1, 0, 2, 3, 0x3c, 0, 100000))
         position, packets = 33, []
         while position < len(binary):
             opcode, output, flags, length = struct.unpack_from("<BBBH", binary, position)
