@@ -1,0 +1,37 @@
+Early Wi-Fi and neighbor announcement (Pi Zero W, Raspbian 11 / NM 1.30.6)
+
+Baseline boot: menu READY 26.513 s, NetworkManager process start 25.662 s,
+radio driver 29.537 s, association 42.266 s, DHCP address 45.010 s and
+activation complete 46.061 s. The extra 19.5 s after the menu is real.
+
+Install each early-network/<unit>.conf as:
+  /etc/systemd/system/<unit>.d/80-stm32-early.conf
+Install stm32-wifi-modules.conf under /etc/modules-load.d/.
+This moves the existing D-Bus socket/service, supplicant and NetworkManager
+before basic.target, while retaining read-write root, driver/udev and D-Bus
+ordering plus normal shutdown ordering. No second network manager is added.
+
+Install stm32-announce-ip, root:root mode 0755, inside:
+  /etc/NetworkManager/dispatcher.d/no-wait.d/stm32-announce-ip
+Create a symlink to that file at:
+  /etc/NetworkManager/dispatcher.d/90-stm32-announce-ip
+
+The no-wait dispatcher handles wlan0 up/dhcp4-change, skips the setup AP and
+sends two bounded gratuitous ARP requests for the currently assigned IPv4.
+It refreshes neighbor/bridge address mappings without restarting the connection
+or touching router settings. BusyBox arping is already installed on this Pi.
+Before manual AP reconnection, the Mac mapped 192.168.219.133 to
+b6:38:6c:64:70:1c; afterward it correctly mapped to b8:27:eb:8c:99:da.
+A live duplicate-address probe after reconnection received no replies. That
+observation does not prove whether the stale entry came from proxy ARP or a
+previous address holder. The announcement addresses stale mapping behavior.
+
+Back up existing custom files before installation. Verify the units and keep
+an automatic, single-use boot rollback for the first trial. To undo early
+ordering, remove only the installed 80-stm32-early.conf files and reload systemd;
+remove the modules-load file to undo early driver loading. To undo announcements,
+remove the dispatcher symlink and its no-wait target. Vendor units are unchanged.
+
+References:
+https://kernel.org/doc/html/v6.6/networking/ip-sysctl.html#arp-notify-boolean
+https://www.networkmanager.dev/docs/api/1.42/NetworkManager-dispatcher.html
