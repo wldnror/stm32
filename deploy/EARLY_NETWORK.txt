@@ -10,6 +10,11 @@ Install stm32-wifi-modules.conf under /etc/modules-load.d/.
 This moves the existing D-Bus socket/service, supplicant and NetworkManager
 before basic.target, while retaining read-write root, driver/udev and D-Bus
 ordering plus normal shutdown ordering. No second network manager is added.
+Disable and mask raspberrypi-net-mods.service on this already provisioned device
+(after verifying /boot/wpa_supplicant.conf is absent). Its unused legacy import
+job is ordered before NetworkManager but after basic.target and otherwise keeps
+NM waiting even when the actual import condition is skipped. Back up its prior
+enabled/masked state. Unmask/re-enable it only when reverting this deployment.
 
 Install stm32-announce-ip, root:root mode 0755, inside:
   /etc/NetworkManager/dispatcher.d/no-wait.d/stm32-announce-ip
@@ -35,3 +40,24 @@ remove the dispatcher symlink and its no-wait target. Vendor units are unchanged
 References:
 https://kernel.org/doc/html/v6.6/networking/ip-sysctl.html#arp-notify-boolean
 https://www.networkmanager.dev/docs/api/1.42/NetworkManager-dispatcher.html
+
+/run/stm32-ip-announced records completion time (Linux uptime) and the current
+IPv4 address for the most recent successful notification.
+
+On this fixed-hostname appliance, also mask systemd-hostnamed.service and install
+stm32-networkmanager.conf as /etc/NetworkManager/conf.d/80-stm32-appliance.conf.
+NM 1.30.6 unconditionally creates a synchronous hostnamed proxy during startup;
+the delayed hostnamed activation otherwise holds network initialization until
+34 s even when NM owns its D-Bus name at 17 s. With hostnamed unavailable, its
+supported fallback monitors /etc/hostname. The fixed hostname remains pi;
+hostnamectl's D-Bus hostname management is unavailable while the unit is masked.
+Unmask the unit and remove this configuration to restore that management path.
+Source: https://github.com/NetworkManager/NetworkManager/blob/1.30.6/src/core/nm-hostname-manager.c
+
+The installed regulatory.db Debian alternative is signed by a key not trusted
+by this Raspberry Pi kernel (cfg80211 reports an invalid signature). Select the
+already-installed upstream alternative with its matching .p7s slave instead:
+  update-alternatives --set regulatory.db /lib/firmware/regulatory.db-upstream
+Both files are provided by the verified installed wireless-regdb package; no
+radio firmware, country setting or connection credential is changed. The former
+alternative was automatic Debian; use --auto regulatory.db when reverting.
