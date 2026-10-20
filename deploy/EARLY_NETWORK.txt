@@ -61,3 +61,10 @@ already-installed upstream alternative with its matching .p7s slave instead:
 Both files are provided by the verified installed wireless-regdb package; no
 radio firmware, country setting or connection credential is changed. The former
 alternative was automatic Debian; use --auto regulatory.db when reverting.
+
+Install stm32-early-devices.service under /etc/systemd/system/. It prioritizes
+block, network, GPIO and I2C-device udev events before the bulk coldplug batch,
+and waits only for its own triggered events (bounded at ten seconds). This
+avoids leaving wlan0 kernel-ready at 13 s but udev-initialized only at 27 s.
+NetworkManager pulls this unit in; it does not need a separate enable symlink.
+Remove it along with the NetworkManager override when rolling back.
