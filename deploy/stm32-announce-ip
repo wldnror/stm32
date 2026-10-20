@@ -12,6 +12,10 @@ esac
     case "$address" in
         ''|*[!0-9.]*) continue ;;
     esac
-    /bin/busybox arping -q -U -I wlan0 -c 2 -w 2 "$address" >/dev/null 2>&1 || true
+    if /bin/busybox arping -q -U -I wlan0 -c 2 -w 2 "$address" >/dev/null 2>&1; then
+        if read -r seconds rest </proc/uptime; then
+            printf '%s %s\n' "$seconds" "$address" >/run/stm32-ip-announced
+        fi
+    fi
     exit 0
 done

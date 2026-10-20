@@ -26,14 +26,24 @@ class AnnouncementTests(unittest.TestCase):
                 executable.chmod(0o755)
             script = directory / 'hook'
             text = (ROOT / 'deploy/stm32-announce-ip').read_text()
+            uptime = directory / 'uptime'
+            uptime.write_text('123.45 98.76\n')
+            stamp = directory / 'announced'
             script.write_text(text.replace('/sbin/ip', shlex.quote(str(ip)))
-                                  .replace('/bin/busybox', shlex.quote(str(busybox))))
+                                  .replace('/bin/busybox', shlex.quote(str(busybox)))
+                                  .replace('/proc/uptime', shlex.quote(str(uptime)))
+                                  .replace('/run/stm32-ip-announced', shlex.quote(str(stamp))))
             env = dict(os.environ, CALLS=str(calls), CONNECTION_ID=profile,
                        DHCP4_IP_ADDRESS='203.0.113.99')
             completed = subprocess.run(['/bin/sh', str(script), iface, action], env=env,
                                        capture_output=True, text=True, timeout=5)
             self.assertEqual(completed.returncode, 0, completed.stderr)
-            return [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
+            result = [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
+            if result:
+                self.assertEqual(stamp.read_text(), '123.45 ' + result[-1][-1] + '\n')
+            else:
+                self.assertFalse(stamp.exists())
+            return result
 
     def test_up_and_lease_change_announce_current_address_with_finite_limits(self):
         for action in ('up', 'dhcp4-change'):
