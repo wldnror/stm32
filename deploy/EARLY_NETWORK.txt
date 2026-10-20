@@ -68,3 +68,19 @@ and waits only for its own triggered events (bounded at ten seconds). This
 avoids leaving wlan0 kernel-ready at 13 s but udev-initialized only at 27 s.
 NetworkManager pulls this unit in; it does not need a separate enable symlink.
 Remove it along with the NetworkManager override when rolling back.
+
+Final trial (Linux monotonic seconds):
+  Native first animation       3.260
+  OLED menu READY             31.315  (baseline 26.513)
+  Saved Wi-Fi associated      30.853
+  IPv4 address ready          31.601  (baseline 45.010)
+  NM activation complete      34.983  (baseline 46.061)
+  Address notice completed    36.540
+The menu itself is about 4.8 s later due to prioritized core/network work, but
+network activation is about 11.1 s earlier. Additional wait after the menu falls
+from 19.5 s to 3.7 s; an IPv4 address is ready within 0.3 s of that menu.
+These are reboot/Linux-clock measurements, not power-on stopwatch measurements.
+
+The final real AP + HTTP + held-SET/single-NEXT cancellation test also passed:
+credentials shown at test 12.752 s; cancellation at 13.647 s; restoration ends
+21.978 s, with no reentry and no hidden menu navigation. Automatic tests: 77.
