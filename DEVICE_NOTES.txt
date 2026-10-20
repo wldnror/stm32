@@ -1,4 +1,4 @@
-STM32 debug appliance 3.79
+STM32 debug appliance 3.80
 
 Power-on image: deploy/FIRMWARE_SPLASH.txt documents the separate firmware-stage
 SH1107 image, pinned official firmware pair, one-shot trial and rollback.
@@ -111,3 +111,11 @@ Menu responsiveness (3.77)
 - Physical OLED comparison, 16 samples per scenario: menu-label transfer
   median 237.24 -> 65.92 ms; activity indicator 236.50 -> 24.79 ms.
   These are separate measurements, not complete button-to-screen timings.
+
+Early saved Wi-Fi startup (3.80)
+See deploy/EARLY_NETWORK.txt for the separate systemd/udev configuration,
+fixed-hostname fallback, kernel-compatible regulatory signature and bounded
+address announcements. Installed boot configuration is independent of git pull.
+Measured network activation moves from kernel 46.061 s to 34.983 s; the menu is
+at 31.315 s (formerly 26.513 s). Saved IPv4 is ready at 31.601 s. No static IP,
+router setting or saved password is changed by this deployment.

@@ -1,0 +1,21 @@
+#!/bin/sh
+# NetworkManager no-wait dispatcher: refresh stale neighbor/bridge entries.
+# Announce only this interface's currently assigned address; never reset Wi-Fi.
+set -f
+case "${1-}:${2-}" in
+    wlan0:up|wlan0:dhcp4-change) ;;
+    *) exit 0 ;;
+esac
+[ "${CONNECTION_ID-}" != "gdseng-setup-ap" ] || exit 0
+/sbin/ip -4 -o address show dev wlan0 scope global | while read -r index iface family address rest; do
+    address=${address%/*}
+    case "$address" in
+        ''|*[!0-9.]*) continue ;;
+    esac
+    if /bin/busybox arping -q -U -I wlan0 -c 2 -w 2 "$address" >/dev/null 2>&1; then
+        if read -r seconds rest </proc/uptime; then
+            printf '%s %s\n' "$seconds" "$address" >/run/stm32-ip-announced
+        fi
+    fi
+    exit 0
+done
