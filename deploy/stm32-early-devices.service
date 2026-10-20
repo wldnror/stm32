@@ -8,6 +8,6 @@ Conflicts=shutdown.target
 
 [Service]
 Type=oneshot
-ExecStart=/sbin/udevadm trigger --action=add --subsystem-match=block --subsystem-match=net --subsystem-match=gpio --subsystem-match=bcm2835-gpiomem --subsystem-match=i2c-dev --settle
+ExecStart=/bin/udevadm trigger --action=add --subsystem-match=block --subsystem-match=net --subsystem-match=gpio --subsystem-match=bcm2835-gpiomem --subsystem-match=i2c-dev --settle
 TimeoutStartSec=10
 RemainAfterExit=yes
